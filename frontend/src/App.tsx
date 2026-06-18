@@ -64,6 +64,11 @@ export default function App() {
   const [uploading, setUploading] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Watcher & batch state
+  const [watcherRunning, setWatcherRunning] = useState(false)
+  const [watcherStats, setWatcherStats] = useState<Record<string, any>>({})
+  const [batchJob, setBatchJob] = useState<{ job_id: string; processed: number; total: number; status: string } | null>(null)
+
   const lang = i18n.language.startsWith('ru') ? 'ru' : 'en'
 
   // ── Fetch ───────────────────────────────────────────────
@@ -85,6 +90,52 @@ export default function App() {
   }, [])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
+
+  // ── Watcher poll ─────────────────────────────────────
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/watcher/status')
+        if (res.ok) {
+          const s = await res.json()
+          setWatcherRunning(s.running || false)
+          setWatcherStats(s)
+        }
+      } catch {}
+    }
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
+  }, [])
+
+  async function toggleWatcher() {
+    const url = watcherRunning ? '/api/watcher/stop' : '/api/watcher/start'
+    try {
+      const res = await fetch(url, { method: 'POST' })
+      if (res.ok) {
+        setWatcherRunning(!watcherRunning)
+        fetchDocs()
+      }
+    } catch {}
+  }
+
+  // ── Batch poll ───────────────────────────────────────
+
+  useEffect(() => {
+    if (!batchJob || batchJob.status === 'done') return
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/index/batch/${batchJob.job_id}`)
+        if (res.ok) {
+          const s = await res.json()
+          setBatchJob(prev => prev ? { ...prev, ...s } : null)
+          if (s.status === 'done') fetchDocs()
+        }
+      } catch {}
+    }, 2000)
+    return () => clearInterval(id)
+  }, [batchJob?.job_id])
 
   // ── Search (API with mode) ──────────────────────────
 
@@ -234,6 +285,43 @@ export default function App() {
                 </div>
               ))}
             </div>
+
+            {/* Watcher toggle */}
+            <div className="space-y-2">
+              <p className="text-xs text-[#666] uppercase tracking-widest">
+                {lang === 'ru' ? 'Мониторинг' : 'Monitoring'}
+              </p>
+              <button onClick={toggleWatcher}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border
+                  text-xs transition-colors ${
+                    watcherRunning
+                      ? 'border-green-400/20 bg-green-400/5 text-green-400'
+                      : 'border-[#2a2a2a] text-[#666] hover:text-[#aaa]'
+                  }`}>
+                <span>{watcherRunning
+                  ? (lang === 'ru' ? '🟢 Активен' : '🟢 Active')
+                  : (lang === 'ru' ? '⏸ Остановлен' : '⏸ Stopped')}</span>
+                <span className="text-[10px] text-[#555]">
+                  {watcherStats.files_discovered > 0 && `${watcherStats.files_discovered} new`}
+                </span>
+              </button>
+            </div>
+
+            {/* Batch progress */}
+            {batchJob && batchJob.status === 'running' && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-[#666] uppercase tracking-widest">
+                  {lang === 'ru' ? 'Индексация' : 'Indexing'}
+                </p>
+                <div className="w-full bg-[#1a1a1a] rounded-full h-1.5 overflow-hidden">
+                  <div className="h-full bg-[#fafafa]/30 rounded-full transition-all duration-500"
+                    style={{ width: `${batchJob.total > 0 ? (batchJob.processed / batchJob.total) * 100 : 0}%` }} />
+                </div>
+                <p className="text-[10px] text-[#555]">
+                  {batchJob.processed}/{batchJob.total}
+                </p>
+              </div>
+            )}
             <button onClick={() => setSideOpen(false)}
               className="mt-auto text-xs text-[#666] hover:text-[#aaa] transition-colors text-left">
               {lang === 'ru' ? '← Закрыть меню' : '← Close menu'}

@@ -251,13 +251,15 @@ def search_documents_endpoint(
 
 @app.post("/api/documents/{doc_id}/reindex")
 def reindex_document(doc_id: str, db: Session = Depends(get_db)):
-    """Re-run OCR indexing for a single document."""
+    """Re-run full indexing for a single document (OCR + Vision + AI + Embeddings)."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(404, "Document not found")
 
     from backend.models import IndexingStatus
     doc.ocr_status = IndexingStatus.pending
+    doc.vision_status = IndexingStatus.pending
+    doc.analysis_status = IndexingStatus.pending
     db.commit()
 
     index_document(doc_id)
@@ -266,13 +268,60 @@ def reindex_document(doc_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/api/index/next")
-def index_next(
-    limit: int = Query(10, ge=1, le=100),
-):
-    """Process the next N pending documents."""
+def index_next(limit: int = Query(10, ge=1, le=100)):
+    """Process the next N pending documents (simple)."""
     from backend.indexer import index_next_batch
     processed = index_next_batch(limit)
     return {"processed": processed}
+
+
+@app.post("/api/index/batch")
+def index_batch_endpoint(
+    limit: int = Query(50, ge=1, le=500),
+    retries: int = Query(3, ge=0, le=10),
+    db: Session = Depends(get_db),
+):
+    """Run batch indexing with progress tracking. Returns job_id for polling."""
+    from backend.indexer import index_batch
+
+    result = index_batch(limit=limit, max_retries=retries)
+    return result
+
+
+@app.get("/api/index/batch/{job_id}")
+def get_batch_status_endpoint(job_id: str):
+    """Get status of a batch indexing job."""
+    from backend.indexer import get_batch_status
+
+    status = get_batch_status(job_id)
+    if not status:
+        raise HTTPException(404, "Batch job not found")
+    return status
+
+
+# ── Watcher (folder monitoring) ─────────────────────────
+
+@app.post("/api/watcher/start")
+def start_watcher_endpoint():
+    """Start folder monitoring for new files."""
+    from backend.watcher import start_watcher
+    started = start_watcher()
+    return {"started": started}
+
+
+@app.post("/api/watcher/stop")
+def stop_watcher_endpoint():
+    """Stop folder monitoring."""
+    from backend.watcher import stop_watcher
+    stopped = stop_watcher()
+    return {"stopped": stopped}
+
+
+@app.get("/api/watcher/status")
+def get_watcher_status():
+    """Get watcher status and stats."""
+    from backend.watcher import get_watcher_stats
+    return get_watcher_stats()
 
 
 # ── Stats ───────────────────────────────────────────────

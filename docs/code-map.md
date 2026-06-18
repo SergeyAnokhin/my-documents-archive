@@ -23,6 +23,7 @@ my-documents-archive/
 │   ├── schemas.py            ← Pydantic request/response schemas
 │   ├── ocr.py                ← OCR: Tesseract for images & PDFs
 │   ├── vision.py             ← AI Vision: image description via multimodal LLM
+│   ├── watcher.py            ← Folder watcher: auto-detects new files
 │   ├── embeddings.py         ← Semantic search via sentence-transformers + ChromaDB
 │   ├── ai_analysis.py        ← AI analysis: tags, type, summary via LLM
 │   ├── indexer.py            ← Document indexing pipeline (OCR + Vision + AI + Embed)
@@ -72,7 +73,11 @@ my-documents-archive/
 | `GET` | `/api/search` | Full-text + semantic + hybrid search (?q=, ?limit=, ?mode=) |
 | `POST` | `/api/documents/{id}/reindex` | Re-run OCR on a document |
 | `POST` | `/api/index/next` | Process next N pending documents |
-| `GET` | `/api/stats` | Counts: total, indexed, pending, errors |
+| `POST` | `/api/watcher/start` | Start folder monitoring |
+| `POST` | `/api/watcher/stop` | Stop folder monitoring |
+| `GET` | `/api/watcher/status` | Watcher status & stats |
+| `POST` | `/api/index/batch` | Batch indexing with progress (?limit=, ?retries=) |
+| `GET` | `/api/index/batch/{job_id}` | Get batch job status |
 
 ### Database Schema
 
@@ -124,8 +129,9 @@ User clicks document → modal with metadata + download link
 - AI Analysis (tags/summary) — Phase 3 ✅
 - AI Vision — Phase 4 ✅
 - Semantic search (embeddings) — Phase 4 ✅
-- Folder monitoring (watchdog) — Phase 5
-- Batch indexing — Phase 5
+- Folder monitoring (watchdog) — Phase 5 ✅
+- Batch indexing — Phase 5 ✅
+- Retry logic — Phase 5 ✅
 - Developer Mode — Phase 6
 - External OCR Service — Phase 7
 
