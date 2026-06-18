@@ -1,0 +1,86 @@
+.search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: var(--sp-4);
+  color: var(--color-ink-faint);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.search-input {
+  width: 100%;
+  height: 52px;
+  padding: 0 var(--sp-10) 0 48px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  font-size: 1rem;
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  -webkit-appearance: none;
+}
+.search-input::placeholder { color: var(--color-ink-faint); }
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 3px rgba(26,26,24,.07);
+}
+/* Hide browser's native clear button */
+.search-input::-webkit-search-cancel-button { display: none; }
+
+.search-clear {
+  position: absolute;
+  right: var(--sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-tag);
+  color: var(--color-ink-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.search-clear:hover { background: var(--color-border); color: var(--color-ink); }
+
+/* Mode pills */
+.search-modes {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.search-mode-pill {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-size: .8125rem;
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.search-mode-pill:hover {
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border-color: var(--color-ink-faint);
+}
+.search-mode-pill.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}

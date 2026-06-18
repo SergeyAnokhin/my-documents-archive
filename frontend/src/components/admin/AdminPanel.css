@@ -1,0 +1,166 @@
+.admin-layout {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: var(--sp-6);
+  min-height: 440px;
+}
+
+@media (max-width: 640px) {
+  .admin-layout { grid-template-columns: 1fr; }
+}
+
+/* Nav */
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.admin-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: .875rem;
+  font-weight: 500;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
+.admin-nav-btn:hover { background: var(--color-tag); color: var(--color-ink); }
+.admin-nav-btn.active { background: var(--color-accent); color: #fff; }
+
+/* Section */
+.admin-content { overflow-y: auto; }
+.admin-section { display: flex; flex-direction: column; gap: var(--sp-5); }
+.admin-section-title { font-weight: 600; font-size: 1rem; }
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.admin-msg {
+  font-size: .875rem;
+  color: var(--color-success);
+}
+
+/* Stats */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+}
+
+@media (max-width: 500px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.stat-card {
+  padding: var(--sp-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-tag);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border: 1.5px solid transparent;
+}
+.stat-card.accent { background: var(--color-accent); color: #fff; }
+.stat-card.accent .stat-label { color: rgba(255,255,255,.7); }
+.stat-card.danger { border-color: var(--color-error); }
+.stat-card.danger .stat-value { color: var(--color-error); }
+
+.stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+.stat-label { font-size: .75rem; color: var(--color-ink-muted); }
+
+/* Folders */
+.folder-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.folder-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-tag);
+  border-radius: var(--radius-md);
+  gap: var(--sp-3);
+}
+.folder-path.disabled { opacity: .45; }
+.folder-actions { display: flex; gap: var(--sp-2); }
+
+.folder-add {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+
+/* Providers */
+.provider-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.provider-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-tag);
+  border-radius: var(--radius-md);
+}
+.provider-name { font-weight: 500; font-size: .9375rem; }
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--color-tag);
+  border-radius: var(--radius-lg);
+}
+
+/* Input */
+.admin-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--sp-3);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: .9375rem;
+  color: var(--color-ink);
+  transition: border-color var(--transition);
+}
+.admin-input:focus { outline: none; border-color: var(--color-ink); }
+select.admin-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b6b64' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+
+/* Log */
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-tag);
+  border-radius: var(--radius-sm);
+}
+.log-time { flex-shrink: 0; width: 64px; }
+.log-step {
+  flex-shrink: 0;
+  background: var(--color-border);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
