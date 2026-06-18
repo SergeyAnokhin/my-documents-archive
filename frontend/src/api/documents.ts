@@ -77,3 +77,11 @@ export const updateAppSettings = (body: Record<string, string>) =>
   api.patch<Record<string, string>>("/admin/settings", body);
 
 export const getLog = (limit = 100) => api.get<LogEntry[]>(`/admin/log?limit=${limit}`);
+
+// ── Indexing (per-document) ───────────────────────────────────────────────────
+
+export const reclassifyDocument = (id: number) =>
+  api.post(`/indexing/reclassify/${id}`);
+
+export const reindexDocument = (id: number) =>
+  api.post(`/indexing/document/${id}`);

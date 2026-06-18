@@ -31,6 +31,7 @@ docs/             Architecture docs (you are here)
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
 | `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; batch, reclassify |
+| `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status — prefix `/api/indexing` |
 
 ## Compute (`compute/app/`)
@@ -101,6 +102,4 @@ Admin reclassify
 
 ## Planned (not yet implemented)
 
-- Folder watcher: watchdog (Phase 5)
-- Celery/Redis task queue (Phase 5)
-- Developer Mode: per-step model selection, cost comparison (Phase 6)
+- Celery/Redis task queue — replaced by FastAPI BackgroundTasks (sufficient for personal app)

@@ -140,6 +140,8 @@ def add_folder(body: WatchedFolderCreate, db: Session = Depends(get_db)):
     db.add(folder)
     db.commit()
     db.refresh(folder)
+    from ..services.watcher import watcher
+    watcher.reload()
     return folder
 
 
@@ -150,6 +152,8 @@ def remove_folder(folder_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Folder not found")
     db.delete(f)
     db.commit()
+    from ..services.watcher import watcher
+    watcher.reload()
 
 
 @router.patch("/folders/{folder_id}/toggle")
@@ -160,6 +164,8 @@ def toggle_folder(folder_id: int, db: Session = Depends(get_db)):
     f.enabled = not f.enabled
     db.commit()
     db.refresh(f)
+    from ..services.watcher import watcher
+    watcher.reload()
     return WatchedFolderOut.model_validate(f)
 
 

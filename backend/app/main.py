@@ -31,16 +31,26 @@ app.include_router(indexing.router)
 @app.on_event("startup")
 def on_startup():
     init_db()
-    # Ensure thumbnail directory exists
     settings.thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
 
-# Serve thumbnails as static files
 @app.on_event("startup")
 def mount_thumbnails():
     thumb_dir = settings.thumbnails_dir
     thumb_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/thumbnails", StaticFiles(directory=str(thumb_dir)), name="thumbnails")
+
+
+@app.on_event("startup")
+def start_folder_watcher():
+    from .services.watcher import watcher
+    watcher.start()
+
+
+@app.on_event("shutdown")
+def stop_folder_watcher():
+    from .services.watcher import watcher
+    watcher.stop()
 
 
 @app.get("/api/health")

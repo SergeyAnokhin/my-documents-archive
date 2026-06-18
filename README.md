@@ -49,6 +49,6 @@ docs/        Architecture docs + AI navigation index
 | 2 | ✅ Done | OCR (Tesseract), thumbnails, background indexing, download, keyboard shortcuts |
 | 3 | ✅ Done | AI Analysis (summary, tags, type, language, org, amount) via Anthropic/OpenAI/Gemini/DeepSeek |
 | 4 | ✅ Done | AI Vision (optional), semantic + hybrid search (ChromaDB + sentence-transformers) |
-| 5 | 🔲 | Folder watcher, Celery task queue |
-| 6 | 🔲 | Developer Mode, per-document re-classification UI |
+| 5 | ✅ Done | Folder watcher (watchdog) — auto-picks new files from watched folders |
+| 6 | ✅ Done | Developer Mode tab in document viewer: pipeline statuses, Re-classify, Re-index |
 | 7 | ✅ Scaffolded | External OCR worker |

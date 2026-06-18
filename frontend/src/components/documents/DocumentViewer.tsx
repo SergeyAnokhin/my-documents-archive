@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Download, ChevronLeft, ChevronRight, FileText, Tag } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
+import { reclassifyDocument, reindexDocument } from "../../api/documents";
 import "./DocumentViewer.css";
 
 interface Props {
@@ -24,7 +25,37 @@ function formatDate(iso?: string) {
 
 export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext }: Props) {
   const { t } = useT();
-  const [activeTab, setActiveTab] = useState<"preview" | "text" | "details">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "text" | "details" | "dev">("preview");
+  const [devMsg, setDevMsg] = useState("");
+  const [devLoading, setDevLoading] = useState<"reindex" | "reclassify" | null>(null);
+
+  const flashDev = (msg: string) => { setDevMsg(msg); setTimeout(() => setDevMsg(""), 4000); };
+
+  const handleReindex = async () => {
+    if (!doc) return;
+    setDevLoading("reindex");
+    try {
+      await reindexDocument(doc.id);
+      flashDev(t.reindexStarted);
+    } catch {
+      flashDev(t.error);
+    } finally {
+      setDevLoading(null);
+    }
+  };
+
+  const handleReclassify = async () => {
+    if (!doc) return;
+    setDevLoading("reclassify");
+    try {
+      await reclassifyDocument(doc.id);
+      flashDev(t.reclassifyStarted);
+    } catch {
+      flashDev(t.error);
+    } finally {
+      setDevLoading(null);
+    }
+  };
 
   if (!doc) return null;
 
@@ -68,13 +99,16 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
         <div className="viewer-info">
           {/* Tabs */}
           <div className="viewer-tabs">
-            {(["preview", "text", "details"] as const).map((tab) => (
+            {(["preview", "text", "details", "dev"] as const).map((tab) => (
               <button
                 key={tab}
                 className={`viewer-tab${activeTab === tab ? " active" : ""}`}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "preview" ? "Preview" : tab === "text" ? t.recognizedText : t.metadata}
+                {tab === "preview" ? "Preview"
+                  : tab === "text" ? t.recognizedText
+                  : tab === "details" ? t.metadata
+                  : t.devMode}
               </button>
             ))}
           </div>
@@ -167,6 +201,83 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                   <span className={`status-dot ${doc.ocr_status}`} style={{ marginRight: 6 }} />
                   <span className="text-sm">{t.status[doc.ocr_status as keyof typeof t.status]}</span>
                 </div>
+              </div>
+            )}
+
+            {activeTab === "dev" && (
+              <div className="viewer-meta-list">
+                <p className="text-xs text-muted" style={{ marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {t.pipelineStatus}
+                </p>
+
+                {/* OCR */}
+                <div className="viewer-meta-row">
+                  <span className="viewer-meta-label">OCR</span>
+                  <span className={`status-dot ${doc.ocr_status}`} style={{ marginRight: 6 }} />
+                  <span className="text-sm">{doc.ocr_status}</span>
+                </div>
+                {doc.ocr_error && (
+                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
+                    {doc.ocr_error}
+                  </p>
+                )}
+
+                {/* Vision */}
+                <div className="viewer-meta-row">
+                  <span className="viewer-meta-label">Vision</span>
+                  <span className={`status-dot ${doc.vision_status}`} style={{ marginRight: 6 }} />
+                  <span className="text-sm">{doc.vision_status}</span>
+                </div>
+                {doc.vision_error && (
+                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
+                    {doc.vision_error}
+                  </p>
+                )}
+
+                {/* Analysis */}
+                <div className="viewer-meta-row">
+                  <span className="viewer-meta-label">Analysis</span>
+                  <span className={`status-dot ${doc.analysis_status}`} style={{ marginRight: 6 }} />
+                  <span className="text-sm">{doc.analysis_status}</span>
+                </div>
+                {doc.analysis_error && (
+                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
+                    {doc.analysis_error}
+                  </p>
+                )}
+
+                {/* Costs */}
+                {(doc.api_cost_vision > 0 || doc.api_cost_analysis > 0) && (
+                  <div className="viewer-meta-row" style={{ marginTop: 8 }}>
+                    <span className="viewer-meta-label">API cost</span>
+                    <span className="text-xs text-muted">
+                      vision ${doc.api_cost_vision.toFixed(5)} · analysis ${doc.api_cost_analysis.toFixed(5)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<RefreshCw size={13} />}
+                    loading={devLoading === "reclassify"}
+                    onClick={handleReclassify}
+                  >
+                    {t.reclassify}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<RefreshCw size={13} />}
+                    loading={devLoading === "reindex"}
+                    onClick={handleReindex}
+                  >
+                    {t.reindex}
+                  </Button>
+                </div>
+                {devMsg && <p className="text-xs text-muted" style={{ marginTop: 8 }}>{devMsg}</p>}
               </div>
             )}
           </div>

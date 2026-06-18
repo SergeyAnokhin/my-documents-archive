@@ -78,6 +78,6 @@ Database travels with the documents — both are in the same backed-up directory
 | 2 | OCR (Tesseract), thumbnails, background indexing, download | ✅ Done |
 | 3 | AI Analysis (summary, tags, type, language, org, amount) | ✅ Done |
 | 4 | AI Vision (optional toggle), semantic + hybrid search (ChromaDB) | ✅ Done |
-| 5 | Folder watcher, Celery batch mode, retry logic | 🔲 Planned |
-| 6 | Developer Mode, per-step model selection, re-classification UI | 🔲 Planned |
+| 5 | Folder watcher (watchdog): auto-indexes files dropped into watched folders | ✅ Done |
+| 6 | Developer Mode tab: pipeline step statuses, per-document Re-classify / Re-index | ✅ Done |
 | 7 | External OCR worker (compute/) | ✅ Scaffolded |

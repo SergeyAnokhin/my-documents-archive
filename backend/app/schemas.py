@@ -18,6 +18,7 @@ class DocumentOut(BaseModel):
     added_at: Optional[datetime] = None
     indexed_at: Optional[datetime] = None
     ocr_text: Optional[str] = None
+    vision_description: Optional[str] = None
     summary: Optional[str] = None
     document_type: Optional[str] = None
     tags: Optional[List[str]] = []
@@ -29,6 +30,9 @@ class DocumentOut(BaseModel):
     ocr_status: str = "pending"
     vision_status: str = "pending"
     analysis_status: str = "pending"
+    ocr_error: Optional[str] = None
+    vision_error: Optional[str] = None
+    analysis_error: Optional[str] = None
     api_cost_vision: float = 0.0
     api_cost_analysis: float = 0.0
 

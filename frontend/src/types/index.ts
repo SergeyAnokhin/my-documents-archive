@@ -20,6 +20,9 @@ export interface Document {
   ocr_status: "pending" | "done" | "error" | "skipped";
   vision_status: "pending" | "done" | "error" | "skipped";
   analysis_status: "pending" | "done" | "error" | "skipped";
+  ocr_error?: string;
+  vision_error?: string;
+  analysis_error?: string;
   api_cost_vision?: number;
   api_cost_analysis?: number;
 }

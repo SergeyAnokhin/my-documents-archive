@@ -50,7 +50,13 @@ export const en = {
   of: "of",
   recognizedText: "Recognized Text",
   metadata: "Details",
+  devMode: "Dev",
   close: "Close",
+  pipelineStatus: "Pipeline",
+  reindex: "Re-index",
+  reclassify: "Re-classify",
+  reindexStarted: "Re-indexing started…",
+  reclassifyStarted: "Re-classification started…",
 
   // Empty states
   noDocuments: "No documents yet",

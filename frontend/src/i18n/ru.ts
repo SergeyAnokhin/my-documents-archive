@@ -48,7 +48,13 @@ export const ru: Translations = {
   of: "из",
   recognizedText: "Распознанный текст",
   metadata: "Детали",
+  devMode: "Dev",
   close: "Закрыть",
+  pipelineStatus: "Конвейер",
+  reindex: "Переиндексировать",
+  reclassify: "Переклассифицировать",
+  reindexStarted: "Переиндексирование запущено…",
+  reclassifyStarted: "Переклассификация запущена…",
 
   noDocuments: "Документов пока нет",
   noDocumentsHint: "Загрузите файл или синхронизируйте библиотеку",
