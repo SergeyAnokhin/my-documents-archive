@@ -1,7 +1,10 @@
-"""Background indexing worker.
+"""Background indexing pipeline.
 
-Processes documents through OCR, AI Vision, and AI Analysis steps.
-Phases: 2 (OCR), 3 (AI Analysis), 4 (AI Vision).
+Three-step process (independent, configurable):
+  Step 1 — OCR: extract text (Tesseract)
+  Step 2 — AI Vision: visual description of the image (multimodal LLM)
+  Step 3 — AI Analysis: tags, summary, type from combined text + vision
+  + Semantic embeddings for meaning-based search
 """
 
 import logging
@@ -14,6 +17,8 @@ from backend.database import SessionLocal
 from backend.models import Document, IndexingStatus
 from backend.ocr import process_document
 from backend.ai_analysis import analyze_document
+from backend.vision import analyze_image
+from backend.embeddings import index_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +29,6 @@ def index_document(doc_id: str):
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
-            logger.warning("Document %s not found", doc_id)
             return
 
         file_path = Path(doc.file_path)
@@ -36,18 +40,41 @@ def index_document(doc_id: str):
         ai_config = get_ai_config()
         changed = False
 
-        # ── Step 1: OCR ───────────────────────────────────
+        # ── Step 1: OCR ─────────────────────────────────
         if doc.ocr_status == IndexingStatus.pending:
             ocr_text = process_document(file_path)
             doc.ocr_text = ocr_text or ""
             doc.ocr_status = IndexingStatus.done
             changed = True
+        db.commit()
 
-        # ── Step 3: AI Analysis ───────────────────────────
+        # ── Step 2: AI Vision ───────────────────────────
+        vision_enabled = ai_config.get("vision_enabled", False)
+        if vision_enabled and doc.vision_status == IndexingStatus.pending:
+            try:
+                description = analyze_image(file_path, doc.original_filename)
+                if description:
+                    doc.vision_description = description
+                    doc.vision_status = IndexingStatus.done
+                else:
+                    doc.vision_status = IndexingStatus.skipped
+                changed = True
+            except Exception as e:
+                logger.warning("Vision failed for %s: %s", doc_id, e)
+                doc.vision_status = IndexingStatus.error
+                changed = True
+        db.commit()
+
+        # ── Step 3: AI Analysis ─────────────────────────
         if ai_config.get("analysis_enabled", True) and doc.analysis_status == IndexingStatus.pending:
-            if doc.ocr_text and doc.ocr_text.strip():
+            # Combine OCR + Vision for best input
+            input_text = doc.ocr_text or ""
+            if doc.vision_description:
+                input_text = f"{input_text}\n\n[Visual description]: {doc.vision_description}"
+
+            if input_text.strip():
                 try:
-                    result = analyze_document(doc.ocr_text, doc.original_filename)
+                    result = analyze_document(input_text, doc.original_filename)
                     doc.summary = result.get("summary", "")
                     doc.tags = result.get("tags", [])
                     doc.doc_type = result.get("doc_type", "")
@@ -65,37 +92,35 @@ def index_document(doc_id: str):
                     doc.analysis_status = IndexingStatus.error
                     changed = True
             else:
-                # No OCR text — mark as skipped (will retry after Vision)
                 doc.analysis_status = IndexingStatus.skipped
                 changed = True
 
         if changed:
             db.commit()
 
-        # Future: Step 2 (AI Vision) — Phase 4
+        # ── Embeddings ──────────────────────────────────
+        if doc.ocr_text or doc.summary:
+            try:
+                embed_text = f"{doc.summary}\n{doc.ocr_text[:2000]}"
+                index_embedding(doc.id, embed_text)
+            except Exception as e:
+                logger.debug("Embeddings index skipped for %s: %s", doc_id, e)
 
     except Exception as e:
         logger.error("Indexing failed for %s: %s", doc_id, e)
-        try:
-            doc = db.query(Document).filter(Document.id == doc_id).first()
-            if doc:
-                if doc.ocr_status == IndexingStatus.pending:
-                    doc.ocr_status = IndexingStatus.error
-                db.commit()
-        except Exception:
-            pass
     finally:
         db.close()
 
 
 def index_next_batch(limit: int = 10):
-    """Process the next N pending documents (OCR then AI Analysis)."""
+    """Process the next N pending documents across all steps."""
     db = SessionLocal()
     try:
         docs = (
             db.query(Document)
             .filter(
                 (Document.ocr_status == IndexingStatus.pending)
+                | (Document.vision_status == IndexingStatus.pending)
                 | (Document.analysis_status == IndexingStatus.pending)
             )
             .limit(limit)

@@ -28,7 +28,10 @@
     "download": "Скачать оригинал",
     "no_summary": "Ожидает индексации…",
     "grid": "Сетка",
-    "list": "Список"
+    "list": "Список",
+    "search_mode_fulltext": "Текстовый",
+    "search_mode_semantic": "Смысловой",
+    "search_mode_hybrid": "Гибридный"
   },
   "common": {
     "close": "Закрыть",

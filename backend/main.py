@@ -173,20 +173,78 @@ def get_thumbnail(doc_id: str, db: Session = Depends(get_db)):
     return FileResponse(doc.thumbnail_path)
 
 
-# ── Full-text search ────────────────────────────────────
+# ── Search (full-text + semantic) ──────────────────────
 
 @app.get("/api/search")
-def fulltext_search(
+def search_documents_endpoint(
     q: str = Query(..., min_length=1),
     limit: int = Query(50, ge=1, le=200),
+    mode: str = Query("fulltext", regex="^(fulltext|semantic|hybrid)$"),
+    db: Session = Depends(get_db),
 ):
-    """Full-text search across document text, filenames, tags, and summaries."""
-    try:
-        results = search_documents(q, limit=limit)
-        return {"results": results, "total": len(results)}
-    except Exception as e:
-        # FTS5 may fail if the query contains invalid syntax
-        return {"results": [], "total": 0, "error": str(e)}
+    """Search documents by text or meaning.
+
+    Modes:
+      fulltext — FTS5 keyword search
+      semantic — meaning-based via embeddings
+      hybrid — combines both (best results first)"""
+
+    if mode == "semantic":
+        from backend.embeddings import semantic_search
+        semantic_results = semantic_search(q, limit=limit)
+        # Fetch document details for the found IDs
+        ids = [r["id"] for r in semantic_results]
+        docs = db.query(Document).filter(Document.id.in_(ids)).all() if ids else []
+        doc_map = {d.id: d for d in docs}
+        results = []
+        for r in semantic_results:
+            doc = doc_map.get(r["id"])
+            if doc:
+                d = doc.to_dict()
+                d["_score"] = r["score"]
+                results.append(d)
+        return {"results": results, "total": len(results), "mode": "semantic"}
+
+    elif mode == "hybrid":
+        # Full-text results
+        try:
+            fts_results = search_documents(q, limit=limit)
+        except Exception:
+            fts_results = []
+        # Semantic results
+        from backend.embeddings import semantic_search
+        semantic_results = semantic_search(q, limit=limit)
+
+        # Score hybrid: both sources contribute
+        seen: dict[str, dict] = {}
+        for r in fts_results:
+            seen[r["id"]] = {**r, "_score": 1.0}  # FTS match = high score
+        for r in semantic_results:
+            if r["id"] in seen:
+                seen[r["id"]]["_score"] = (seen[r["id"]]["_score"] + r["score"]) / 2
+            else:
+                seen[r["id"]] = {"id": r["id"], "_score": r["score"] * 0.8}
+
+        # Fetch docs for all found IDs
+        docs = db.query(Document).filter(Document.id.in_(list(seen.keys()))).all()
+        doc_map = {d.id: d for d in docs}
+
+        results = []
+        for doc_id, meta in sorted(seen.items(), key=lambda x: x[1]["_score"], reverse=True):
+            doc = doc_map.get(doc_id)
+            if doc:
+                d = doc.to_dict()
+                d["_score"] = round(meta["_score"], 4)
+                results.append(d)
+
+        return {"results": results[:limit], "total": len(results), "mode": "hybrid"}
+
+    else:  # fulltext
+        try:
+            results = search_documents(q, limit=limit)
+            return {"results": results, "total": len(results), "mode": "fulltext"}
+        except Exception as e:
+            return {"results": [], "total": 0, "error": str(e), "mode": "fulltext"}
 
 
 # ── Indexing ────────────────────────────────────────────

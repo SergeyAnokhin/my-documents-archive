@@ -55,6 +55,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats>({ total: 0, indexed: 0, pending: 0, errors: 0 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [searchMode, setSearchMode] = useState<'fulltext' | 'semantic' | 'hybrid'>('fulltext')
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [selected, setSelected] = useState<Document | null>(null)
@@ -85,7 +86,7 @@ export default function App() {
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
-  // ── Search (API full-text) ──────────────────────────────
+  // ── Search (API with mode) ──────────────────────────
 
   useEffect(() => {
     if (!search.trim()) {
@@ -94,7 +95,7 @@ export default function App() {
     }
     const id = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ q: search.trim(), limit: '50' })
+        const params = new URLSearchParams({ q: search.trim(), limit: '50', mode: searchMode })
         const res = await fetch(`/api/search?${params}`)
         if (res.ok) {
           const data = await res.json()
@@ -103,7 +104,7 @@ export default function App() {
       } catch {}
     }, 300)
     return () => clearTimeout(id)
-  }, [search])
+  }, [search, searchMode])
 
   const hasSearchResults = searchResults !== null
 
@@ -253,7 +254,7 @@ export default function App() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('documents.search')}
-              className="w-full pl-10 pr-4 py-2.5 bg-[#111] border border-[#2a2a2a] rounded-xl
+              className="w-full pl-10 pr-24 py-2.5 bg-[#111] border border-[#2a2a2a] rounded-xl
                          text-sm text-[#fafafa] placeholder-[#555] outline-none
                          focus:border-[#444] focus:bg-[#161616] transition-all"
             />
@@ -262,6 +263,18 @@ export default function App() {
                 {searchResults!.length} found
               </span>
             )}
+          </div>
+
+          {/* Search mode */}
+          <div className="flex bg-[#111] border border-[#2a2a2a] rounded-xl overflow-hidden text-[10px]">
+            {(['fulltext', 'semantic', 'hybrid'] as const).map(m => (
+              <button key={m} onClick={() => setSearchMode(m)}
+                className={`px-2.5 py-2.5 transition-colors ${
+                  searchMode === m ? 'bg-[#222] text-[#fafafa]' : 'text-[#555] hover:text-[#aaa]'
+                }`}>
+                {m === 'fulltext' ? 'ABC' : m === 'semantic' ? '🧠' : '⊕'}
+              </button>
+            ))}
           </div>
 
           {/* View toggle */}

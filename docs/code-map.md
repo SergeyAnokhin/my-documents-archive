@@ -22,8 +22,10 @@ my-documents-archive/
 │   ├── models.py             ← Document ORM model
 │   ├── schemas.py            ← Pydantic request/response schemas
 │   ├── ocr.py                ← OCR: Tesseract for images & PDFs
+│   ├── vision.py             ← AI Vision: image description via multimodal LLM
+│   ├── embeddings.py         ← Semantic search via sentence-transformers + ChromaDB
 │   ├── ai_analysis.py        ← AI analysis: tags, type, summary via LLM
-│   ├── indexer.py            ← Document indexing pipeline (OCR + AI)
+│   ├── indexer.py            ← Document indexing pipeline (OCR + Vision + AI + Embed)
 │   ├── thumbnails.py         ← Thumbnail generation (PDF → JPEG)
 │   └── requirements.txt      ← Python dependencies
 ├── frontend/                  ← React application
@@ -67,7 +69,7 @@ my-documents-archive/
 | `GET` | `/api/documents/{id}` | Get single document |
 | `GET` | `/api/documents/{id}/download` | Download original file |
 | `GET` | `/api/documents/{id}/thumbnail` | Get thumbnail image |
-| `GET` | `/api/search` | Full-text search (?q=, ?limit=) — FTS5 |
+| `GET` | `/api/search` | Full-text + semantic + hybrid search (?q=, ?limit=, ?mode=) |
 | `POST` | `/api/documents/{id}/reindex` | Re-run OCR on a document |
 | `POST` | `/api/index/next` | Process next N pending documents |
 | `GET` | `/api/stats` | Counts: total, indexed, pending, errors |
@@ -117,11 +119,11 @@ User clicks document → modal with metadata + download link
 
 ## Future Phases (not yet implemented)
 
-- OCR (Tesseract) — Phase 2
-- Full-text search — Phase 2
-- AI Analysis (tags/summary) — Phase 3
-- AI Vision — Phase 4
-- Semantic search (embeddings) — Phase 4
+- OCR (Tesseract) — Phase 2 ✅
+- Full-text search — Phase 2 ✅
+- AI Analysis (tags/summary) — Phase 3 ✅
+- AI Vision — Phase 4 ✅
+- Semantic search (embeddings) — Phase 4 ✅
 - Folder monitoring (watchdog) — Phase 5
 - Batch indexing — Phase 5
 - Developer Mode — Phase 6

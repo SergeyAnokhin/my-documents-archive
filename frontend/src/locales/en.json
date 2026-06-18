@@ -28,7 +28,10 @@
     "download": "Download original",
     "no_summary": "Awaiting indexing…",
     "grid": "Grid",
-    "list": "List"
+    "list": "List",
+    "search_mode_fulltext": "Text",
+    "search_mode_semantic": "Semantic",
+    "search_mode_hybrid": "Hybrid"
   },
   "common": {
     "close": "Close",
