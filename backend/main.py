@@ -459,6 +459,39 @@ def analyze_batch(limit: int = Query(10, ge=1, le=100)):
     return {"processed": processed}
 
 
+# ── External OCR ────────────────────────────────────────
+
+@app.post("/api/documents/{doc_id}/external-ocr")
+def external_ocr_endpoint(doc_id: str, db: Session = Depends(get_db)):
+    """Run external AI OCR on a document (bypasses Tesseract)."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    from backend.external_ocr import external_ocr
+    from pathlib import Path
+
+    file_path = Path(doc.file_path)
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on disk")
+
+    text = external_ocr(file_path)
+    if text and text != "[NO TEXT FOUND]":
+        doc.ocr_text = text
+        db.commit()
+        db.refresh(doc)
+        return {"success": True, "text_length": len(text), "document": doc.to_dict()}
+
+    return {"success": False, "error": "External OCR returned no text"}
+
+
+@app.get("/api/external-ocr/stats")
+def external_ocr_stats_endpoint():
+    """Get external OCR usage statistics."""
+    from backend.external_ocr import get_ocr_stats
+    return get_ocr_stats()
+
+
 # ── Serve frontend (production) ─────────────────────────
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"

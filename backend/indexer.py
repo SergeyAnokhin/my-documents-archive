@@ -84,6 +84,16 @@ def index_document(
                 doc.ocr_text = ocr_text
                 doc.ocr_status = IndexingStatus.done
                 result["ocr"] = "done"
+
+                # ── External OCR fallback ─────────────────
+                from backend.external_ocr import needs_external_ocr, external_ocr
+                if needs_external_ocr(ocr_text, file_path):
+                    logger.info("Tesseract gave poor result — trying external OCR for %s", doc_id)
+                    ext_text = external_ocr(file_path)
+                    if ext_text and ext_text != "[NO TEXT FOUND]" and len(ext_text) > len(ocr_text):
+                        doc.ocr_text = ext_text
+                        result["ocr"] = "external"  # Mark as externally OCR'd
+                        changed = True
             elif ocr_text == "":
                 doc.ocr_text = ""
                 doc.ocr_status = IndexingStatus.done

@@ -586,6 +586,24 @@ export default function App() {
                     ✏️
                   </button>
                 )}
+                {devMode && !editing && (
+                  <button onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/documents/${selected.id}/external-ocr`, { method: 'POST' })
+                      if (res.ok) {
+                        const data = await res.json()
+                        if (data.success) {
+                          setDocs(prev => prev.map(d => d.id === data.document.id ? data.document : d))
+                          setSelected(data.document)
+                        }
+                      }
+                    } catch {}
+                  }}
+                    className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors text-xs text-[#888]"
+                    title={lang === 'ru' ? 'Внешний OCR (AI)' : 'External OCR (AI)'}>
+                    🔍
+                  </button>
+                )}
                 {devMode && editing && (
                   <button onClick={saveEdits}
                     className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors text-xs text-green-400"

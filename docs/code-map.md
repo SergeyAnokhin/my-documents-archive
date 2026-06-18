@@ -26,6 +26,7 @@ my-documents-archive/
 │   ├── watcher.py            ← Folder watcher: auto-detects new files
 │   ├── embeddings.py         ← Semantic search via sentence-transformers + ChromaDB
 │   ├── ai_analysis.py        ← AI analysis: tags, type, summary via LLM
+│   ├── external_ocr.py      ← External AI OCR via DeepSeek Vision (fallback)
 │   ├── indexer.py            ← Document indexing pipeline (OCR + Vision + AI + Embed)
 │   ├── thumbnails.py         ← Thumbnail generation (PDF → JPEG)
 │   └── requirements.txt      ← Python dependencies
@@ -79,6 +80,8 @@ my-documents-archive/
 | `GET` | `/api/watcher/status` | Watcher status & stats |
 | `POST` | `/api/index/batch` | Batch indexing with progress (?limit=, ?retries=) |
 | `GET` | `/api/index/batch/{job_id}` | Get batch job status |
+| `POST` | `/api/documents/{id}/external-ocr` | Run external AI OCR on document |
+| `GET` | `/api/external-ocr/stats` | External OCR usage statistics |
 
 ### Database Schema
 
@@ -135,7 +138,7 @@ User clicks document → modal with metadata + download link
 - Retry logic — Phase 5 ✅
 - Developer Mode — Phase 6 ✅
 - Inline metadata editing — Phase 6 ✅
-- External OCR Service — Phase 7
+- External AI OCR — Phase 7 ✅
 
 ## Conventions
 
