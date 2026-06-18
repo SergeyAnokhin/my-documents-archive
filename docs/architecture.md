@@ -16,7 +16,8 @@ Both run on the local home network; all access is via browser.
 │  backend/   ←── FastAPI, port 8000           │
 │       ↕                                      │
 │  SQLite + ChromaDB (inside library dir)      │
-│  Celery + Redis (Phase 5)                    │
+│  Indexing runs in FastAPI BackgroundTasks    │
+│  Folder watcher (watchdog) for auto-pickup   │
 └──────────────────────────────────────────────┘
          ↕ HTTP (optional)
 ┌──────────────────────────────────────────────┐
@@ -27,7 +28,8 @@ Both run on the local home network; all access is via browser.
          ↕ HTTP (optional)
 ┌──────────────────────────────────────────────┐
 │  AI Providers (cloud, per-document cost)     │
-│  Anthropic · Gemini · DeepSeek · OpenRouter  │
+│  Anthropic · OpenAI · Gemini · DeepSeek ·    │
+│  OpenRouter                                  │
 └──────────────────────────────────────────────┘
 ```
 

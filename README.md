@@ -23,14 +23,20 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 Set `LIBRARY_PATH` env var (default: `./library`) to point at your document folder.
 
+```bash
+# Tests (from repo root) — backend + compute + frontend
+npm test
+```
+
 ## Documentation
 
 | Doc | What it covers |
 |-----|---------------|
 | [docs/code-map.md](docs/code-map.md) | **Start here** — every file and its responsibility |
+| [docs/testing.md](docs/testing.md) | How to run tests, what each suite pins |
 | [docs/architecture.md](docs/architecture.md) | System overview, components, data flow, phases |
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
-| [docs/First_Specification.md](docs/First_Specification.md) | Full product specification |
+| [docs/First_Specification.md](docs/First_Specification.md) | Full product specification — **large, high-level; read only when explicitly working on the spec, not for code tasks** |
 
 ## Project Structure
 

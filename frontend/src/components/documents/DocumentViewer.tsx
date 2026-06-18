@@ -247,11 +247,11 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                 )}
 
                 {/* Costs */}
-                {(doc.api_cost_vision > 0 || doc.api_cost_analysis > 0) && (
+                {((doc.api_cost_vision ?? 0) > 0 || (doc.api_cost_analysis ?? 0) > 0) && (
                   <div className="viewer-meta-row" style={{ marginTop: 8 }}>
                     <span className="viewer-meta-label">API cost</span>
                     <span className="text-xs text-muted">
-                      vision ${doc.api_cost_vision.toFixed(5)} · analysis ${doc.api_cost_analysis.toFixed(5)}
+                      vision ${(doc.api_cost_vision ?? 0).toFixed(5)} · analysis ${(doc.api_cost_analysis ?? 0).toFixed(5)}
                     </span>
                   </div>
                 )}

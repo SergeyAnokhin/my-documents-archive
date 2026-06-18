@@ -135,9 +135,9 @@ Rules:
 Documentation table in [`README.md`](README.md) as the index; before touching any
 feature area, find the relevant doc there and read it first.
 
-The `technical-specifications/` directory contains a high-level functional spec
-written for external handoff / rebuilding from scratch. **Do not read it during
-normal development work** — it is not code-level and costs tokens without
-adding information beyond `docs/`. Open it only when explicitly asked to work
-with the spec itself (e.g. "update the spec", "read the technical
-specification"). For all code tasks, `docs/` is the source of truth.
+The [`docs/First_Specification.md`](docs/First_Specification.md) file is a high-level
+functional spec written for external handoff / rebuilding from scratch. **Do not read
+it during normal development work** — it is not code-level and costs tokens without
+adding information beyond the rest of `docs/`. Open it only when explicitly asked to
+work with the spec itself (e.g. "update the spec", "read the technical
+specification"). For all code tasks, the other `docs/` files are the source of truth.

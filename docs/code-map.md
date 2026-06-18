@@ -15,6 +15,7 @@ docs/             Architecture docs (you are here)
 
 | File | Responsibility |
 |------|---------------|
+| `run.py` | Dev entry point (`python run.py` → uvicorn on :8000) |
 | `main.py` | FastAPI app factory, CORS, startup hooks, thumbnail static mount |
 | `config.py` | All settings (pydantic-settings); `settings` singleton |
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
@@ -60,7 +61,11 @@ docs/             Architecture docs (you are here)
 | `components/documents/DocumentCard.tsx` | List row and grid tile rendering |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |
 | `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details) |
-| `components/admin/AdminPanel.tsx` | Admin modal: indexing stats, folders, AI providers, log |
+| `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
+| `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify buttons (incl. `StatCard`) |
+| `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
+| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle (`enable_ai_vision`) |
+| `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
@@ -102,4 +107,10 @@ Admin reclassify
 
 ## Planned (not yet implemented)
 
-- Celery/Redis task queue — replaced by FastAPI BackgroundTasks (sufficient for personal app)
+- Celery/Redis task queue — replaced by FastAPI BackgroundTasks (sufficient for personal app). `config.redis_url` is dead legacy config; nothing reads it.
+
+## Gotchas (save a grep)
+
+- **App settings**: `/api/admin/settings` accepts any key, but the only key the backend actually reads is `enable_ai_vision` (in `services/indexer.py`). `enable_ai_analysis`, `ai_analysis_model`, `ai_vision_model` in `config.py` are env fallbacks, not DB-backed settings.
+- **AI providers live in the DB** (`AIProvider` rows, added via Admin UI), not in env. The `*_api_key` fields in `config.py` are only fallback overrides.
+- **Tests**: `npm test` from repo root runs all three suites (backend/compute pytest, frontend vitest). See [testing.md](testing.md). Test files live in `backend/tests/`, `compute/tests/`, and `frontend/src/**/*.test.ts`.
