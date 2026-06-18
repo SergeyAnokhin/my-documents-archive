@@ -1,45 +1,45 @@
 # DocIntel — Smart Document Archive
 
-Семейный архив документов с умным поиском. Загружайте, находите, систематизируйте.
+A family document archive with intelligent search. Upload, find, organize.
 
-## Быстрый старт
+## Quick Start
 
 ```bash
-# Бэкенд
+# Backend
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
-# Фронтенд
+# Frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Открыть в браузере: http://localhost:5173
+Open in browser: http://localhost:5173
 
-## Документация
+## Documentation
 
-| Документ | Описание |
-|----------|----------|
-| [`docs/First_Specification.md`](docs/First_Specification.md) | Полная спецификация проекта |
-| [`docs/code-map.md`](docs/code-map.md) | Карта кода — где что лежит |
-| [`AGENTS.md`](AGENTS.md) | Гид для AI-ассистентов |
+| Document | Description |
+|----------|-------------|
+| [`docs/First_Specification.md`](docs/First_Specification.md) | Full project specification |
+| [`docs/code-map.md`](docs/code-map.md) | Code map — where everything lives |
+| [`AGENTS.md`](AGENTS.md) | Guide for AI assistants |
 
-## Технологии
+## Tech Stack
 
 - **Backend:** FastAPI + SQLAlchemy + SQLite
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
-- **Языки:** Русский, English (i18n)
-- **Дизайн:** Anthropic-стиль, чёрно-белый, минималистичный
+- **Languages:** Russian, English (i18n)
+- **Design:** Anthropic-style, black & white, minimal
 
-## Фазы разработки
+## Development Phases
 
-- [x] Фаза 1 — Foundation (загрузка, просмотр, базовая структура)
-- [x] Фаза 2 — OCR + полнотекстовый поиск + миниатюры
-- [ ] Фаза 3 — AI-анализ (теги, описание, тип)
-- [ ] Фаза 4 — AI Vision + семантический поиск
-- [ ] Фаза 5 — Мониторинг папок + batch-индексация
-- [ ] Фаза 6 — Developer Mode + админ-интерфейс
-- [ ] Фаза 7 — Внешний OCR-сервис
+- [x] Phase 1 — Foundation (upload, browse, basic structure)
+- [x] Phase 2 — OCR + full-text search + thumbnails
+- [x] Phase 3 — AI analysis (tags, summary, type)
+- [x] Phase 4 — AI Vision + semantic search
+- [x] Phase 5 — Folder monitoring + batch indexing
+- [x] Phase 6 — Developer Mode + admin interface
+- [x] Phase 7 — External OCR service
