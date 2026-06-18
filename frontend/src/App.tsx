@@ -340,6 +340,20 @@ export default function App() {
                         </p>
                         <OcrBadge status={doc.ocr_status} />
                       </div>
+                      {doc.summary && (
+                        <p className="text-[10px] text-[#555] mt-1 line-clamp-2 leading-tight">
+                          {doc.summary}
+                        </p>
+                      )}
+                      {doc.tags && doc.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-1">
+                          {doc.tags.slice(0, 2).map((tag: string) => (
+                            <span key={tag} className="text-[9px] px-1 py-0.5 bg-[#1a1a1a] rounded text-[#666]">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </button>
                 )

@@ -56,7 +56,7 @@ across a large collection of scanned family archive documents (PDF, JPEG, PNG, T
 |-------|------|--------|
 | 1 | Foundation: FastAPI, SQLite, upload, React UI | ✅ Done |
 | 2 | OCR (Tesseract), full-text search, thumbnails | ✅ Done |
-| 3 | AI Analysis (tags, summary, type), provider settings | ⬜ |
+| 3 | AI Analysis (tags, summary, type), provider settings | ✅ Done |
 | 4 | AI Vision, semantic search (embeddings) | ⬜ |
 | 5 | Folder monitoring, batch mode, retry logic | ⬜ |
 | 6 | Developer Mode, re-classification, Admin UI | ⬜ |

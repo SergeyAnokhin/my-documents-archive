@@ -247,6 +247,75 @@ def get_stats(db: Session = Depends(get_db)):
     }
 
 
+# ── AI Configuration ────────────────────────────────────
+
+@app.get("/api/ai-config")
+def get_ai_config():
+    """Get AI provider configuration."""
+    from backend.config import get_ai_config as load_config
+    return load_config()
+
+
+@app.put("/api/ai-config")
+async def update_ai_config(body: dict):
+    """Update AI provider configuration."""
+    from backend.config import save_ai_config, get_ai_config as load_config
+
+    current = load_config()
+    allowed = {"provider", "analysis_model", "analysis_enabled", "vision_model", "vision_enabled"}
+    for key in allowed:
+        if key in body:
+            current[key] = body[key]
+    save_ai_config(current)
+    return current
+
+
+# ── Re-analyze (AI only, skip OCR) ──────────────────────
+
+@app.post("/api/documents/{doc_id}/reanalyze")
+def reanalyze_document(doc_id: str, db: Session = Depends(get_db)):
+    """Re-run AI analysis only (does not redo OCR)."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    from backend.models import IndexingStatus
+    from backend.ai_analysis import analyze_document
+
+    doc.analysis_status = IndexingStatus.pending
+    db.commit()
+
+    if doc.ocr_text and doc.ocr_text.strip():
+        try:
+            result = analyze_document(doc.ocr_text, doc.original_filename)
+            doc.summary = result.get("summary", "")
+            doc.tags = result.get("tags", [])
+            doc.doc_type = result.get("doc_type", "")
+            doc.doc_language = result.get("language", "")
+            if result.get("doc_date"):
+                from datetime import datetime
+                try:
+                    doc.doc_date = datetime.strptime(result["doc_date"], "%Y-%m-%d")
+                except (ValueError, TypeError):
+                    pass
+            doc.analysis_status = IndexingStatus.done
+        except Exception as e:
+            doc.analysis_status = IndexingStatus.error
+    db.commit()
+    db.refresh(doc)
+    return doc.to_dict()
+
+
+# ── Batch AI Analysis ───────────────────────────────────
+
+@app.post("/api/index/analyze")
+def analyze_batch(limit: int = Query(10, ge=1, le=100)):
+    """Run AI analysis on N documents that have OCR but no analysis."""
+    from backend.indexer import index_next_batch
+    processed = index_next_batch(limit)
+    return {"processed": processed}
+
+
 # ── Serve frontend (production) ─────────────────────────
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"

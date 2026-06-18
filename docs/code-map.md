@@ -22,7 +22,8 @@ my-documents-archive/
 │   ├── models.py             ← Document ORM model
 │   ├── schemas.py            ← Pydantic request/response schemas
 │   ├── ocr.py                ← OCR: Tesseract for images & PDFs
-│   ├── indexer.py            ← Document indexing pipeline
+│   ├── ai_analysis.py        ← AI analysis: tags, type, summary via LLM
+│   ├── indexer.py            ← Document indexing pipeline (OCR + AI)
 │   ├── thumbnails.py         ← Thumbnail generation (PDF → JPEG)
 │   └── requirements.txt      ← Python dependencies
 ├── frontend/                  ← React application
