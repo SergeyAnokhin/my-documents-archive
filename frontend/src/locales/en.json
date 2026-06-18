@@ -1,0 +1,41 @@
+{
+  "app": {
+    "title": "DocIntel",
+    "tagline": "Your family document archive — searchable, organized, secure.",
+    "upload": "Upload Documents",
+    "browse": "Browse",
+    "library": "Library",
+    "sync": "Sync Library",
+    "stats": "Statistics",
+    "settings": "Settings",
+    "language": "Language"
+  },
+  "documents": {
+    "empty": "No documents yet.",
+    "empty_hint": "Drag and drop files here, or click to upload.",
+    "upload_new": "Upload new document",
+    "drop_here": "Drop files here",
+    "search": "Search documents…",
+    "total": "Total documents",
+    "indexed": "Indexed",
+    "pending": "Pending",
+    "errors": "With errors",
+    "filename": "Filename",
+    "type": "Type",
+    "date": "Date",
+    "tags": "Tags",
+    "summary": "Summary",
+    "download": "Download original",
+    "no_summary": "Awaiting indexing…",
+    "grid": "Grid",
+    "list": "List"
+  },
+  "common": {
+    "close": "Close",
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "error": "Something went wrong.",
+    "retry": "Try again"
+  }
+}

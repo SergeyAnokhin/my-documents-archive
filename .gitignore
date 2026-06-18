@@ -207,3 +207,6 @@ dmypy.json
 
 # PyInstaller
 *.spec
+
+# DocIntel data directory
+data/
