@@ -68,6 +68,7 @@ my-documents-archive/
 | `POST` | `/api/documents/upload` | Upload new document (auto-indexes: thumbnail + OCR) |
 | `GET` | `/api/documents` | List documents (?skip, ?limit) |
 | `GET` | `/api/documents/{id}` | Get single document |
+| `PUT` | `/api/documents/{id}` | Update metadata (Dev Mode) — tags, type, summary, date |
 | `GET` | `/api/documents/{id}/download` | Download original file |
 | `GET` | `/api/documents/{id}/thumbnail` | Get thumbnail image |
 | `GET` | `/api/search` | Full-text + semantic + hybrid search (?q=, ?limit=, ?mode=) |
@@ -132,7 +133,8 @@ User clicks document → modal with metadata + download link
 - Folder monitoring (watchdog) — Phase 5 ✅
 - Batch indexing — Phase 5 ✅
 - Retry logic — Phase 5 ✅
-- Developer Mode — Phase 6
+- Developer Mode — Phase 6 ✅
+- Inline metadata editing — Phase 6 ✅
 - External OCR Service — Phase 7
 
 ## Conventions

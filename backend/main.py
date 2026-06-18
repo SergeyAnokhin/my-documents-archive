@@ -406,8 +406,44 @@ def reanalyze_document(doc_id: str, db: Session = Depends(get_db)):
                 except (ValueError, TypeError):
                     pass
             doc.analysis_status = IndexingStatus.done
-        except Exception as e:
+        except Exception:
             doc.analysis_status = IndexingStatus.error
+    db.commit()
+    db.refresh(doc)
+    return doc.to_dict()
+
+
+# ── Manual metadata editing (Developer Mode) ─────────────
+
+@app.put("/api/documents/{doc_id}")
+def update_document(doc_id: str, body: dict, db: Session = Depends(get_db)):
+    """Manually update document metadata — tags, type, summary, date, language."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    allowed = {"tags", "doc_type", "summary", "doc_language", "doc_date"}
+    for key, val in body.items():
+        if key not in allowed:
+            continue
+        if key == "doc_date":
+            if val:
+                from datetime import datetime
+                try:
+                    doc.doc_date = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    pass
+            else:
+                doc.doc_date = None
+        elif key == "tags":
+            doc.tags = val if isinstance(val, list) else []
+        elif key == "doc_type":
+            doc.doc_type = str(val) if val else ""
+        elif key == "summary":
+            doc.summary = str(val) if val else ""
+        elif key == "doc_language":
+            doc.doc_language = str(val) if val else ""
+
     db.commit()
     db.refresh(doc)
     return doc.to_dict()

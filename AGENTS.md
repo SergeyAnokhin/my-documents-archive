@@ -59,5 +59,5 @@ across a large collection of scanned family archive documents (PDF, JPEG, PNG, T
 | 3 | AI Analysis (tags, summary, type), provider settings | ✅ Done |
 | 4 | AI Vision, semantic search (embeddings) | ✅ Done |
 | 5 | Folder monitoring, batch mode, retry logic | ✅ Done |
-| 6 | Developer Mode, re-classification, Admin UI | ⬜ |
+| 6 | Developer Mode, re-classification, Admin UI | ✅ Done |
 | 7 | External OCR Service | ⬜ |

@@ -69,7 +69,53 @@ export default function App() {
   const [watcherStats, setWatcherStats] = useState<Record<string, any>>({})
   const [batchJob, setBatchJob] = useState<{ job_id: string; processed: number; total: number; status: string } | null>(null)
 
+  // Developer Mode
+  const [devMode, setDevMode] = useState(() => localStorage.getItem('docintel_devmode') === 'true')
+  const toggleDevMode = () => {
+    const next = !devMode
+    setDevMode(next)
+    localStorage.setItem('docintel_devmode', String(next))
+  }
+
+  // Inline edit state
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ tags: '', doc_type: '', summary: '', doc_date: '' })
+
   const lang = i18n.language.startsWith('ru') ? 'ru' : 'en'
+
+  // ── Edit handler ─────────────────────────────────────
+
+  async function saveEdits() {
+    if (!selected) return
+    const body: Record<string, any> = {}
+    if (editForm.tags) body.tags = editForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+    if (editForm.doc_type) body.doc_type = editForm.doc_type
+    if (editForm.summary) body.summary = editForm.summary
+    if (editForm.doc_date) body.doc_date = editForm.doc_date
+    try {
+      const res = await fetch(`/api/documents/${selected.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setDocs(prev => prev.map(d => d.id === updated.id ? updated : d))
+        setSelected(updated)
+        setEditing(false)
+      }
+    } catch {}
+  }
+
+  function startEditing() {
+    if (!selected) return
+    setEditForm({
+      tags: (selected.tags || []).join(', '),
+      doc_type: selected.doc_type || '',
+      summary: selected.summary || '',
+      doc_date: selected.doc_date?.slice(0, 10) || '',
+    })
+    setEditing(true)
+  }
 
   // ── Fetch ───────────────────────────────────────────────
 
@@ -247,11 +293,20 @@ export default function App() {
               {stats.indexed}/{stats.total}
               <span className="text-[#444]"> indexed</span>
             </span>
-            <button
-              onClick={() => i18n.changeLanguage(lang === 'ru' ? 'en' : 'ru')}
+            <button onClick={() => i18n.changeLanguage(lang === 'ru' ? 'en' : 'ru')}
               className="px-3 py-1.5 text-xs rounded-lg border border-[#2a2a2a] hover:bg-[#1a1a1a] transition-colors"
             >
               {lang === 'ru' ? 'EN' : 'RU'}
+            </button>
+            <button onClick={toggleDevMode}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                devMode
+                  ? 'border-[#fafafa]/20 bg-[#fafafa]/5 text-[#fafafa]'
+                  : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
+              }`}
+              title={lang === 'ru' ? 'Режим разработчика' : 'Developer Mode'}
+            >
+              {'</>'}
             </button>
           </div>
         </div>
@@ -286,7 +341,8 @@ export default function App() {
               ))}
             </div>
 
-            {/* Watcher toggle */}
+            {/* Watcher toggle — Dev Mode only */}
+            {devMode && (
             <div className="space-y-2">
               <p className="text-xs text-[#666] uppercase tracking-widest">
                 {lang === 'ru' ? 'Мониторинг' : 'Monitoring'}
@@ -306,9 +362,10 @@ export default function App() {
                 </span>
               </button>
             </div>
+            )}
 
-            {/* Batch progress */}
-            {batchJob && batchJob.status === 'running' && (
+            {/* Batch progress — Dev Mode only */}
+            {devMode && batchJob && batchJob.status === 'running' && (
               <div className="space-y-1.5">
                 <p className="text-xs text-[#666] uppercase tracking-widest">
                   {lang === 'ru' ? 'Индексация' : 'Indexing'}
@@ -522,7 +579,21 @@ export default function App() {
                   title={t('documents.download')}>
                   <Download size={16} />
                 </a>
-                <button onClick={() => setSelected(null)}
+                {devMode && !editing && (
+                  <button onClick={startEditing}
+                    className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors text-xs text-[#888]"
+                    title={lang === 'ru' ? 'Редактировать' : 'Edit'}>
+                    ✏️
+                  </button>
+                )}
+                {devMode && editing && (
+                  <button onClick={saveEdits}
+                    className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors text-xs text-green-400"
+                    title={lang === 'ru' ? 'Сохранить' : 'Save'}>
+                    ✅
+                  </button>
+                )}
+                <button onClick={() => { setSelected(null); setEditing(false) }}
                   className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors">
                   <X size={16} />
                 </button>
@@ -535,8 +606,8 @@ export default function App() {
               <div className="flex flex-wrap gap-4 text-xs text-[#666] items-center">
                 <span>{fmtSize(selected.file_size)}</span>
                 <span>{selected.mime_type}</span>
-                {selected.doc_date && <span>{selected.doc_date.slice(0, 10)}</span>}
-                {selected.doc_type && (
+                {selected.doc_date && !editing && <span>{selected.doc_date.slice(0, 10)}</span>}
+                {selected.doc_type && !editing && (
                   <span className="px-2 py-0.5 bg-[#1a1a1a] rounded-full text-[#aaa]">
                     {selected.doc_type}
                   </span>
@@ -544,8 +615,49 @@ export default function App() {
                 <OcrBadge status={selected.ocr_status} />
               </div>
 
+              {/* Edit form (Dev Mode) */}
+              {editing && (
+                <div className="space-y-3 bg-[#0d0d0d] border border-[#2a2a2a] rounded-xl p-4">
+                  <div>
+                    <label className="text-[10px] text-[#666] uppercase tracking-widest block mb-1">
+                      {lang === 'ru' ? 'Тип документа' : 'Document Type'}
+                    </label>
+                    <select value={editForm.doc_type} onChange={e => setEditForm({...editForm, doc_type: e.target.value})}
+                      className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-sm text-[#fafafa]">
+                      <option value="">—</option>
+                      {['invoice','contract','certificate','letter','medical','tax','bank','insurance','identity','legal','receipt','other'].map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#666] uppercase tracking-widest block mb-1">
+                      {lang === 'ru' ? 'Дата' : 'Date'}
+                    </label>
+                    <input type="date" value={editForm.doc_date} onChange={e => setEditForm({...editForm, doc_date: e.target.value})}
+                      className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-sm text-[#fafafa]" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#666] uppercase tracking-widest block mb-1">
+                      {lang === 'ru' ? 'Теги (через запятую)' : 'Tags (comma-separated)'}
+                    </label>
+                    <input value={editForm.tags} onChange={e => setEditForm({...editForm, tags: e.target.value})}
+                      className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-sm text-[#fafafa]"
+                      placeholder="квартира, договор, 2023" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#666] uppercase tracking-widest block mb-1">
+                      {lang === 'ru' ? 'Описание' : 'Summary'}
+                    </label>
+                    <textarea value={editForm.summary} onChange={e => setEditForm({...editForm, summary: e.target.value})}
+                      rows={3}
+                      className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-sm text-[#fafafa] resize-none" />
+                  </div>
+                </div>
+              )}
+
               {/* Tags */}
-              {selected.tags && selected.tags.length > 0 && (
+              {!editing && selected.tags && selected.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {selected.tags.map((tag: string) => (
                     <span key={tag}
