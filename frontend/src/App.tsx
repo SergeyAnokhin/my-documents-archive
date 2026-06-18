@@ -1,7 +1,7 @@
 import './i18n'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Upload, Search, Grid3X3, List, Maximize2, Download, X, FileText, Menu, Layers } from 'lucide-react'
+import { Upload, Search, Grid3X3, List, Download, X, FileText, Menu, Layers, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -14,9 +14,20 @@ interface Document {
   doc_type: string
   tags: string[]
   summary: string
+  ocr_text: string
   ocr_status: string | null
+  thumbnail_path: string
   created_at: string | null
   page_count: number
+}
+
+interface SearchResult {
+  id: string
+  original_filename: string
+  ocr_text: string
+  summary: string
+  tags: string
+  snippet: string
 }
 
 interface Stats { total: number; indexed: number; pending: number; errors: number }
@@ -29,6 +40,13 @@ function fmtSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+const OCR_STATUS_ICON: Record<string, { icon: typeof CheckCircle; cls: string; label: Record<string, string> }> = {
+  done: { icon: CheckCircle, cls: 'text-green-400', label: { ru: 'OCR готов', en: 'OCR done' } },
+  pending: { icon: Clock, cls: 'text-[#666]', label: { ru: 'Ожидает OCR', en: 'OCR pending' } },
+  error: { icon: AlertCircle, cls: 'text-red-400', label: { ru: 'Ошибка OCR', en: 'OCR error' } },
+  skipped: { icon: Clock, cls: 'text-[#555]', label: { ru: 'Пропущено', en: 'Skipped' } },
+}
+
 // ── App ───────────────────────────────────────────────────
 
 export default function App() {
@@ -37,6 +55,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats>({ total: 0, indexed: 0, pending: 0, errors: 0 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [selected, setSelected] = useState<Document | null>(null)
   const [sideOpen, setSideOpen] = useState(false)
@@ -66,6 +85,28 @@ export default function App() {
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
+  // ── Search (API full-text) ──────────────────────────────
+
+  useEffect(() => {
+    if (!search.trim()) {
+      setSearchResults(null)
+      return
+    }
+    const id = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: search.trim(), limit: '50' })
+        const res = await fetch(`/api/search?${params}`)
+        if (res.ok) {
+          const data = await res.json()
+          setSearchResults(data.results || [])
+        }
+      } catch {}
+    }, 300)
+    return () => clearTimeout(id)
+  }, [search])
+
+  const hasSearchResults = searchResults !== null
+
   // ── Upload ──────────────────────────────────────────────
 
   async function uploadFiles(files: FileList | File[]) {
@@ -92,17 +133,45 @@ export default function App() {
     if (e.target.files) uploadFiles(e.target.files)
   }, [])
 
-  // ── Filter ──────────────────────────────────────────────
+  // ── Filter (client-side fallback) ───────────────────────
 
-  const filtered = search
-    ? docs.filter(d =>
-        d.original_filename.toLowerCase().includes(search.toLowerCase()) ||
-        (d.summary && d.summary.toLowerCase().includes(search.toLowerCase())) ||
-        (d.tags || []).some((t: string) => t.toLowerCase().includes(search.toLowerCase()))
-      )
-    : docs
+  const filtered = hasSearchResults
+    ? docs.filter(d => searchResults!.some(r => r.id === d.id))
+    : search
+      ? docs.filter(d =>
+          d.original_filename.toLowerCase().includes(search.toLowerCase()) ||
+          (d.ocr_text?.toLowerCase() || '').includes(search.toLowerCase()) ||
+          (d.summary?.toLowerCase() || '').includes(search.toLowerCase()) ||
+          (d.tags || []).some((t: string) => t.toLowerCase().includes(search.toLowerCase()))
+        )
+      : docs
 
   const isUploading = uploading.length > 0
+
+  // ── Thumbnail helper ────────────────────────────────────
+
+  function thumbUrl(doc: Document): string | null {
+    return doc.thumbnail_path ? `/api/documents/${doc.id}/thumbnail` : null
+  }
+
+  // ── OCR Status Badge ────────────────────────────────────
+
+  function OcrBadge({ status }: { status: string | null }) {
+    const info = OCR_STATUS_ICON[status || ''] || OCR_STATUS_ICON.pending
+    const Icon = info.icon
+    return (
+      <span className={`inline-flex items-center gap-1 text-[10px] ${info.cls}`}>
+        <Icon size={10} />
+        {info.label[lang as keyof typeof info.label] || status}
+      </span>
+    )
+  }
+
+  // ── Snippet highlighter ─────────────────────────────────
+
+  function highlightHTML(text: string): string {
+    return text.replace(/<mark>/g, '<mark class="bg-[#fafafa]/15 text-[#fafafa] rounded px-0.5">').replace(/<\/mark>/g, '</mark>')
+  }
 
   // ── Render ──────────────────────────────────────────────
 
@@ -123,7 +192,8 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#666] hidden sm:inline">
-              {stats.total} docs
+              {stats.indexed}/{stats.total}
+              <span className="text-[#444]"> indexed</span>
             </span>
             <button
               onClick={() => i18n.changeLanguage(lang === 'ru' ? 'en' : 'ru')}
@@ -155,6 +225,7 @@ export default function App() {
                 [t('documents.total'), stats.total],
                 [t('documents.indexed'), stats.indexed],
                 [t('documents.pending'), stats.pending],
+                [t('documents.errors'), stats.errors],
               ].map(([label, val]) => (
                 <div key={label as string} className="flex justify-between text-sm">
                   <span className="text-[#888]">{label}</span>
@@ -186,6 +257,11 @@ export default function App() {
                          text-sm text-[#fafafa] placeholder-[#555] outline-none
                          focus:border-[#444] focus:bg-[#161616] transition-all"
             />
+            {hasSearchResults && search && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#666]">
+                {searchResults!.length} found
+              </span>
+            )}
           </div>
 
           {/* View toggle */}
@@ -238,52 +314,79 @@ export default function App() {
           )}
 
           {/* Grid view */}
-          {view === 'grid' && docs.length > 0 && (
+          {view === 'grid' && filtered.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {filtered.map(doc => (
-                <button key={doc.id} onClick={() => setSelected(doc)}
-                  className="group flex flex-col bg-[#111] border border-[#1a1a1a] rounded-xl
-                             overflow-hidden hover:border-[#333] hover:bg-[#161616] transition-all text-left">
-                  <div className="aspect-[3/4] bg-[#0d0d0d] flex items-center justify-center
-                                  text-[#333] group-hover:text-[#555] transition-colors">
-                    <FileText size={32} />
-                  </div>
-                  <div className="p-2.5">
-                    <p className="text-xs font-medium truncate">{doc.original_filename}</p>
-                    <p className="text-[10px] text-[#555] mt-0.5 truncate">
-                      {doc.doc_date?.slice(0, 10) || ''}
-                      {doc.doc_type ? ` · ${doc.doc_type}` : ''}
-                    </p>
-                  </div>
-                </button>
-              ))}
+              {filtered.map(doc => {
+                const thumb = thumbUrl(doc)
+                return (
+                  <button key={doc.id} onClick={() => setSelected(doc)}
+                    className="group flex flex-col bg-[#111] border border-[#1a1a1a] rounded-xl
+                               overflow-hidden hover:border-[#333] hover:bg-[#161616] transition-all text-left">
+                    <div className="aspect-[3/4] bg-[#0d0d0d] flex items-center justify-center
+                                    overflow-hidden">
+                      {thumb ? (
+                        <img src={thumb} alt="" className="w-full h-full object-cover
+                          group-hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <FileText size={32} className="text-[#333] group-hover:text-[#555] transition-colors" />
+                      )}
+                    </div>
+                    <div className="p-2.5">
+                      <p className="text-xs font-medium truncate">{doc.original_filename}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[10px] text-[#555] truncate">
+                          {doc.doc_date?.slice(0, 10) || ''}
+                          {doc.doc_type ? ` · ${doc.doc_type}` : ''}
+                        </p>
+                        <OcrBadge status={doc.ocr_status} />
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
 
           {/* List view */}
-          {view === 'list' && docs.length > 0 && (
+          {view === 'list' && filtered.length > 0 && (
             <div className="flex flex-col gap-px">
-              {filtered.map(doc => (
-                <button key={doc.id} onClick={() => setSelected(doc)}
-                  className="flex items-center gap-4 p-3 bg-[#111] border border-[#1a1a1a]
-                             rounded-xl hover:bg-[#161616] hover:border-[#333] transition-all text-left">
-                  <div className="w-10 h-10 bg-[#0d0d0d] rounded-lg flex items-center justify-center shrink-0">
-                    <FileText size={18} className="text-[#444]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{doc.original_filename}</p>
-                    <p className="text-xs text-[#555] mt-0.5">
-                      {doc.doc_date?.slice(0, 10) || '—'}
-                      {doc.doc_type ? ` · ${doc.doc_type}` : ''}
-                      {!doc.summary ? ` · ${t('documents.no_summary')}` : ''}
-                    </p>
-                    {doc.summary && (
-                      <p className="text-xs text-[#666] mt-1 line-clamp-1">{doc.summary}</p>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-[#444]">{fmtSize(doc.file_size)}</span>
-                </button>
-              ))}
+              {filtered.map(doc => {
+                const thumb = thumbUrl(doc)
+                return (
+                  <button key={doc.id} onClick={() => setSelected(doc)}
+                    className="flex items-center gap-4 p-3 bg-[#111] border border-[#1a1a1a]
+                               rounded-xl hover:bg-[#161616] hover:border-[#333] transition-all text-left">
+                    <div className="w-12 h-12 bg-[#0d0d0d] rounded-lg flex items-center justify-center
+                                    shrink-0 overflow-hidden">
+                      {thumb ? (
+                        <img src={thumb} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <FileText size={18} className="text-[#444]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{doc.original_filename}</p>
+                        <OcrBadge status={doc.ocr_status} />
+                      </div>
+                      <p className="text-xs text-[#555] mt-0.5">
+                        {doc.doc_date?.slice(0, 10) || '—'}
+                        {doc.doc_type ? ` · ${doc.doc_type}` : ''}
+                        {!doc.summary && !doc.ocr_text ? ` · ${t('documents.no_summary')}` : ''}
+                      </p>
+                      {doc.ocr_text && (
+                        <p className="text-xs text-[#666] mt-1 line-clamp-2 whitespace-pre-line">
+                          {doc.ocr_text.slice(0, 200)}
+                          {doc.ocr_text.length > 200 ? '…' : ''}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-[10px] text-[#444]">{fmtSize(doc.file_size)}</span>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -314,7 +417,7 @@ export default function App() {
             {/* Body */}
             <div className="p-5 space-y-4">
               {/* File info */}
-              <div className="flex gap-4 text-xs text-[#666]">
+              <div className="flex flex-wrap gap-4 text-xs text-[#666] items-center">
                 <span>{fmtSize(selected.file_size)}</span>
                 <span>{selected.mime_type}</span>
                 {selected.doc_date && <span>{selected.doc_date.slice(0, 10)}</span>}
@@ -323,6 +426,7 @@ export default function App() {
                     {selected.doc_type}
                   </span>
                 )}
+                <OcrBadge status={selected.ocr_status} />
               </div>
 
               {/* Tags */}
@@ -350,16 +454,35 @@ export default function App() {
                 <p className="text-sm text-[#555] italic">{t('documents.no_summary')}</p>
               )}
 
-              {/* Preview placeholder */}
-              <div className="aspect-[3/4] max-h-[400px] bg-[#0d0d0d] rounded-xl
-                              flex items-center justify-center text-[#333]">
-                <FileText size={64} />
-              </div>
+              {/* OCR Text */}
+              {selected.ocr_text && (
+                <div>
+                  <p className="text-xs text-[#666] uppercase tracking-widest mb-1.5">
+                    {lang === 'ru' ? 'Распознанный текст' : 'Recognized Text'}
+                  </p>
+                  <p className="text-xs text-[#888] leading-relaxed whitespace-pre-line bg-[#0d0d0d]
+                    border border-[#1a1a1a] rounded-xl p-3 max-h-40 overflow-y-auto">
+                    {selected.ocr_text}
+                  </p>
+                </div>
+              )}
 
-              {/* OCR status */}
-              <div className="text-xs text-[#555] flex gap-4">
-                <span>OCR: {selected.ocr_status || '—'}</span>
-              </div>
+              {/* Preview thumbnail */}
+              {selected.thumbnail_path && (
+                <div className="rounded-xl overflow-hidden bg-[#0d0d0d]">
+                  <img
+                    src={`/api/documents/${selected.id}/thumbnail`}
+                    alt=""
+                    className="w-full max-h-[500px] object-contain"
+                  />
+                </div>
+              )}
+              {!selected.thumbnail_path && (
+                <div className="aspect-[3/4] max-h-[400px] bg-[#0d0d0d] rounded-xl
+                                flex items-center justify-center text-[#333]">
+                  <FileText size={64} />
+                </div>
+              )}
             </div>
           </div>
         </div>

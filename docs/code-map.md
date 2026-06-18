@@ -18,9 +18,12 @@ my-documents-archive/
 ├── backend/                   ← FastAPI application
 │   ├── main.py               ← App entry, all API routes
 │   ├── config.py             ← Paths, constants, settings
-│   ├── database.py           ← SQLAlchemy engine + session
+│   ├── database.py           ← SQLAlchemy + SQLite FTS5 + search
 │   ├── models.py             ← Document ORM model
 │   ├── schemas.py            ← Pydantic request/response schemas
+│   ├── ocr.py                ← OCR: Tesseract for images & PDFs
+│   ├── indexer.py            ← Document indexing pipeline
+│   ├── thumbnails.py         ← Thumbnail generation (PDF → JPEG)
 │   └── requirements.txt      ← Python dependencies
 ├── frontend/                  ← React application
 │   ├── src/
@@ -58,11 +61,14 @@ my-documents-archive/
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/api/documents/upload` | Upload new document |
+| `POST` | `/api/documents/upload` | Upload new document (auto-indexes: thumbnail + OCR) |
 | `GET` | `/api/documents` | List documents (?skip, ?limit) |
 | `GET` | `/api/documents/{id}` | Get single document |
 | `GET` | `/api/documents/{id}/download` | Download original file |
 | `GET` | `/api/documents/{id}/thumbnail` | Get thumbnail image |
+| `GET` | `/api/search` | Full-text search (?q=, ?limit=) — FTS5 |
+| `POST` | `/api/documents/{id}/reindex` | Re-run OCR on a document |
+| `POST` | `/api/index/next` | Process next N pending documents |
 | `GET` | `/api/stats` | Counts: total, indexed, pending, errors |
 
 ### Database Schema

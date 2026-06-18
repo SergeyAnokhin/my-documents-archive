@@ -1,7 +1,6 @@
 """FastAPI application — main entry point."""
 
-import os
-import shutil
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query
@@ -15,11 +14,14 @@ from backend.config import (
     SUPPORTED_FORMATS,
     THUMBNAILS_DIR,
 )
-from backend.database import get_db, init_db, engine
+from backend.database import get_db, init_db, engine, search_documents
 from backend.models import Document, generate_uuid, file_hash
+from backend.thumbnails import generate_thumbnail
+from backend.indexer import index_document
 
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="DocIntel", version="0.1.0")
+app = FastAPI(title="DocIntel", version="0.2.0")
 
 # CORS — allow frontend on any port during development
 app.add_middleware(
@@ -43,7 +45,8 @@ async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    """Upload a new document. Saves to documents dir, creates DB record."""
+    """Upload a new document. Saves to documents dir, creates DB record,
+    generates thumbnail, and runs OCR inline."""
     if not file.filename:
         raise HTTPException(400, "No filename provided")
 
@@ -69,7 +72,6 @@ async def upload_document(
     # Check for duplicate
     existing = db.query(Document).filter(Document.file_hash == fhash).first()
     if existing:
-        # Remove the just-saved duplicate
         stored_path.unlink(missing_ok=True)
         raise HTTPException(409, f"Duplicate — already exists as '{existing.original_filename}'")
 
@@ -85,6 +87,23 @@ async def upload_document(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+
+    # Generate thumbnail (synchronous for now)
+    try:
+        thumb_path = generate_thumbnail(stored_path, doc_id)
+        if thumb_path:
+            doc.thumbnail_path = thumb_path
+            db.commit()
+            db.refresh(doc)
+    except Exception:
+        pass  # Non-critical
+
+    # Run OCR (synchronous for now; Phase 5 will move to background)
+    try:
+        index_document(doc_id)
+        db.refresh(doc)
+    except Exception:
+        pass  # OCR errors are stored on the document
 
     return doc.to_dict()
 
@@ -150,9 +169,52 @@ def get_thumbnail(doc_id: str, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(404, "Document not found")
     if not doc.thumbnail_path or not Path(doc.thumbnail_path).exists():
-        # Return a placeholder
         raise HTTPException(404, "No thumbnail available")
     return FileResponse(doc.thumbnail_path)
+
+
+# ── Full-text search ────────────────────────────────────
+
+@app.get("/api/search")
+def fulltext_search(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Full-text search across document text, filenames, tags, and summaries."""
+    try:
+        results = search_documents(q, limit=limit)
+        return {"results": results, "total": len(results)}
+    except Exception as e:
+        # FTS5 may fail if the query contains invalid syntax
+        return {"results": [], "total": 0, "error": str(e)}
+
+
+# ── Indexing ────────────────────────────────────────────
+
+@app.post("/api/documents/{doc_id}/reindex")
+def reindex_document(doc_id: str, db: Session = Depends(get_db)):
+    """Re-run OCR indexing for a single document."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    from backend.models import IndexingStatus
+    doc.ocr_status = IndexingStatus.pending
+    db.commit()
+
+    index_document(doc_id)
+    db.refresh(doc)
+    return doc.to_dict()
+
+
+@app.post("/api/index/next")
+def index_next(
+    limit: int = Query(10, ge=1, le=100),
+):
+    """Process the next N pending documents."""
+    from backend.indexer import index_next_batch
+    processed = index_next_batch(limit)
+    return {"processed": processed}
 
 
 # ── Stats ───────────────────────────────────────────────
@@ -164,23 +226,17 @@ def get_stats(db: Session = Depends(get_db)):
     total = db.query(Document).count()
     indexed = (
         db.query(Document)
-        .filter(
-            Document.ocr_status == IndexingStatus.done,
-        )
+        .filter(Document.ocr_status == IndexingStatus.done)
         .count()
     )
     pending = (
         db.query(Document)
-        .filter(
-            Document.ocr_status == IndexingStatus.pending,
-        )
+        .filter(Document.ocr_status == IndexingStatus.pending)
         .count()
     )
     errors = (
         db.query(Document)
-        .filter(
-            Document.ocr_status == IndexingStatus.error,
-        )
+        .filter(Document.ocr_status == IndexingStatus.error)
         .count()
     )
     return {
