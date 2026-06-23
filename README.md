@@ -2,6 +2,22 @@
 
 Personal web app for smart search across scanned family documents (Russian, French, English).
 
+## Prerequisites
+
+| Tool | Notes |
+|------|-------|
+| Python 3.10+ | Recommended via [miniforge](https://github.com/conda-forge/miniforge) (conda) |
+| Node.js 18+ | For the frontend |
+| Tesseract OCR | System install — **not** via pip. [Windows installer](https://github.com/UB-Mannheim/tesseract/wiki); Linux: `sudo apt install tesseract-ocr` |
+
+**Windows only — install chromadb via conda before `pip install -r requirements.txt`:**
+
+```powershell
+conda install -c conda-forge chromadb
+```
+
+`pip` will then skip it and install the rest normally. Skipping this step causes a build error (`chroma-hnswlib` requires C++ build tools).
+
 ## Quick Start
 
 ```bash
