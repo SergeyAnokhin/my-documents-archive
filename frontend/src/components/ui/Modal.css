@@ -18,7 +18,7 @@
   box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
+  max-height: 92vh;
   animation: slideUp .18s ease;
   width: 100%;
 }

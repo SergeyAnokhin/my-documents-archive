@@ -84,8 +84,15 @@ class AIProvider(Base):
     api_key = Column(String(512), nullable=False)
     base_url = Column(String(512), nullable=True)    # custom OpenAI-compatible endpoint
     model = Column(String(128), nullable=True)       # override default model (e.g. "claude-opus-4-8")
+    task_type = Column(String(16), default="both")   # "analysis" | "vision" | "both"
+    sort_order = Column(Integer, default=0)          # lower = higher priority; tried first in failover chain
+    key_name = Column(String(64), nullable=True)     # optional label for the API key (e.g. "Personal", "Work")
     enabled = Column(Boolean, default=True)
     added_at = Column(DateTime, server_default=func.now())
+    # Cumulative usage stats
+    total_tokens_in = Column(Integer, default=0)
+    total_tokens_out = Column(Integer, default=0)
+    total_cost_usd = Column(Float, default=0.0)
 
 
 class AppSettings(Base):

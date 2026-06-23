@@ -1,10 +1,13 @@
 """
-AI Vision — Step 2 of the indexing pipeline.
+AI Vision — Step 3 of the indexing pipeline.
 
 Sends the document's first page to a vision-capable AI model and returns
 a factual description. Result stored in Document.vision_description.
 
 Only runs when 'enable_ai_vision' = 'true' in AppSettings (admin toggle).
+Provider priority: all enabled DB providers with task_type "vision" or "both"
+AND provider_type in VISION_CAPABLE, sorted by sort_order ASC. Failover on error.
+Falls back to env-var providers if no DB providers are configured.
 """
 
 import asyncio
@@ -16,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from PIL import Image
+from sqlalchemy import text as sqla_text
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -43,10 +47,11 @@ VISION_DEFAULTS = {
 async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, float]]:
     """
     Describe document using a vision model.
-    Returns (description_text, cost_usd) or None if no provider available.
+    Tries providers in priority order; returns (description_text, cost_usd) on first success.
+    Returns None if no provider succeeds.
     """
-    provider = _pick_provider(db)
-    if not provider:
+    providers = _get_providers(db)
+    if not providers:
         return None
 
     try:
@@ -57,12 +62,22 @@ async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, f
 
     b64 = base64.b64encode(img_bytes).decode()
 
-    ptype = provider.provider_type
-    if ptype == "anthropic":
-        return await _call_anthropic(provider, b64)
-    if ptype == "gemini":
-        return await _call_gemini(provider, img_bytes)
-    return await _call_openai_compat(provider, b64)
+    for provider in providers:
+        try:
+            ptype = provider.provider_type
+            if ptype == "anthropic":
+                text, tin, tout, cost = await _call_anthropic(provider, b64)
+            elif ptype == "gemini":
+                text, tin, tout, cost = await _call_gemini(provider, img_bytes)
+            else:
+                text, tin, tout, cost = await _call_openai_compat(provider, b64)
+            _update_stats(db, provider, tin, tout, cost)
+            return text, cost
+        except Exception as e:
+            log.warning("Vision provider '%s' failed: %s", provider.name, e)
+
+    log.error("All %d vision provider(s) failed for %s", len(providers), filepath)
+    return None
 
 
 # ── Image loading ─────────────────────────────────────────────────────────────
@@ -101,32 +116,57 @@ class _Synthetic:
     api_key: str
     base_url: Optional[str]
     model: Optional[str] = None
+    id: None = None
 
 
-def _pick_provider(db: Session):
-    """Return first enabled vision-capable provider from DB, or env-var fallback."""
-    p = (
+def _get_providers(db: Session) -> list:
+    """Return enabled vision-capable providers ordered by sort_order, with env-var fallback."""
+    db_providers = (
         db.query(AIProvider)
-        .filter(AIProvider.enabled == True,
-                AIProvider.provider_type.in_(VISION_CAPABLE))
-        .first()
+        .filter(
+            AIProvider.enabled == True,
+            AIProvider.task_type.in_(["vision", "both"]),
+            AIProvider.provider_type.in_(VISION_CAPABLE),
+        )
+        .order_by(AIProvider.sort_order)
+        .all()
     )
-    if p:
-        return p
+    if db_providers:
+        return db_providers
+
+    result = []
     for ptype, key, url in [
-        ("anthropic",  settings.anthropic_api_key,  ""),
-        ("openai",     settings.openai_api_key,      ""),
-        ("gemini",     settings.gemini_api_key,      ""),
+        ("anthropic",  settings.anthropic_api_key,  None),
+        ("openai",     settings.openai_api_key,      None),
+        ("gemini",     settings.gemini_api_key,      None),
         ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),
     ]:
         if key:
-            return _Synthetic(ptype, ptype, key, url or None)
-    return None
+            result.append(_Synthetic(ptype, ptype, key, url))
+    return result
+
+
+# ── Stats tracking ─────────────────────────────────────────────────────────────
+
+def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: float) -> None:
+    if not isinstance(getattr(provider, "id", None), int):
+        return
+    db.execute(
+        sqla_text(
+            "UPDATE ai_providers SET "
+            "total_tokens_in  = total_tokens_in  + :tin, "
+            "total_tokens_out = total_tokens_out + :tout, "
+            "total_cost_usd   = total_cost_usd   + :cost "
+            "WHERE id = :id"
+        ),
+        {"tin": tokens_in, "tout": tokens_out, "cost": cost, "id": provider.id},
+    )
+    db.commit()
 
 
 # ── Provider calls ────────────────────────────────────────────────────────────
 
-async def _call_anthropic(provider, b64: str) -> tuple[str, float]:
+async def _call_anthropic(provider, b64: str) -> tuple[str, int, int, float]:
     import anthropic
     model = getattr(provider, "model", None) or VISION_DEFAULTS["anthropic"]
     client = anthropic.AsyncAnthropic(api_key=provider.api_key)
@@ -142,12 +182,13 @@ async def _call_anthropic(provider, b64: str) -> tuple[str, float]:
             ],
         }],
     )
-    text = resp.content[0].text
-    cost = resp.usage.input_tokens * 0.00000025 + resp.usage.output_tokens * 0.00000125
-    return text, cost
+    tin  = resp.usage.input_tokens
+    tout = resp.usage.output_tokens
+    cost = tin * 0.00000080 / 1000 + tout * 0.00000400 / 1000
+    return resp.content[0].text, tin, tout, cost
 
 
-async def _call_openai_compat(provider, b64: str) -> tuple[str, float]:
+async def _call_openai_compat(provider, b64: str) -> tuple[str, int, int, float]:
     import openai
     model = getattr(provider, "model", None) or VISION_DEFAULTS.get(provider.provider_type, "gpt-4o-mini")
     kwargs: dict = {"api_key": provider.api_key}
@@ -167,13 +208,16 @@ async def _call_openai_compat(provider, b64: str) -> tuple[str, float]:
         }],
     )
     text = resp.choices[0].message.content or ""
+    tin = tout = 0
     cost = 0.0
     if resp.usage:
-        cost = resp.usage.prompt_tokens * 0.00000015 + resp.usage.completion_tokens * 0.0000006
-    return text, cost
+        tin  = resp.usage.prompt_tokens
+        tout = resp.usage.completion_tokens
+        cost = tin * 0.00000015 + tout * 0.0000006
+    return text, tin, tout, cost
 
 
-async def _call_gemini(provider, img_bytes: bytes) -> tuple[str, float]:
+async def _call_gemini(provider, img_bytes: bytes) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     model_name = getattr(provider, "model", None) or VISION_DEFAULTS["gemini"]
     genai.configure(api_key=provider.api_key)
@@ -184,4 +228,4 @@ async def _call_gemini(provider, img_bytes: bytes) -> tuple[str, float]:
         [VISION_PROMPT, image_part],
         generation_config={"max_output_tokens": 512},
     )
-    return resp.text, 0.0
+    return resp.text, 0, 0, 0.0

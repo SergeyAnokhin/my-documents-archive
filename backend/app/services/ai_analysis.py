@@ -4,7 +4,9 @@ AI Analysis — extracts document metadata using a configured AI provider.
 Output fields: summary, document_type, tags, language, organization, amount, amount_currency.
 Called from indexer._run_analysis() after OCR completes.
 
-Provider priority: first enabled DB provider → env-var fallbacks.
+Provider priority: all enabled DB providers with task_type "analysis" or "both",
+sorted by sort_order ASC. Each is tried in turn; on error the next is attempted (failover).
+Falls back to env-var providers if no DB providers are configured.
 """
 
 import json
@@ -13,6 +15,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Optional
 
+from sqlalchemy import text as sqla_text
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -52,10 +55,11 @@ async def analyze_document(
 ) -> Optional[AnalysisResult]:
     """
     Run AI analysis on OCR text (and optionally vision description).
-    Returns AnalysisResult or None if no provider is available.
+    Tries providers in priority order; returns first successful result.
+    Returns None if no provider succeeds.
     """
-    provider = _pick_provider(db)
-    if not provider:
+    providers = _get_providers(db)
+    if not providers:
         return None
 
     parts: list[str] = []
@@ -65,10 +69,18 @@ async def analyze_document(
         parts.append(f"AI Vision Description:\n{vision_description}")
     user_msg = "\n\n".join(parts) or "(no text available)"
 
-    raw, cost = await _call_provider(provider, user_msg)
-    result = _parse_result(raw)
-    result.cost_usd = cost
-    return result
+    for provider in providers:
+        try:
+            raw, tokens_in, tokens_out, cost = await _call_provider(provider, user_msg)
+            result = _parse_result(raw)
+            result.cost_usd = cost
+            _update_stats(db, provider, tokens_in, tokens_out, cost)
+            return result
+        except Exception as e:
+            log.warning("Analysis provider '%s' failed: %s", provider.name, e)
+
+    log.error("All %d analysis provider(s) failed for this document", len(providers))
+    return None
 
 
 # ── Provider selection ─────────────────────────────────────────────────────────
@@ -81,29 +93,59 @@ class _Synthetic:
     api_key: str
     base_url: Optional[str]
     model: Optional[str] = None
+    id: None = None  # no DB id → stats not tracked
 
 
-def _pick_provider(db: Session):
-    """Return first enabled DB provider, or a synthetic one built from env vars."""
-    p = db.query(AIProvider).filter(AIProvider.enabled == True).first()
-    if p:
-        return p
+def _get_providers(db: Session) -> list:
+    """Return enabled analysis providers ordered by sort_order, with env-var fallback."""
+    db_providers = (
+        db.query(AIProvider)
+        .filter(
+            AIProvider.enabled == True,
+            AIProvider.task_type.in_(["analysis", "both"]),
+        )
+        .order_by(AIProvider.sort_order)
+        .all()
+    )
+    if db_providers:
+        return db_providers
+
+    # Env-var fallbacks (tried in order, stop at first available key)
+    result = []
     for ptype, key, url in [
-        ("anthropic",  settings.anthropic_api_key,  ""),
-        ("openai",     settings.openai_api_key,      ""),
-        ("gemini",     settings.gemini_api_key,      ""),
+        ("anthropic",  settings.anthropic_api_key,  None),
+        ("openai",     settings.openai_api_key,      None),
+        ("gemini",     settings.gemini_api_key,      None),
         ("deepseek",   settings.deepseek_api_key,    "https://api.deepseek.com/v1"),
         ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),
     ]:
         if key:
-            return _Synthetic(name=ptype, provider_type=ptype, api_key=key,
-                              base_url=url or None)
-    return None
+            result.append(_Synthetic(name=ptype, provider_type=ptype, api_key=key, base_url=url))
+    return result
+
+
+# ── Stats tracking ─────────────────────────────────────────────────────────────
+
+def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: float) -> None:
+    if not isinstance(getattr(provider, "id", None), int):
+        return
+    db.execute(
+        sqla_text(
+            "UPDATE ai_providers SET "
+            "total_tokens_in  = total_tokens_in  + :tin, "
+            "total_tokens_out = total_tokens_out + :tout, "
+            "total_cost_usd   = total_cost_usd   + :cost "
+            "WHERE id = :id"
+        ),
+        {"tin": tokens_in, "tout": tokens_out, "cost": cost, "id": provider.id},
+    )
+    db.commit()
 
 
 # ── Provider dispatch ──────────────────────────────────────────────────────────
 
-async def _call_provider(provider, user_msg: str) -> tuple[str, float]:
+async def _call_provider(provider, user_msg: str) -> tuple[str, int, int, float]:
+    """Return (raw_text, tokens_in, tokens_out, cost_usd)."""
     ptype = provider.provider_type
     if ptype == "anthropic":
         return await _call_anthropic(provider, user_msg)
@@ -112,7 +154,7 @@ async def _call_provider(provider, user_msg: str) -> tuple[str, float]:
     return await _call_openai_compatible(provider, user_msg)
 
 
-async def _call_anthropic(provider, user_msg: str) -> tuple[str, float]:
+async def _call_anthropic(provider, user_msg: str) -> tuple[str, int, int, float]:
     import anthropic
     model = getattr(provider, "model", None) or "claude-haiku-4-5-20251001"
     client = anthropic.AsyncAnthropic(api_key=provider.api_key)
@@ -122,13 +164,14 @@ async def _call_anthropic(provider, user_msg: str) -> tuple[str, float]:
         system=ANALYSIS_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
-    text = resp.content[0].text
-    # Haiku: ~$0.25/M input, $1.25/M output
-    cost = resp.usage.input_tokens * 0.00000025 + resp.usage.output_tokens * 0.00000125
-    return text, cost
+    tin  = resp.usage.input_tokens
+    tout = resp.usage.output_tokens
+    # Approximate pricing for Haiku; actual cost depends on model
+    cost = tin * 0.00000080 / 1000 + tout * 0.00000400 / 1000
+    return resp.content[0].text, tin, tout, cost
 
 
-async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, float]:
+async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, int, int, float]:
     import openai
     model_defaults = {
         "openai":     "gpt-4o-mini",
@@ -146,23 +189,24 @@ async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, float]:
         "max_tokens": 512,
         "messages": [
             {"role": "system", "content": ANALYSIS_SYSTEM},
-            {"role": "user", "content": user_msg},
+            {"role": "user",   "content": user_msg},
         ],
     }
-    # JSON mode is reliable on native OpenAI; skip for other compatible endpoints
     if provider.provider_type == "openai":
         create_kwargs["response_format"] = {"type": "json_object"}
 
     resp = await client.chat.completions.create(**create_kwargs)
     text = resp.choices[0].message.content or ""
+    tin = tout = 0
     cost = 0.0
     if resp.usage:
-        # gpt-4o-mini: $0.15/M input, $0.60/M output
-        cost = resp.usage.prompt_tokens * 0.00000015 + resp.usage.completion_tokens * 0.0000006
-    return text, cost
+        tin  = resp.usage.prompt_tokens
+        tout = resp.usage.completion_tokens
+        cost = tin * 0.00000015 + tout * 0.0000006
+    return text, tin, tout, cost
 
 
-async def _call_gemini(provider, user_msg: str) -> tuple[str, float]:
+async def _call_gemini(provider, user_msg: str) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     model_name = getattr(provider, "model", None) or "gemini-1.5-flash"
     genai.configure(api_key=provider.api_key)
@@ -171,7 +215,7 @@ async def _call_gemini(provider, user_msg: str) -> tuple[str, float]:
         gm.generate_content, user_msg,
         generation_config={"max_output_tokens": 512},
     )
-    return resp.text, 0.0
+    return resp.text, 0, 0, 0.0
 
 
 # ── Result parsing ─────────────────────────────────────────────────────────────

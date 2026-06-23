@@ -6,6 +6,8 @@ import type {
   IndexingStats,
   WatchedFolder,
   AIProvider,
+  ArenaRating,
+  ProviderModel,
   LogEntry,
 } from "../types";
 
@@ -61,14 +63,30 @@ export const toggleFolder = (id: number) => api.patch<WatchedFolder>(`/admin/fol
 
 export const listProviders = () => api.get<AIProvider[]>("/admin/providers");
 export const addProvider = (body: {
-  name: string;
+  name?: string;
   provider_type: string;
   api_key: string;
   base_url?: string;
   model?: string;
+  task_type?: string;
+  sort_order?: number;
+  key_name?: string;
 }) => api.post<AIProvider>("/admin/providers", body);
 export const toggleProvider = (id: number) => api.patch<AIProvider>(`/admin/providers/${id}/toggle`);
 export const removeProvider = (id: number) => api.delete(`/admin/providers/${id}`);
+export const updateProviderOrder = (id: number, sort_order: number) =>
+  api.patch<AIProvider>(`/admin/providers/${id}/order`, { sort_order });
+export const fetchProviderModels = (body: {
+  provider_type: string;
+  api_key: string;
+  base_url?: string;
+}) => api.post<ProviderModel[]>("/admin/providers/models", body);
+
+export const getArenaRatings = () =>
+  api.get<Record<string, ArenaRating>>("/admin/arena-ratings");
+
+export const refreshArenaRatings = () =>
+  api.post<{ updated: number; ratings: Record<string, ArenaRating> }>("/admin/arena-ratings/refresh");
 
 export const reclassifyAll = () => api.post("/admin/reclassify-all");
 

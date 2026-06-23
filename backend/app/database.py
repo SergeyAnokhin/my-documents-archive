@@ -40,6 +40,12 @@ def _apply_migrations(eng) -> None:
     with eng.connect() as conn:
         for stmt in [
             "ALTER TABLE ai_providers ADD COLUMN model TEXT",
+            "ALTER TABLE ai_providers ADD COLUMN task_type TEXT DEFAULT 'both'",
+            "ALTER TABLE ai_providers ADD COLUMN sort_order INTEGER DEFAULT 0",
+            "ALTER TABLE ai_providers ADD COLUMN total_tokens_in INTEGER DEFAULT 0",
+            "ALTER TABLE ai_providers ADD COLUMN total_tokens_out INTEGER DEFAULT 0",
+            "ALTER TABLE ai_providers ADD COLUMN total_cost_usd REAL DEFAULT 0.0",
+            "ALTER TABLE ai_providers ADD COLUMN key_name TEXT",
         ]:
             try:
                 conn.execute(text(stmt))

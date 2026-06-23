@@ -20,7 +20,7 @@ export function AdminPanel({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("indexing");
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={t.admin.title}>
+    <Modal open={open} onClose={onClose} size="xl" title={t.admin.title}>
       <div className="admin-layout">
         {/* Sidebar tabs */}
         <nav className="admin-nav">

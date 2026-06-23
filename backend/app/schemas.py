@@ -103,20 +103,45 @@ class AIProviderOut(BaseModel):
     id: int
     name: str
     provider_type: str
+    task_type: str = "both"
+    sort_order: int = 0
+    key_name: Optional[str] = None
     base_url: Optional[str] = None
     model: Optional[str] = None
     enabled: bool
     added_at: Optional[datetime] = None
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    total_cost_usd: float = 0.0
 
     model_config = {"from_attributes": True}
 
 
 class AIProviderCreate(BaseModel):
-    name: str
+    name: str = ""
     provider_type: str
     api_key: str
     base_url: Optional[str] = None
     model: Optional[str] = None
+    task_type: str = "both"
+    sort_order: int = 0
+    key_name: Optional[str] = None
+
+
+class ProviderModelInfo(BaseModel):
+    id: str
+    name: str
+    supports_vision: bool = False
+    context_length: Optional[int] = None
+    price_in: Optional[float] = None   # USD per 1M input tokens
+    price_out: Optional[float] = None  # USD per 1M output tokens
+    is_free: bool = False
+
+
+class FetchModelsRequest(BaseModel):
+    provider_type: str
+    api_key: str
+    base_url: Optional[str] = None
 
 
 class IndexingStats(BaseModel):

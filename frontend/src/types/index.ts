@@ -70,10 +70,31 @@ export interface AIProvider {
   id: number;
   name: string;
   provider_type: string;
+  task_type: "analysis" | "vision" | "both";
+  sort_order: number;
+  key_name?: string;
   base_url?: string;
   model?: string;
   enabled: boolean;
   added_at?: string;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost_usd: number;
+}
+
+export interface ProviderModel {
+  id: string;
+  name: string;
+  supports_vision: boolean;
+  context_length?: number;
+  price_in?: number;  // USD per 1M input tokens
+  price_out?: number; // USD per 1M output tokens
+  is_free: boolean;
+}
+
+export interface ArenaRating {
+  text: number;    // 0-5 stars
+  vision: number;  // 0-5 stars
 }
 
 export interface LogEntry {

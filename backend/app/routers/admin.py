@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -7,8 +9,10 @@ from datetime import datetime
 from ..database import get_db
 from ..models import AppSettings, Document, WatchedFolder, IndexingLog, AIProvider
 from ..schemas import (
+    FetchModelsRequest,
     IndexingStats,
     LogEntry,
+    ProviderModelInfo,
     SyncResponse,
     WatchedFolderCreate,
     WatchedFolderOut,
@@ -173,12 +177,26 @@ def toggle_folder(folder_id: int, db: Session = Depends(get_db)):
 
 @router.get("/providers", response_model=list[AIProviderOut])
 def list_providers(db: Session = Depends(get_db)):
-    return db.query(AIProvider).all()
+    return db.query(AIProvider).order_by(AIProvider.sort_order).all()
 
 
 @router.post("/providers", response_model=AIProviderOut, status_code=201)
 def add_provider(body: AIProviderCreate, db: Session = Depends(get_db)):
-    p = AIProvider(**body.model_dump())
+    data = body.model_dump()
+
+    # Auto-assign sort_order: place after all existing providers
+    if data.get("sort_order", 0) == 0:
+        max_order = db.query(func.max(AIProvider.sort_order)).scalar() or 0
+        data["sort_order"] = max_order + 10
+
+    # Auto-generate name if left empty
+    if not data.get("name"):
+        model_part = data.get("model") or "default"
+        key_label = data.get("key_name") or ""
+        base = f"{data['provider_type']}/{model_part}"
+        data["name"] = f"{base} [{key_label}]" if key_label else base
+
+    p = AIProvider(**data)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -196,6 +214,17 @@ def toggle_provider(provider_id: int, db: Session = Depends(get_db)):
     return AIProviderOut.model_validate(p)
 
 
+@router.patch("/providers/{provider_id}/order", response_model=AIProviderOut)
+def update_provider_order(provider_id: int, body: dict, db: Session = Depends(get_db)):
+    p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    p.sort_order = int(body.get("sort_order", p.sort_order))
+    db.commit()
+    db.refresh(p)
+    return AIProviderOut.model_validate(p)
+
+
 @router.delete("/providers/{provider_id}", status_code=204)
 def remove_provider(provider_id: int, db: Session = Depends(get_db)):
     p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
@@ -203,6 +232,31 @@ def remove_provider(provider_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Provider not found")
     db.delete(p)
     db.commit()
+
+
+@router.post("/providers/models", response_model=list[ProviderModelInfo])
+async def fetch_provider_models(body: FetchModelsRequest):
+    """Fetch available model list from the given provider's API."""
+    from ..services.provider_models import fetch_models
+    models = await fetch_models(body.provider_type, body.api_key, body.base_url)
+    return models
+
+
+# ── Arena Ratings ─────────────────────────────────────────────────────────────
+
+@router.get("/arena-ratings")
+def get_arena_ratings(db: Session = Depends(get_db)):
+    """Return cached LM Arena star ratings: {model_id: {text: 0-5, vision: 0-5}}."""
+    from ..services.arena_ratings import get_cached
+    return get_cached(db)
+
+
+@router.post("/arena-ratings/refresh")
+async def refresh_arena_ratings(db: Session = Depends(get_db)):
+    """Fetch fresh ratings from LM Arena leaderboard and update cache."""
+    from ..services.arena_ratings import refresh_ratings
+    ratings = await refresh_ratings(db)
+    return {"updated": len(ratings), "ratings": ratings}
 
 
 # ── App Settings (key-value) ──────────────────────────────────────────────────
