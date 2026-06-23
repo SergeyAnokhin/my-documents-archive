@@ -29,11 +29,14 @@ docs/             Architecture docs (you are here)
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
 | `services/ai_analysis.py` | AI Analysis: calls Anthropic/OpenAI/Gemini/DeepSeek/OpenRouter to produce summary, tags, document_type, language, organization, amount |
-| `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini |
+| `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini. Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab |
+| `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
 | `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; batch, reclassify |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status — prefix `/api/indexing` |
+| `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
+| `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
 
 ## Compute (`compute/app/`)
 
@@ -46,7 +49,7 @@ docs/             Architecture docs (you are here)
 | Path | Responsibility |
 |------|---------------|
 | `main.tsx` | React root mount |
-| `App.tsx` | Root component: language context, admin modal gate |
+| `App.tsx` | Root component: language context + `BrowserRouter` routes (`/` home, `/lab/:id` OCR Lab) |
 | `index.css` | Global CSS variables (design tokens), resets, utilities |
 | `i18n/en.ts` | English strings |
 | `i18n/ru.ts` | Russian strings |
@@ -64,12 +67,13 @@ docs/             Architecture docs (you are here)
 | `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
 | `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify buttons (incl. `StatCard`) |
 | `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
-| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle (`enable_ai_vision`) |
+| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle (`enable_ai_vision`); three provider sections: Analysis, Vision, **Premium Vision (Judge)** (`task_type: premium`, used by the OCR Lab) |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
 | `pages/HomePage.tsx` | Main page: hero search, toolbar, document grid/list |
+| `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`): document on left, OCR/vision/judge experiments on right. See [lab-mode.md](lab-mode.md) |
 
 ## Key Data Flow
 

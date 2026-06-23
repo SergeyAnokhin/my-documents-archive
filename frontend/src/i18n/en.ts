@@ -57,6 +57,7 @@ export const en = {
   reclassify: "Re-classify",
   reindexStarted: "Re-indexing started…",
   reclassifyStarted: "Re-classification started…",
+  labMode: "OCR Lab",
 
   // Empty states
   noDocuments: "No documents yet",
@@ -107,6 +108,8 @@ export const en = {
       analysisHint: "Used for text analysis: summary, tags, classification. Tried in order — first working wins.",
       visionProviders: "Vision Providers",
       visionHint2: "Used for image understanding. Only vision-capable models. Requires AI Vision enabled.",
+      premiumProviders: "Premium Vision (Judge)",
+      premiumHint: "Higher-cost model used in the OCR Lab to judge which transcription is best.",
       fetchModels: "Fetch Models",
       fetchingModels: "Loading…",
       taskType: "Use for",
@@ -157,6 +160,36 @@ export const en = {
     allTypes: "All types",
     allLanguages: "All languages",
     allStatuses: "All statuses",
+  },
+
+  // OCR Lab
+  lab: {
+    title: "OCR Lab",
+    subtitle: "Compare how different methods recognize this document, then let a premium model judge.",
+    back: "Back",
+    localOcr: "Local OCR",
+    visionOcr: "AI Vision OCR",
+    run: "Run",
+    running: "Running…",
+    workerOffline: "EasyOCR worker offline — start the compute service to enable",
+    noVisionProviders: "No vision providers configured (add them in AI Settings)",
+    emptyResults: "Run a method to see the recognized text here.",
+    chars: "chars",
+    remove: "Remove",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    resetZoom: "Reset zoom",
+    judge: "Judge quality",
+    judgeHint: "Pick a premium model to rank the transcriptions above.",
+    useImage: "Compare against the document image",
+    compare: "Compare results",
+    comparing: "Comparing…",
+    needTwo: "Run at least 2 methods first.",
+    noPremium: "No premium judge configured — add one in AI Settings.",
+    best: "Best",
+    score: "Score",
+    rankings: "Rankings",
+    failed: "Failed",
   },
 
   // Misc

@@ -9,6 +9,8 @@ import type {
   ArenaRating,
   ProviderModel,
   LogEntry,
+  LabMethods,
+  LabJudgeResult,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -103,3 +105,21 @@ export const reclassifyDocument = (id: number) =>
 
 export const reindexDocument = (id: number) =>
   api.post(`/indexing/document/${id}`);
+
+// ── Lab (OCR calibration) ─────────────────────────────────────────────────────
+
+export const getLabMethods = () => api.get<LabMethods>("/lab/methods");
+
+export const runLabOcr = (doc_id: number, method: string) =>
+  api.post<{ method: string; text: string; ms: number }>("/lab/ocr", { doc_id, method });
+
+export const runLabVision = (doc_id: number, provider_id: number) =>
+  api.post<{ provider_id: number; name: string; text: string; cost: number; ms: number }>(
+    "/lab/vision", { doc_id, provider_id });
+
+export const runLabJudge = (body: {
+  doc_id: number;
+  provider_id: number;
+  use_image: boolean;
+  candidates: { label: string; text: string }[];
+}) => api.post<LabJudgeResult>("/lab/judge", body);

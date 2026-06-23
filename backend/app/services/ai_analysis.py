@@ -144,24 +144,29 @@ def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: 
 
 # ── Provider dispatch ──────────────────────────────────────────────────────────
 
-async def _call_provider(provider, user_msg: str) -> tuple[str, int, int, float]:
+async def run_text(provider, system: str, user_msg: str) -> tuple[str, int, int, float]:
+    """Send a system + user prompt to one text provider. Returns (text, tokens_in, tokens_out, cost)."""
+    return await _call_provider(provider, user_msg, system)
+
+
+async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     """Return (raw_text, tokens_in, tokens_out, cost_usd)."""
     ptype = provider.provider_type
     if ptype == "anthropic":
-        return await _call_anthropic(provider, user_msg)
+        return await _call_anthropic(provider, user_msg, system)
     if ptype == "gemini":
-        return await _call_gemini(provider, user_msg)
-    return await _call_openai_compatible(provider, user_msg)
+        return await _call_gemini(provider, user_msg, system)
+    return await _call_openai_compatible(provider, user_msg, system)
 
 
-async def _call_anthropic(provider, user_msg: str) -> tuple[str, int, int, float]:
+async def _call_anthropic(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     import anthropic
     model = getattr(provider, "model", None) or "claude-haiku-4-5-20251001"
     client = anthropic.AsyncAnthropic(api_key=provider.api_key)
     resp = await client.messages.create(
         model=model,
-        max_tokens=512,
-        system=ANALYSIS_SYSTEM,
+        max_tokens=1024,
+        system=system,
         messages=[{"role": "user", "content": user_msg}],
     )
     tin  = resp.usage.input_tokens
@@ -171,7 +176,7 @@ async def _call_anthropic(provider, user_msg: str) -> tuple[str, int, int, float
     return resp.content[0].text, tin, tout, cost
 
 
-async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, int, int, float]:
+async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     import openai
     model_defaults = {
         "openai":     "gpt-4o-mini",
@@ -186,9 +191,9 @@ async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, int, in
     client = openai.AsyncOpenAI(**client_kwargs)
     create_kwargs: dict = {
         "model": model,
-        "max_tokens": 512,
+        "max_tokens": 1024,
         "messages": [
-            {"role": "system", "content": ANALYSIS_SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},
         ],
     }
@@ -206,14 +211,14 @@ async def _call_openai_compatible(provider, user_msg: str) -> tuple[str, int, in
     return text, tin, tout, cost
 
 
-async def _call_gemini(provider, user_msg: str) -> tuple[str, int, int, float]:
+async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     model_name = getattr(provider, "model", None) or "gemini-1.5-flash"
     genai.configure(api_key=provider.api_key)
-    gm = genai.GenerativeModel(model_name, system_instruction=ANALYSIS_SYSTEM)
+    gm = genai.GenerativeModel(model_name, system_instruction=system)
     resp = await asyncio.to_thread(
         gm.generate_content, user_msg,
-        generation_config={"max_output_tokens": 512},
+        generation_config={"max_output_tokens": 1024},
     )
     return resp.text, 0, 0, 0.0
 

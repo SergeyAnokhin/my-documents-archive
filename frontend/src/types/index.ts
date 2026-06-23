@@ -70,7 +70,7 @@ export interface AIProvider {
   id: number;
   name: string;
   provider_type: string;
-  task_type: "analysis" | "vision" | "both";
+  task_type: "analysis" | "vision" | "both" | "premium";
   sort_order: number;
   key_name?: string;
   base_url?: string;
@@ -106,6 +106,38 @@ export interface LogEntry {
   message?: string;
   api_cost: number;
   created_at?: string;
+}
+
+// ── Lab (OCR calibration) ───────────────────────────────────────────────────
+
+export interface LabMethods {
+  ocr_methods: string[];
+  worker_available: boolean;
+}
+
+/** A single transcription result shown as a card in the lab. */
+export interface LabResult {
+  id: string;          // client-side unique key
+  kind: "ocr" | "vision";
+  label: string;       // method or provider name
+  providerId?: number; // for vision results
+  text: string;
+  ms: number;
+  cost?: number;
+}
+
+export interface LabRanking {
+  label: string;
+  score: number;
+  comment: string;
+}
+
+export interface LabJudgeResult {
+  rankings: LabRanking[];
+  best: string;
+  summary: string;
+  cost: number;
+  ms: number;
 }
 
 export type ViewMode = "list" | "grid";

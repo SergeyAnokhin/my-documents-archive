@@ -206,14 +206,14 @@ function AddProviderForm({
   onSaved,
   onCancel,
 }: {
-  taskType: "analysis" | "vision";
+  taskType: "analysis" | "vision" | "premium";
   ratings: Record<string, ArenaRating>;
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const { t } = useT();
   const ai = t.admin.ai;
-  const forVision = taskType === "vision";
+  const forVision = taskType === "vision" || taskType === "premium";
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [models, setModels] = useState<ProviderModel[]>([]);
@@ -425,7 +425,7 @@ function ProviderSection({
   title: string;
   hint: string;
   providers: AIProvider[];
-  taskType: "analysis" | "vision";
+  taskType: "analysis" | "vision" | "premium";
   ratings: Record<string, ArenaRating>;
   onReload: () => void;
 }) {
@@ -539,6 +539,7 @@ export function AITab() {
 
   const analysisProviders = providers.filter(p => p.task_type === "analysis" || p.task_type === "both");
   const visionProviders   = providers.filter(p => p.task_type === "vision"   || p.task_type === "both");
+  const premiumProviders  = providers.filter(p => p.task_type === "premium");
 
   return (
     <div className="admin-section">
@@ -587,6 +588,16 @@ export function AITab() {
         hint={ai.visionHint2}
         providers={visionProviders}
         taskType="vision"
+        ratings={ratings}
+        onReload={load}
+      />
+
+      {/* Premium vision (judge) providers */}
+      <ProviderSection
+        title={ai.premiumProviders}
+        hint={ai.premiumHint}
+        providers={premiumProviders}
+        taskType="premium"
         ratings={ratings}
         onReload={load}
       />

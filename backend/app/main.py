@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .config import settings
 from .database import init_db
-from .routers import documents, upload, search, admin, indexing
+from .routers import documents, upload, search, admin, indexing, lab
 
 app = FastAPI(
     title="DocIntel API",
@@ -26,6 +26,7 @@ app.include_router(upload.router)
 app.include_router(search.router)
 app.include_router(admin.router)
 app.include_router(indexing.router)
+app.include_router(lab.router)
 
 
 @app.on_event("startup")

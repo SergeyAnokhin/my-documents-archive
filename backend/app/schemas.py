@@ -165,3 +165,60 @@ class LogEntry(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Lab (OCR calibration screen) ────────────────────────────────────────────────
+
+class LabMethods(BaseModel):
+    ocr_methods: List[str]          # local engines available, e.g. ["tesseract", "easyocr"]
+    worker_available: bool          # external compute worker reachable with easyocr
+
+
+class LabOcrRequest(BaseModel):
+    doc_id: int
+    method: str                     # "tesseract" | "easyocr"
+
+
+class LabOcrResult(BaseModel):
+    method: str
+    text: str
+    ms: int
+
+
+class LabVisionRequest(BaseModel):
+    doc_id: int
+    provider_id: int
+
+
+class LabVisionResult(BaseModel):
+    provider_id: int
+    name: str
+    text: str
+    cost: float
+    ms: int
+
+
+class LabCandidate(BaseModel):
+    label: str
+    text: str
+
+
+class LabJudgeRequest(BaseModel):
+    doc_id: int
+    provider_id: int
+    use_image: bool = True
+    candidates: List[LabCandidate]
+
+
+class LabRanking(BaseModel):
+    label: str
+    score: int = 0
+    comment: str = ""
+
+
+class LabJudgeResult(BaseModel):
+    rankings: List[LabRanking] = []
+    best: str = ""
+    summary: str = ""
+    cost: float = 0.0
+    ms: int = 0

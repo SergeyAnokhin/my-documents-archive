@@ -77,15 +77,17 @@ def update_tags(doc_id: int, tags: list[str], db: Session = Depends(get_db)):
 
 
 @router.get("/{doc_id}/download")
-def download_document(doc_id: int, db: Session = Depends(get_db)):
+def download_document(doc_id: int, inline: bool = False, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     path = Path(doc.filepath)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
+    # inline=1 lets the OCR Lab embed PDFs/images instead of forcing a download.
     return FileResponse(
         path=str(path),
         filename=doc.filename,
         media_type=doc.mime_type or "application/octet-stream",
+        content_disposition_type="inline" if inline else "attachment",
     )

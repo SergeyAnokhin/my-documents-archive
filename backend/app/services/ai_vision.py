@@ -55,22 +55,14 @@ async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, f
         return None
 
     try:
-        img_bytes = _load_first_page(filepath)
+        img_bytes = load_first_page(filepath)
     except Exception as e:
         log.warning("Vision: cannot load image from %s: %s", filepath, e)
         return None
 
-    b64 = base64.b64encode(img_bytes).decode()
-
     for provider in providers:
         try:
-            ptype = provider.provider_type
-            if ptype == "anthropic":
-                text, tin, tout, cost = await _call_anthropic(provider, b64)
-            elif ptype == "gemini":
-                text, tin, tout, cost = await _call_gemini(provider, img_bytes)
-            else:
-                text, tin, tout, cost = await _call_openai_compat(provider, b64)
+            text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_PROMPT)
             _update_stats(db, provider, tin, tout, cost)
             return text, cost
         except Exception as e:
@@ -80,9 +72,21 @@ async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, f
     return None
 
 
+async def run_vision(provider, img_bytes: bytes, prompt: str) -> tuple[str, int, int, float]:
+    """Send an image + prompt to one vision provider. Returns (text, tokens_in, tokens_out, cost)."""
+    ptype = provider.provider_type
+    if ptype == "anthropic":
+        b64 = base64.b64encode(img_bytes).decode()
+        return await _call_anthropic(provider, b64, prompt)
+    if ptype == "gemini":
+        return await _call_gemini(provider, img_bytes, prompt)
+    b64 = base64.b64encode(img_bytes).decode()
+    return await _call_openai_compat(provider, b64, prompt)
+
+
 # ── Image loading ─────────────────────────────────────────────────────────────
 
-def _load_first_page(filepath: str) -> bytes:
+def load_first_page(filepath: str) -> bytes:
     """Return first document page as resized JPEG bytes (max 1024px)."""
     path = Path(filepath)
     if path.suffix.lower() == ".pdf":
@@ -166,19 +170,19 @@ def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: 
 
 # ── Provider calls ────────────────────────────────────────────────────────────
 
-async def _call_anthropic(provider, b64: str) -> tuple[str, int, int, float]:
+async def _call_anthropic(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import anthropic
     model = getattr(provider, "model", None) or VISION_DEFAULTS["anthropic"]
     client = anthropic.AsyncAnthropic(api_key=provider.api_key)
     resp = await client.messages.create(
         model=model,
-        max_tokens=512,
+        max_tokens=2048,
         messages=[{
             "role": "user",
             "content": [
                 {"type": "image",
                  "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-                {"type": "text", "text": VISION_PROMPT},
+                {"type": "text", "text": prompt},
             ],
         }],
     )
@@ -188,7 +192,7 @@ async def _call_anthropic(provider, b64: str) -> tuple[str, int, int, float]:
     return resp.content[0].text, tin, tout, cost
 
 
-async def _call_openai_compat(provider, b64: str) -> tuple[str, int, int, float]:
+async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import openai
     model = getattr(provider, "model", None) or VISION_DEFAULTS.get(provider.provider_type, "gpt-4o-mini")
     kwargs: dict = {"api_key": provider.api_key}
@@ -197,13 +201,13 @@ async def _call_openai_compat(provider, b64: str) -> tuple[str, int, int, float]
     client = openai.AsyncOpenAI(**kwargs)
     resp = await client.chat.completions.create(
         model=model,
-        max_tokens=512,
+        max_tokens=2048,
         messages=[{
             "role": "user",
             "content": [
                 {"type": "image_url",
                  "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                {"type": "text", "text": VISION_PROMPT},
+                {"type": "text", "text": prompt},
             ],
         }],
     )
@@ -217,7 +221,7 @@ async def _call_openai_compat(provider, b64: str) -> tuple[str, int, int, float]
     return text, tin, tout, cost
 
 
-async def _call_gemini(provider, img_bytes: bytes) -> tuple[str, int, int, float]:
+async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     model_name = getattr(provider, "model", None) or VISION_DEFAULTS["gemini"]
     genai.configure(api_key=provider.api_key)
@@ -225,7 +229,7 @@ async def _call_gemini(provider, img_bytes: bytes) -> tuple[str, int, int, float
     image_part = {"mime_type": "image/jpeg", "data": img_bytes}
     resp = await asyncio.to_thread(
         gm.generate_content,
-        [VISION_PROMPT, image_part],
-        generation_config={"max_output_tokens": 512},
+        [prompt, image_part],
+        generation_config={"max_output_tokens": 2048},
     )
     return resp.text, 0, 0, 0.0

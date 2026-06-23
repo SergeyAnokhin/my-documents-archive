@@ -10,7 +10,7 @@ Base URL: `http://localhost:8000`
 | GET | `/api/documents/{id}` | Get single document |
 | DELETE | `/api/documents/{id}` | Soft-delete document (sets `is_deleted=true`) |
 | PATCH | `/api/documents/{id}/tags` | Replace tags (body: `string[]`) |
-| GET | `/api/documents/{id}/download` | Download original file (FileResponse) |
+| GET | `/api/documents/{id}/download` | Download original file (FileResponse). `?inline=1` serves it inline (used by the OCR Lab to embed PDFs/images) |
 
 ### Document response shape (`DocumentOut`)
 
@@ -91,6 +91,15 @@ Default models per provider: Anthropic → `claude-haiku-4-5-20251001`, OpenAI �
 | POST | `/api/indexing/batch` | Queue OCR+analysis for pending docs. Param: `limit` (default 50) |
 | POST | `/api/indexing/reclassify/{id}` | Re-run AI Analysis only on one document (background) |
 | GET | `/api/indexing/status` | `{total, pending, done, error}` — used by IndexingBadge |
+
+## Lab (OCR calibration — ephemeral, see [lab-mode.md](lab-mode.md))
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/lab/methods` | `{ocr_methods[], worker_available}` — local engines + easyocr-worker reachability |
+| POST | `/api/lab/ocr` | `{doc_id, method}` (`tesseract`\|`easyocr`) → `{method, text, ms}` |
+| POST | `/api/lab/vision` | `{doc_id, provider_id}` → `{provider_id, name, text, cost, ms}` (vision model as verbatim transcriber) |
+| POST | `/api/lab/judge` | `{doc_id, provider_id, use_image, candidates[]}` → `{rankings[], best, summary, cost, ms}` (premium provider ranks transcriptions) |
 
 ## Health
 

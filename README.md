@@ -52,6 +52,7 @@ npm test
 | [docs/testing.md](docs/testing.md) | How to run tests, what each suite pins |
 | [docs/architecture.md](docs/architecture.md) | System overview, components, data flow, phases |
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
+| [docs/lab-mode.md](docs/lab-mode.md) | OCR Lab (`/lab/:id`): compare OCR engines & vision models, premium "judge" |
 | [docs/First_Specification.md](docs/First_Specification.md) | Full product specification — **large, high-level; read only when explicitly working on the spec, not for code tasks** |
 
 ## Project Structure
@@ -74,3 +75,4 @@ docs/        Architecture docs + AI navigation index
 | 5 | ✅ Done | Folder watcher (watchdog) — auto-picks new files from watched folders |
 | 6 | ✅ Done | Developer Mode tab in document viewer: pipeline statuses, Re-classify, Re-index |
 | 7 | ✅ Scaffolded | External OCR worker |
+| 8 | ✅ Done | OCR Lab (`/lab/:id`): compare Tesseract / EasyOCR / vision models on one document; premium AI "judge" ranks the transcriptions |
