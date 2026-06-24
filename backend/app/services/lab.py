@@ -25,6 +25,16 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from . import ai_vision, ai_analysis
 
+
+def get_worker_url(db: Optional[Session] = None) -> str:
+    """Return compute worker URL: from DB setting if set, else config default."""
+    if db is not None:
+        from ..models import AppSettings
+        row = db.query(AppSettings).filter(AppSettings.key == "ocr_worker_url").first()
+        if row and row.value:
+            return row.value
+    return settings.external_ocr_url
+
 log = logging.getLogger(__name__)
 
 # Vision models, in the lab, transcribe rather than describe.
@@ -58,13 +68,13 @@ def load_image(filepath: str) -> bytes:
 
 # ── Local / worker OCR ──────────────────────────────────────────────────────────
 
-async def run_local_ocr(img_bytes: bytes, method: str) -> tuple[str, int]:
+async def run_local_ocr(img_bytes: bytes, method: str, db: Optional[Session] = None) -> tuple[str, int]:
     """Run a local OCR engine on the image. Returns (text, elapsed_ms)."""
     start = time.perf_counter()
     if method == "tesseract":
         text = _tesseract(img_bytes)
     elif method == "easyocr":
-        text = await _easyocr_worker(img_bytes)
+        text = await _easyocr_worker(img_bytes, get_worker_url(db))
     else:
         raise ValueError(f"Unknown OCR method: {method}")
     return text, int((time.perf_counter() - start) * 1000)
@@ -76,8 +86,8 @@ def _tesseract(img_bytes: bytes) -> str:
     return pytesseract.image_to_string(img, lang=settings.ocr_languages).strip()
 
 
-async def _easyocr_worker(img_bytes: bytes) -> str:
-    url = f"{settings.external_ocr_url.rstrip('/')}/ocr"
+async def _easyocr_worker(img_bytes: bytes, base_url: str = "") -> str:
+    url = f"{(base_url or settings.external_ocr_url).rstrip('/')}/ocr"
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             url,
@@ -88,16 +98,34 @@ async def _easyocr_worker(img_bytes: bytes) -> str:
         return resp.json().get("text", "").strip()
 
 
-async def worker_available() -> bool:
-    """Probe the compute worker /health for an easyocr engine."""
+async def worker_status(db: Optional[Session] = None) -> dict:
+    """Probe the compute worker /health and return detailed status."""
+    worker_url = get_worker_url(db)
     try:
-        url = f"{settings.external_ocr_url.rstrip('/')}/health"
+        url = f"{worker_url.rstrip('/')}/health"
         async with httpx.AsyncClient(timeout=3) as client:
             resp = await client.get(url)
             resp.raise_for_status()
-            return "easyocr" in resp.json().get("engines", [])
+            engines = resp.json().get("engines", [])
+            return {
+                "url": worker_url,
+                "reachable": True,
+                "engines": engines,
+                "worker_available": "easyocr" in engines,
+            }
     except Exception:
-        return False
+        return {
+            "url": worker_url,
+            "reachable": False,
+            "engines": [],
+            "worker_available": False,
+        }
+
+
+async def worker_available(db: Optional[Session] = None) -> bool:
+    """Return True only if the compute worker is reachable and has easyocr."""
+    status = await worker_status(db)
+    return status["worker_available"]
 
 
 # ── Vision OCR ──────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ from ..models import Document, AIProvider
 from ..services import lab
 from ..services.ai_vision import VISION_CAPABLE
 from ..schemas import (
-    LabMethods, LabOcrRequest, LabOcrResult,
+    LabMethods, LabWorkerStatus, LabOcrRequest, LabOcrResult,
     LabVisionRequest, LabVisionResult,
     LabJudgeRequest, LabJudgeResult,
 )
@@ -44,19 +44,31 @@ def _provider(provider_id: int, db: Session) -> AIProvider:
 
 
 @router.get("/methods", response_model=LabMethods)
-async def methods():
-    worker = await lab.worker_available()
+async def methods(db: Session = Depends(get_db)):
+    status = await lab.worker_status(db)
     engines = ["tesseract"]
-    if worker:
+    if status["worker_available"]:
         engines.append("easyocr")
-    return LabMethods(ocr_methods=engines, worker_available=worker)
+    return LabMethods(
+        ocr_methods=engines,
+        worker_available=status["worker_available"],
+        worker_reachable=status["reachable"],
+        worker_url=status["url"],
+    )
+
+
+@router.get("/worker-status", response_model=LabWorkerStatus)
+async def get_worker_status(db: Session = Depends(get_db)):
+    """Live health check of the compute worker."""
+    status = await lab.worker_status(db)
+    return LabWorkerStatus(**status)
 
 
 @router.post("/ocr", response_model=LabOcrResult)
 async def run_ocr(body: LabOcrRequest, db: Session = Depends(get_db)):
     img = _doc_image(body.doc_id, db)
     try:
-        text, ms = await lab.run_local_ocr(img, body.method)
+        text, ms = await lab.run_local_ocr(img, body.method, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"OCR failed: {e}")
     return LabOcrResult(method=body.method, text=text, ms=ms)

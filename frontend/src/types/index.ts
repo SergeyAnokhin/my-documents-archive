@@ -113,6 +113,15 @@ export interface LogEntry {
 export interface LabMethods {
   ocr_methods: string[];
   worker_available: boolean;
+  worker_reachable: boolean;
+  worker_url: string;
+}
+
+export interface LabWorkerStatus {
+  url: string;
+  reachable: boolean;
+  engines: string[];
+  worker_available: boolean;
 }
 
 /** A single transcription result shown as a card in the lab. */

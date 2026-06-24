@@ -10,6 +10,7 @@ import type {
   ProviderModel,
   LogEntry,
   LabMethods,
+  LabWorkerStatus,
   LabJudgeResult,
 } from "../types";
 
@@ -113,6 +114,7 @@ export const reindexDocument = (id: number) =>
 // ── Lab (OCR calibration) ─────────────────────────────────────────────────────
 
 export const getLabMethods = () => api.get<LabMethods>("/lab/methods");
+export const getWorkerStatus = () => api.get<LabWorkerStatus>("/lab/worker-status");
 
 export const runLabOcr = (doc_id: number, method: string) =>
   api.post<{ method: string; text: string; ms: number }>("/lab/ocr", { doc_id, method });

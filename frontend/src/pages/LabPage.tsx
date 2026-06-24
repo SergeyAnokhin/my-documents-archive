@@ -288,7 +288,9 @@ export function LabPage() {
               ))}
             </div>
             {methods && !methods.worker_available && (
-              <p className="text-xs text-muted" style={{ marginTop: 6 }}>{lab.workerOffline}</p>
+              <p className="text-xs text-muted" style={{ marginTop: 6 }}>
+                {methods.worker_reachable ? lab.workerNoEasyocr : lab.workerOffline}
+              </p>
             )}
           </section>
 

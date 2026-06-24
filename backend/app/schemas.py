@@ -171,7 +171,16 @@ class LogEntry(BaseModel):
 
 class LabMethods(BaseModel):
     ocr_methods: List[str]          # local engines available, e.g. ["tesseract", "easyocr"]
-    worker_available: bool          # external compute worker reachable with easyocr
+    worker_available: bool          # reachable AND easyocr installed
+    worker_reachable: bool = False  # service responds to /health (even without easyocr)
+    worker_url: str = ""            # url that was probed
+
+
+class LabWorkerStatus(BaseModel):
+    url: str
+    reachable: bool
+    engines: List[str]
+    worker_available: bool
 
 
 class LabOcrRequest(BaseModel):
