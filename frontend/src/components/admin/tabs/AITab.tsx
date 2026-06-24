@@ -18,6 +18,7 @@ const PROVIDER_TYPES = [
   { value: "gemini",     label: "Google Gemini" },
   { value: "deepseek",   label: "DeepSeek" },
   { value: "openrouter", label: "OpenRouter" },
+  { value: "mistral",    label: "Mistral (OCR)" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

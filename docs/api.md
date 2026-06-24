@@ -79,9 +79,11 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | PATCH | `/api/admin/settings` | Upsert settings. Body: `{key: value, ...}`. Key: `enable_ai_vision` (`"true"`/`"false"`) |
 | GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100) |
 
-`provider_type`: `"anthropic" | "openai" | "gemini" | "deepseek" | "openrouter"`
+`provider_type`: `"anthropic" | "openai" | "gemini" | "deepseek" | "openrouter" | "mistral"`
 
-Default models per provider: Anthropic → `claude-haiku-4-5-20251001`, OpenAI → `gpt-4o-mini`, Gemini → `gemini-1.5-flash`, DeepSeek → `deepseek-chat`, OpenRouter → `openai/gpt-4o-mini`
+Default models per provider: Anthropic → `claude-haiku-4-5-20251001`, OpenAI → `gpt-4o-mini`, Gemini → `gemini-1.5-flash`, DeepSeek → `deepseek-chat`, OpenRouter → `openai/gpt-4o-mini`, Mistral → `mistral-ocr-latest`
+
+`mistral` is vision-only (dedicated OCR endpoint, per-page billing); use it in the Vision section. It transcribes the page verbatim into `vision_description`.
 
 ## Indexing
 

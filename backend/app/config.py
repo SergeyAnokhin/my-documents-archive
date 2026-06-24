@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     deepseek_api_key: str = ""
     openrouter_api_key: str = ""
+    mistral_api_key: str = ""
 
     # Indexing defaults
     enable_ai_vision: bool = False

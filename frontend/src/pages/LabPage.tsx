@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ZoomIn, ZoomOut, Maximize, Play, X, Scale, Trophy,
+  ArrowLeft, ZoomIn, ZoomOut, Maximize, Play, X, Scale, Trophy, Terminal,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
@@ -18,6 +18,13 @@ const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter"];
 
 function uid() {
   return Math.random().toString(36).slice(2);
+}
+
+interface LogLine {
+  id: string;
+  ts: string;
+  msg: string;
+  kind: "info" | "ok" | "err";
 }
 
 export function LabPage() {
@@ -44,6 +51,48 @@ export function LabPage() {
 
   // Zoom
   const [zoom, setZoom] = useState(1);
+
+  // Resizable split
+  const [panelWidth, setPanelWidth] = useState(440);
+  const isResizing = useRef(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(440);
+
+  const onResizerDown = (e: React.MouseEvent) => {
+    isResizing.current = true;
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = panelWidth;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const dx = resizeStartX.current - e.clientX;
+      setPanelWidth(Math.max(300, Math.min(900, resizeStartWidth.current + dx)));
+    };
+    const onUp = () => { isResizing.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  // Logs
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const addLog = (msg: string, kind: LogLine["kind"] = "info") => {
+    const ts = new Date().toLocaleTimeString("ru-RU", { hour12: false });
+    setLogs(prev => [...prev, { id: uid(), ts, msg, kind }]);
+  };
+
+  useEffect(() => {
+    if (showLogs) logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs, showLogs]);
 
   useEffect(() => {
     if (!docId) return;
@@ -78,11 +127,14 @@ export function LabPage() {
 
   const handleOcr = async (method: string) => {
     setRunningOcr(method);
+    addLog(`→ OCR [${method}]`);
     try {
       const res = await runLabOcr(docId, method);
       upsert({ id: uid(), kind: "ocr", label: method, text: res.text, ms: res.ms });
+      addLog(`← OCR [${method}]: ${res.text.length} chars · ${res.ms}ms`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "ocr", label: method, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
+      addLog(`✗ OCR [${method}]: ${(e as Error).message}`, "err");
     } finally {
       setRunningOcr(null);
     }
@@ -90,11 +142,15 @@ export function LabPage() {
 
   const handleVision = async (p: AIProvider) => {
     setRunningVision(p.id);
+    addLog(`→ Vision [${p.name}]`);
     try {
       const res = await runLabVision(docId, p.id);
       upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: res.text, ms: res.ms, cost: res.cost });
+      const costStr = res.cost != null && res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
+      addLog(`← Vision [${p.name}]: ${res.text.length} chars · ${res.ms}ms${costStr}`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
+      addLog(`✗ Vision [${p.name}]: ${(e as Error).message}`, "err");
     } finally {
       setRunningVision(null);
     }
@@ -105,6 +161,8 @@ export function LabPage() {
     setJudging(true);
     setJudgeError("");
     setJudgeResult(null);
+    const judgeName = premiumProviders.find(p => p.id === judgeProvider)?.name ?? String(judgeProvider);
+    addLog(`→ Judge [${judgeName}] on ${results.length} candidates`);
     try {
       const res = await runLabJudge({
         doc_id: docId,
@@ -113,8 +171,11 @@ export function LabPage() {
         candidates: results.map(r => ({ label: r.label, text: r.text })),
       });
       setJudgeResult(res);
+      const costStr = res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
+      addLog(`← Judge: best="${res.best}" · ${res.ms}ms${costStr}`, "ok");
     } catch (e) {
       setJudgeError((e as Error).message);
+      addLog(`✗ Judge [${judgeName}]: ${(e as Error).message}`, "err");
     } finally {
       setJudging(false);
     }
@@ -136,7 +197,7 @@ export function LabPage() {
         </div>
       </header>
 
-      <div className="lab-body">
+      <div className="lab-body" style={{ gridTemplateColumns: `1fr 6px ${panelWidth}px` }}>
         {/* Left — document */}
         <div className="lab-doc">
           <div className="lab-doc-toolbar">
@@ -167,9 +228,46 @@ export function LabPage() {
           </div>
         </div>
 
+        {/* Drag handle */}
+        <div className="lab-resizer" onMouseDown={onResizerDown} />
+
         {/* Right — experiments */}
         <aside className="lab-panel">
-          <p className="lab-subtitle">{lab.subtitle}</p>
+          {/* Subtitle + logs toggle */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16 }}>
+            <p className="lab-subtitle" style={{ flex: 1, margin: 0 }}>{lab.subtitle}</p>
+            <button
+              className={`lab-logs-btn${showLogs ? " active" : ""}`}
+              onClick={() => setShowLogs(s => !s)}
+              title={lab.logs}
+            >
+              <Terminal size={13} />
+              {logs.length > 0 && <span className="lab-logs-count">{logs.length}</span>}
+            </button>
+          </div>
+
+          {/* Log panel */}
+          {showLogs && (
+            <div className="lab-logs-panel">
+              <div className="lab-logs-header">
+                <span>{lab.logs}</span>
+                <button className="lab-logs-clear" onClick={() => setLogs([])}>{lab.clearLogs}</button>
+              </div>
+              <div className="lab-logs-body">
+                {logs.length === 0 ? (
+                  <span className="lab-logs-empty">—</span>
+                ) : (
+                  logs.map(l => (
+                    <div key={l.id} className={`lab-log-line ${l.kind}`}>
+                      <span className="lab-log-ts">{l.ts}</span>
+                      <span className="lab-log-msg">{l.msg}</span>
+                    </div>
+                  ))
+                )}
+                <div ref={logsEndRef} />
+              </div>
+            </div>
+          )}
 
           {/* Local OCR */}
           <section className="lab-section">

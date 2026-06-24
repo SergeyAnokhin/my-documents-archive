@@ -55,7 +55,7 @@ export const ru: Translations = {
   reclassify: "Переклассифицировать",
   reindexStarted: "Переиндексирование запущено…",
   reclassifyStarted: "Переклассификация запущена…",
-  labMode: "Лаборатория OCR",
+  labMode: "Тюнинг OCR",
 
   noDocuments: "Документов пока нет",
   noDocumentsHint: "Загрузите файл или синхронизируйте библиотеку",
@@ -105,7 +105,7 @@ export const ru: Translations = {
       visionProviders: "Провайдеры Vision",
       visionHint2: "Для распознавания изображений. Только модели с поддержкой vision. Требует включения AI Vision.",
       premiumProviders: "Premium Vision (судья)",
-      premiumHint: "Более дорогая модель — оценивает в «Лаборатории OCR», какой вариант распознавания лучше.",
+      premiumHint: "Более дорогая модель — оценивает в «Тюнинге OCR», какой вариант распознавания лучше.",
       fetchModels: "Загрузить модели",
       fetchingModels: "Загрузка…",
       taskType: "Использовать для",
@@ -158,7 +158,7 @@ export const ru: Translations = {
   },
 
   lab: {
-    title: "Лаборатория OCR",
+    title: "Тюнинг OCR",
     subtitle: "Сравните, как разные методы распознают этот документ, и дайте premium-модели вынести вердикт.",
     back: "Назад",
     localOcr: "Локальный OCR",
@@ -184,6 +184,8 @@ export const ru: Translations = {
     score: "Оценка",
     rankings: "Рейтинг",
     failed: "Ошибка",
+    logs: "Логи",
+    clearLogs: "Очистить",
   },
 
   loading: "Загрузка…",

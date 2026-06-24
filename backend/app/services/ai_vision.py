@@ -2,7 +2,8 @@
 AI Vision — Step 3 of the indexing pipeline.
 
 Sends the document's first page to a vision-capable AI model and returns
-a factual description. Result stored in Document.vision_description.
+a factual description (or, for Mistral OCR, a verbatim transcription).
+Result stored in Document.vision_description.
 
 Only runs when 'enable_ai_vision' = 'true' in AppSettings (admin toggle).
 Provider priority: all enabled DB providers with task_type "vision" or "both"
@@ -34,14 +35,18 @@ You are analyzing a scanned document. Provide a concise factual description (3-5
 - What language is the document in?
 - Note any stamps, tables, or handwritten elements."""
 
-VISION_CAPABLE = {"anthropic", "openai", "gemini", "openrouter"}
+VISION_CAPABLE = {"anthropic", "openai", "gemini", "openrouter", "mistral"}
 
 VISION_DEFAULTS = {
     "anthropic":  "claude-haiku-4-5-20251001",
     "openai":     "gpt-4o-mini",
     "gemini":     "gemini-1.5-flash",
     "openrouter": "openai/gpt-4o-mini",
+    "mistral":    "mistral-ocr-latest",
 }
+
+# Mistral OCR is billed per page (~$1 / 1000 pages), not per token.
+MISTRAL_OCR_PRICE_PER_PAGE = 0.001
 
 
 async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, float]]:
@@ -80,6 +85,8 @@ async def run_vision(provider, img_bytes: bytes, prompt: str) -> tuple[str, int,
         return await _call_anthropic(provider, b64, prompt)
     if ptype == "gemini":
         return await _call_gemini(provider, img_bytes, prompt)
+    if ptype == "mistral":
+        return await _call_mistral_ocr(provider, img_bytes)
     b64 = base64.b64encode(img_bytes).decode()
     return await _call_openai_compat(provider, b64, prompt)
 
@@ -144,6 +151,7 @@ def _get_providers(db: Session) -> list:
         ("openai",     settings.openai_api_key,      None),
         ("gemini",     settings.gemini_api_key,      None),
         ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),
+        ("mistral",    settings.mistral_api_key,     None),
     ]:
         if key:
             result.append(_Synthetic(ptype, ptype, key, url))
@@ -219,6 +227,35 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
         tout = resp.usage.completion_tokens
         cost = tin * 0.00000015 + tout * 0.0000006
     return text, tin, tout, cost
+
+
+def _parse_mistral_ocr(data: dict) -> tuple[str, float]:
+    """Join per-page markdown and price by pages_processed. Returns (text, cost_usd)."""
+    text = "\n\n".join(p.get("markdown", "") for p in data.get("pages", [])).strip()
+    pages = data.get("usage_info", {}).get("pages_processed", 1)
+    return text, pages * MISTRAL_OCR_PRICE_PER_PAGE
+
+
+async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, float]:
+    """Mistral OCR — dedicated document-transcription endpoint (not chat).
+    Ignores the prompt; returns the page markdown as the description text."""
+    import httpx
+    model = getattr(provider, "model", None) or VISION_DEFAULTS["mistral"]
+    b64 = base64.b64encode(img_bytes).decode()
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "https://api.mistral.ai/v1/ocr",
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+            json={
+                "model": model,
+                "document": {"type": "image_url", "image_url": f"data:image/jpeg;base64,{b64}"},
+                "include_image_base64": False,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    text, cost = _parse_mistral_ocr(data)
+    return text, 0, 0, cost
 
 
 async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:

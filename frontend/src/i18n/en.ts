@@ -57,7 +57,7 @@ export const en = {
   reclassify: "Re-classify",
   reindexStarted: "Re-indexing started…",
   reclassifyStarted: "Re-classification started…",
-  labMode: "OCR Lab",
+  labMode: "OCR Tuning",
 
   // Empty states
   noDocuments: "No documents yet",
@@ -109,7 +109,7 @@ export const en = {
       visionProviders: "Vision Providers",
       visionHint2: "Used for image understanding. Only vision-capable models. Requires AI Vision enabled.",
       premiumProviders: "Premium Vision (Judge)",
-      premiumHint: "Higher-cost model used in the OCR Lab to judge which transcription is best.",
+      premiumHint: "Higher-cost model used in OCR Tuning to judge which transcription is best.",
       fetchModels: "Fetch Models",
       fetchingModels: "Loading…",
       taskType: "Use for",
@@ -162,9 +162,9 @@ export const en = {
     allStatuses: "All statuses",
   },
 
-  // OCR Lab
+  // OCR Tuning
   lab: {
-    title: "OCR Lab",
+    title: "OCR Tuning",
     subtitle: "Compare how different methods recognize this document, then let a premium model judge.",
     back: "Back",
     localOcr: "Local OCR",
@@ -190,6 +190,8 @@ export const en = {
     score: "Score",
     rankings: "Rankings",
     failed: "Failed",
+    logs: "Logs",
+    clearLogs: "Clear",
   },
 
   // Misc

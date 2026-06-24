@@ -29,7 +29,7 @@ cost) with the recognized text. Re-running a method replaces its previous card
 |--------|--------------|-------|
 | `tesseract` | In-process (backend, pytesseract) | Always available |
 | `easyocr` | External compute worker `/ocr?engine=easyocr` | Only if the worker is reachable (`GET /lab/methods` probes `/health`) |
-| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in anthropic/openai/gemini/openrouter) | Uses the provider as a **verbatim transcriber** (prompt `OCR_VISION_PROMPT`), not the pipeline's "describe" prompt |
+| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in anthropic/openai/gemini/openrouter/mistral) | Uses the provider as a **verbatim transcriber** (prompt `OCR_VISION_PROMPT`), not the pipeline's "describe" prompt. Mistral OCR ignores the prompt and transcribes natively |
 
 All methods operate on the same first-page JPEG produced by
 `ai_vision.load_first_page()`, so comparisons are fair.

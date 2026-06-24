@@ -33,8 +33,10 @@ KNOWN_MODELS: dict[str, dict] = {
     "gemini-1.5-flash":               {"name": "Gemini 1.5 Flash",         "in": 0.075,  "out": 0.30,  "vision": True,  "ctx": 1_000_000},
     "gemini-1.5-flash-8b":            {"name": "Gemini 1.5 Flash 8B",      "in": 0.0375, "out": 0.15,  "vision": True,  "ctx": 1_000_000},
     "gemini-1.5-pro":                 {"name": "Gemini 1.5 Pro",           "in": 3.50,   "out": 10.50, "vision": True,  "ctx": 2_000_000},
-    "gemini-2.5-flash-preview-05-20": {"name": "Gemini 2.5 Flash Preview", "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
-    "gemini-2.5-pro-preview-06-05":   {"name": "Gemini 2.5 Pro Preview",   "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
+    "gemini-2.5-flash":                {"name": "Gemini 2.5 Flash",         "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.5-pro":                  {"name": "Gemini 2.5 Pro",           "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
+    "gemini-2.5-flash-preview-05-20":  {"name": "Gemini 2.5 Flash Preview", "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.5-pro-preview-06-05":    {"name": "Gemini 2.5 Pro Preview",   "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
     # DeepSeek
     "deepseek-chat":              {"name": "DeepSeek Chat (V3)",        "in": 0.07,   "out": 1.10,  "vision": False, "ctx": 64_000},
     "deepseek-reasoner":          {"name": "DeepSeek Reasoner (R1)",    "in": 0.55,   "out": 2.19,  "vision": False, "ctx": 64_000},
@@ -72,6 +74,8 @@ async def fetch_models(
             return await _fetch_anthropic(api_key)
         if provider_type == "gemini":
             return await _fetch_gemini(api_key)
+        if provider_type == "mistral":
+            return _mistral_ocr_models()
         if provider_type == "deepseek":
             url = base_url or "https://api.deepseek.com/v1"
             return await _fetch_openai_compat(api_key, url, provider_type)
@@ -81,6 +85,19 @@ async def fetch_models(
     except Exception as e:
         log.warning("fetch_models(%s) failed: %s", provider_type, e)
     return []
+
+
+def _mistral_ocr_models() -> list[dict]:
+    """Mistral's dedicated OCR model. Billed per page, so token prices are N/A."""
+    return [{
+        "id": "mistral-ocr-latest",
+        "name": "Mistral OCR",
+        "supports_vision": True,   # surfaced in the Vision section
+        "context_length": None,
+        "price_in": None,
+        "price_out": None,
+        "is_free": False,
+    }]
 
 
 async def _fetch_anthropic(api_key: str) -> list[dict]:
@@ -130,6 +147,8 @@ async def _fetch_gemini(api_key: str) -> list[dict]:
         item = _enrich(model_id, m.get("displayName", ""))
         if item["context_length"] is None:
             item["context_length"] = m.get("inputTokenLimit")
+        # All Gemini models that support generateContent also support vision (multimodal)
+        item["supports_vision"] = True
         result.append(item)
 
     # Known models (with pricing) first, then unknown sorted by id
