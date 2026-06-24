@@ -29,7 +29,7 @@ docs/             Architecture docs (you are here)
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
 | `services/ai_analysis.py` | AI Analysis: calls Anthropic/OpenAI/Gemini/DeepSeek/OpenRouter to produce summary, tags, document_type, language, organization, amount |
-| `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini/OpenRouter + **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing, returns verbatim transcription). Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab |
+| `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini/OpenRouter + **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing, returns verbatim transcription). Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. Mistral also supports text models (OpenAI-compat) for analysis. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
 | `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; batch, reclassify |
@@ -57,7 +57,7 @@ docs/             Architecture docs (you are here)
 | `types/index.ts` | All TypeScript interfaces (`Document`, `SearchResult`, etc.) |
 | `api/client.ts` | Thin `fetch` wrapper (`api.get/post/patch/delete/upload`) |
 | `api/documents.ts` | Typed API calls for documents, search, upload, admin |
-| `components/layout/Header.tsx` | Top nav: logo, language switcher, admin gear icon |
+| `components/layout/Header.tsx` | Top nav: logo, language switcher, dark/light theme toggle (persisted in localStorage), admin gear icon |
 | `components/ui/Button.tsx` | Button component (primary/secondary/ghost/danger, sizes) |
 | `components/ui/Modal.tsx` | Accessible modal overlay |
 | `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid) |
@@ -67,7 +67,7 @@ docs/             Architecture docs (you are here)
 | `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
 | `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify buttons (incl. `StatCard`) |
 | `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
-| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle (`enable_ai_vision`); three provider sections: Analysis, Vision, **Premium Vision (Judge)** (`task_type: premium`, used by the OCR Lab) |
+| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle. Three sections: Analysis, Vision, Premium (Judge). Providers support inline model editing (pencil icon fetches models via stored API key). Mistral supports OCR + text models. |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |

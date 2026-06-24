@@ -14,6 +14,7 @@
 
   --color-accent:      #1a1a18;      /* primary action = black */
   --color-accent-hover:#333330;
+  --color-accent-fg:   #ffffff;      /* text color on accent background */
   --color-tag:         #f2f2ee;
   --color-tag-text:    #44443c;
 
@@ -43,6 +44,29 @@
   --shadow-xl:   0 24px 64px rgba(0,0,0,.16);
 
   --transition: 150ms ease;
+}
+
+/* ── Dark theme ──────────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --color-bg:          #111110;
+  --color-surface:     #1c1c1a;
+  --color-border:      #2e2e2a;
+  --color-border-soft: #242420;
+
+  --color-ink:         #ededea;
+  --color-ink-muted:   #a0a099;
+  --color-ink-faint:   #68685e;
+
+  --color-accent:      #ededea;
+  --color-accent-hover:#c8c8c4;
+  --color-accent-fg:   #111110;      /* dark text on light accent background */
+  --color-tag:         #282825;
+  --color-tag-text:    #b8b8b0;
+
+  --color-success:     #22c55e;
+  --color-warning:     #f59e0b;
+  --color-error:       #ef4444;
+  --color-error-bg:    #2a1515;
 }
 
 html { font-size: 16px; }

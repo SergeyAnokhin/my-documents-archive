@@ -69,10 +69,13 @@ async def run_vision(body: LabVisionRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Provider is not vision-capable")
     img = _doc_image(body.doc_id, db)
     try:
-        text, cost, ms = await lab.run_vision_ocr(img, provider, db)
+        text, cost, ms, tin, tout = await lab.run_vision_ocr(img, provider, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Vision failed: {e}")
-    return LabVisionResult(provider_id=provider.id, name=provider.name, text=text, cost=cost, ms=ms)
+    return LabVisionResult(
+        provider_id=provider.id, name=provider.name, text=text,
+        cost=cost, ms=ms, tokens_in=tin, tokens_out=tout,
+    )
 
 
 @router.post("/judge", response_model=LabJudgeResult)

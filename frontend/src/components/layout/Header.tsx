@@ -1,7 +1,22 @@
-import { Settings, Globe } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Settings, Globe, Moon, Sun } from "lucide-react";
 import { useT, type Lang } from "../../i18n";
 import { IndexingBadge } from "../ui/IndexingBadge";
 import "./Header.css";
+
+function getInitialTheme(): "light" | "dark" {
+  try {
+    const stored = localStorage.getItem("theme");
+    if (stored === "dark" || stored === "light") return stored;
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch {}
+  return "light";
+}
+
+function applyTheme(theme: "light" | "dark") {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("theme", theme); } catch {}
+}
 
 interface Props {
   onAdminOpen: () => void;
@@ -9,6 +24,11 @@ interface Props {
 
 export function Header({ onAdminOpen }: Props) {
   const { t, lang, setLang } = useT();
+  const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
+
+  useEffect(() => { applyTheme(theme); }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === "light" ? "dark" : "light");
 
   return (
     <header className="header">
@@ -22,6 +42,16 @@ export function Header({ onAdminOpen }: Props) {
         {/* Actions */}
         <div className="header-actions">
           <IndexingBadge />
+
+          {/* Theme toggle */}
+          <button
+            className="icon-btn"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Light mode" : "Dark mode"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
 
           {/* Language switcher */}
           <button

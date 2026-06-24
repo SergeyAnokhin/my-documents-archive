@@ -78,11 +78,15 @@ export const toggleProvider = (id: number) => api.patch<AIProvider>(`/admin/prov
 export const removeProvider = (id: number) => api.delete(`/admin/providers/${id}`);
 export const updateProviderOrder = (id: number, sort_order: number) =>
   api.patch<AIProvider>(`/admin/providers/${id}/order`, { sort_order });
+export const updateProviderModel = (id: number, model: string) =>
+  api.patch<AIProvider>(`/admin/providers/${id}/model`, { model });
 export const fetchProviderModels = (body: {
   provider_type: string;
   api_key: string;
   base_url?: string;
 }) => api.post<ProviderModel[]>("/admin/providers/models", body);
+export const fetchProviderModelsById = (id: number) =>
+  api.post<ProviderModel[]>(`/admin/providers/${id}/models`);
 
 export const getArenaRatings = () =>
   api.get<Record<string, ArenaRating>>("/admin/arena-ratings");
@@ -114,7 +118,7 @@ export const runLabOcr = (doc_id: number, method: string) =>
   api.post<{ method: string; text: string; ms: number }>("/lab/ocr", { doc_id, method });
 
 export const runLabVision = (doc_id: number, provider_id: number) =>
-  api.post<{ provider_id: number; name: string; text: string; cost: number; ms: number }>(
+  api.post<{ provider_id: number; name: string; text: string; cost: number; ms: number; tokens_in: number; tokens_out: number }>(
     "/lab/vision", { doc_id, provider_id });
 
 export const runLabJudge = (body: {

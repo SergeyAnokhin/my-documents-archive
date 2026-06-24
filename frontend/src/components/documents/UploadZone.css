@@ -23,7 +23,7 @@
 }
 
 .upload-zone--uploading { cursor: default; border-style: solid; border-color: var(--color-ink-faint); }
-.upload-zone--success   { border-color: var(--color-success); background: #f0fff6; cursor: default; }
+.upload-zone--success   { border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface)); cursor: default; }
 .upload-zone--error     { border-color: var(--color-error); background: var(--color-error-bg); cursor: default; }
 
 .upload-zone-icon {
@@ -38,7 +38,7 @@
 
 .upload-zone--dragging .upload-zone-icon {
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-fg);
 }
 
 .upload-zone-hint {

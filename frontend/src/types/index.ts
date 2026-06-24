@@ -124,6 +124,8 @@ export interface LabResult {
   text: string;
   ms: number;
   cost?: number;
+  tokens_in?: number;
+  tokens_out?: number;
 }
 
 export interface LabRanking {
@@ -138,6 +140,8 @@ export interface LabJudgeResult {
   summary: string;
   cost: number;
   ms: number;
+  tokens_in?: number;
+  tokens_out?: number;
 }
 
 export type ViewMode = "list" | "grid";

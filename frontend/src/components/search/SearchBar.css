@@ -36,7 +36,7 @@
 .search-input:focus {
   outline: none;
   border-color: var(--color-ink);
-  box-shadow: 0 0 0 3px rgba(26,26,24,.07);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ink) 8%, transparent);
 }
 /* Hide browser's native clear button */
 .search-input::-webkit-search-cancel-button { display: none; }
@@ -81,6 +81,6 @@
 }
 .search-mode-pill.active {
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-fg);
   border-color: var(--color-accent);
 }

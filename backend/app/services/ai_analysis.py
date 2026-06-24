@@ -182,11 +182,17 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
         "openai":     "gpt-4o-mini",
         "deepseek":   "deepseek-chat",
         "openrouter": "openai/gpt-4o-mini",
+        "mistral":    "mistral-small-latest",
+    }
+    base_url_defaults = {
+        "deepseek": "https://api.deepseek.com/v1",
+        "mistral":  "https://api.mistral.ai/v1",
     }
     model = getattr(provider, "model", None) or model_defaults.get(provider.provider_type, "gpt-4o-mini")
     client_kwargs: dict = {"api_key": provider.api_key}
-    if getattr(provider, "base_url", None):
-        client_kwargs["base_url"] = provider.base_url
+    base_url = getattr(provider, "base_url", None) or base_url_defaults.get(provider.provider_type)
+    if base_url:
+        client_kwargs["base_url"] = base_url
 
     client = openai.AsyncOpenAI(**client_kwargs)
     create_kwargs: dict = {

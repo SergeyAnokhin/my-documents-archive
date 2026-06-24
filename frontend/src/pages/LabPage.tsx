@@ -145,9 +145,10 @@ export function LabPage() {
     addLog(`→ Vision [${p.name}]`);
     try {
       const res = await runLabVision(docId, p.id);
-      upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: res.text, ms: res.ms, cost: res.cost });
+      upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: res.text, ms: res.ms, cost: res.cost, tokens_in: res.tokens_in, tokens_out: res.tokens_out });
       const costStr = res.cost != null && res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
-      addLog(`← Vision [${p.name}]: ${res.text.length} chars · ${res.ms}ms${costStr}`, "ok");
+      const tokStr = res.tokens_in ? ` · ${res.tokens_in}+${res.tokens_out} tok` : "";
+      addLog(`← Vision [${p.name}]: ${res.text.length} chars · ${res.ms}ms${tokStr}${costStr}`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
       addLog(`✗ Vision [${p.name}]: ${(e as Error).message}`, "err");
@@ -333,6 +334,7 @@ export function LabPage() {
                         {isBest && <Trophy size={13} className="lab-best-icon" />}
                         <span className="lab-card-meta">
                           {r.text.length} {lab.chars} · {r.ms} ms
+                          {(r.tokens_in != null && r.tokens_in > 0) ? ` · ${r.tokens_in}↑${r.tokens_out}↓ tok` : ""}
                           {r.cost != null && r.cost > 0 ? ` · $${r.cost.toFixed(5)}` : ""}
                         </span>
                         <button className="icon-btn" title={lab.remove}
@@ -398,11 +400,11 @@ export function LabPage() {
                         </li>
                       ))}
                     </ul>
-                    {judgeResult.cost > 0 && (
-                      <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                        ${judgeResult.cost.toFixed(5)} · {judgeResult.ms} ms
-                      </p>
-                    )}
+                    <p className="text-xs text-muted" style={{ marginTop: 6 }}>
+                      {judgeResult.ms} ms
+                      {judgeResult.tokens_in ? ` · ${judgeResult.tokens_in}↑${judgeResult.tokens_out}↓ tok` : ""}
+                      {judgeResult.cost > 0 ? ` · $${judgeResult.cost.toFixed(5)}` : ""}
+                    </p>
                   </div>
                 )}
               </>

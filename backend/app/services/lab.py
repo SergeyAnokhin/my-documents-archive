@@ -102,13 +102,13 @@ async def worker_available() -> bool:
 
 # ── Vision OCR ──────────────────────────────────────────────────────────────────
 
-async def run_vision_ocr(img_bytes: bytes, provider, db: Session) -> tuple[str, float, int]:
-    """Transcribe the image with one vision provider. Returns (text, cost, elapsed_ms)."""
+async def run_vision_ocr(img_bytes: bytes, provider, db: Session) -> tuple[str, float, int, int, int]:
+    """Transcribe the image with one vision provider. Returns (text, cost, elapsed_ms, tokens_in, tokens_out)."""
     start = time.perf_counter()
     text, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, OCR_VISION_PROMPT)
     ms = int((time.perf_counter() - start) * 1000)
     _update_stats(db, provider, tin, tout, cost)
-    return text.strip(), cost, ms
+    return text.strip(), cost, ms, tin, tout
 
 
 # ── Judge ───────────────────────────────────────────────────────────────────────
@@ -147,6 +147,8 @@ async def judge(
     result = _parse_json(raw)
     result["cost"] = cost
     result["ms"] = ms
+    result["tokens_in"] = tin
+    result["tokens_out"] = tout
     return result
 
 

@@ -31,7 +31,7 @@
   transition: background var(--transition), color var(--transition);
 }
 .admin-nav-btn:hover { background: var(--color-tag); color: var(--color-ink); }
-.admin-nav-btn.active { background: var(--color-accent); color: #fff; }
+.admin-nav-btn.active { background: var(--color-accent); color: var(--color-accent-fg); }
 
 /* Section */
 .admin-content { overflow-y: auto; }
@@ -69,8 +69,8 @@
   gap: var(--sp-1);
   border: 1.5px solid transparent;
 }
-.stat-card.accent { background: var(--color-accent); color: #fff; }
-.stat-card.accent .stat-label { color: rgba(255,255,255,.7); }
+.stat-card.accent { background: var(--color-accent); color: var(--color-accent-fg); }
+.stat-card.accent .stat-label { color: color-mix(in srgb, var(--color-accent-fg) 70%, transparent); }
 .stat-card.danger { border-color: var(--color-error); }
 .stat-card.danger .stat-value { color: var(--color-error); }
 

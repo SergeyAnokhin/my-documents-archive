@@ -207,4 +207,4 @@ dmypy.json
 
 # PyInstaller
 *.spec
-data/documents/.docintell/docintell.db
+**/*.db

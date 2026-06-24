@@ -196,6 +196,8 @@ class LabVisionResult(BaseModel):
     text: str
     cost: float
     ms: int
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 class LabCandidate(BaseModel):
@@ -222,3 +224,5 @@ class LabJudgeResult(BaseModel):
     summary: str = ""
     cost: float = 0.0
     ms: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0

@@ -30,13 +30,31 @@ KNOWN_MODELS: dict[str, dict] = {
     # Google Gemini
     "gemini-2.0-flash":               {"name": "Gemini 2.0 Flash",         "in": 0.10,   "out": 0.40,  "vision": True,  "ctx": 1_000_000},
     "gemini-2.0-flash-lite":          {"name": "Gemini 2.0 Flash Lite",    "in": 0.075,  "out": 0.30,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.0-flash-exp":           {"name": "Gemini 2.0 Flash Exp",     "in": 0.10,   "out": 0.40,  "vision": True,  "ctx": 1_000_000},
     "gemini-1.5-flash":               {"name": "Gemini 1.5 Flash",         "in": 0.075,  "out": 0.30,  "vision": True,  "ctx": 1_000_000},
     "gemini-1.5-flash-8b":            {"name": "Gemini 1.5 Flash 8B",      "in": 0.0375, "out": 0.15,  "vision": True,  "ctx": 1_000_000},
+    "gemini-1.5-flash-002":           {"name": "Gemini 1.5 Flash 002",     "in": 0.075,  "out": 0.30,  "vision": True,  "ctx": 1_000_000},
     "gemini-1.5-pro":                 {"name": "Gemini 1.5 Pro",           "in": 3.50,   "out": 10.50, "vision": True,  "ctx": 2_000_000},
-    "gemini-2.5-flash":                {"name": "Gemini 2.5 Flash",         "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
-    "gemini-2.5-pro":                  {"name": "Gemini 2.5 Pro",           "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
-    "gemini-2.5-flash-preview-05-20":  {"name": "Gemini 2.5 Flash Preview", "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
-    "gemini-2.5-pro-preview-06-05":    {"name": "Gemini 2.5 Pro Preview",   "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
+    "gemini-1.5-pro-002":             {"name": "Gemini 1.5 Pro 002",       "in": 3.50,   "out": 10.50, "vision": True,  "ctx": 2_000_000},
+    "gemini-2.5-flash":               {"name": "Gemini 2.5 Flash",         "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.5-flash-lite":          {"name": "Gemini 2.5 Flash Lite",    "in": 0.10,   "out": 0.40,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.5-pro":                 {"name": "Gemini 2.5 Pro",           "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
+    "gemini-2.5-flash-preview-05-20": {"name": "Gemini 2.5 Flash Preview", "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 1_000_000},
+    "gemini-2.5-pro-preview-06-05":   {"name": "Gemini 2.5 Pro Preview",   "in": 1.25,   "out": 10.0,  "vision": True,  "ctx": 2_000_000},
+    # Gemini 3.x preview models
+    "gemini-3.0-flash":               {"name": "Gemini 3.0 Flash",         "in": 0.10,   "out": 0.40,  "vision": True,  "ctx": 1_000_000},
+    "gemini-3.1-flash-lite-preview":  {"name": "Gemini 3.1 Flash Lite",    "in": 0.075,  "out": 0.30,  "vision": True,  "ctx": 1_000_000},
+    "gemini-3.1-flash-preview":       {"name": "Gemini 3.1 Flash",         "in": 0.10,   "out": 0.40,  "vision": True,  "ctx": 1_000_000},
+    # Mistral (text models)
+    "mistral-large-latest":     {"name": "Mistral Large",    "in": 2.0,  "out": 6.0,  "vision": False, "ctx": 131_000},
+    "mistral-medium-latest":    {"name": "Mistral Medium",   "in": 0.40, "out": 2.0,  "vision": False, "ctx": 131_000},
+    "mistral-small-latest":     {"name": "Mistral Small",    "in": 0.10, "out": 0.30, "vision": False, "ctx": 131_000},
+    "mistral-nemo":             {"name": "Mistral Nemo",     "in": 0.15, "out": 0.15, "vision": False, "ctx": 131_000},
+    "open-mistral-nemo":        {"name": "Open Mistral Nemo","in": 0.15, "out": 0.15, "vision": False, "ctx": 131_000},
+    "open-mistral-7b":          {"name": "Open Mistral 7B",  "in": 0.25, "out": 0.25, "vision": False, "ctx": 32_000},
+    "open-mixtral-8x7b":        {"name": "Mixtral 8x7B",     "in": 0.70, "out": 0.70, "vision": False, "ctx": 32_000},
+    "pixtral-large-latest":     {"name": "Pixtral Large",    "in": 2.0,  "out": 6.0,  "vision": True,  "ctx": 131_000},
+    "pixtral-12b-2409":         {"name": "Pixtral 12B",      "in": 0.15, "out": 0.15, "vision": True,  "ctx": 131_000},
     # DeepSeek
     "deepseek-chat":              {"name": "DeepSeek Chat (V3)",        "in": 0.07,   "out": 1.10,  "vision": False, "ctx": 64_000},
     "deepseek-reasoner":          {"name": "DeepSeek Reasoner (R1)",    "in": 0.55,   "out": 2.19,  "vision": False, "ctx": 64_000},
@@ -48,8 +66,22 @@ _OPENAI_TEXT_MODELS = [
 ]
 
 
-def _enrich(model_id: str, display_name: str = "") -> dict:
+def _gemini_infer_pricing(model_id: str) -> dict:
+    """Infer approximate pricing for unknown Gemini models by name pattern."""
+    mid = model_id.lower()
+    if "pro" in mid:
+        return {"in": 1.25, "out": 10.0, "vision": True}
+    if "flash-lite" in mid or "flash-8b" in mid:
+        return {"in": 0.075, "out": 0.30, "vision": True}
+    if "flash" in mid:
+        return {"in": 0.10, "out": 0.40, "vision": True}
+    return {}
+
+
+def _enrich(model_id: str, display_name: str = "", provider_type: str = "") -> dict:
     info = KNOWN_MODELS.get(model_id, {})
+    if not info and provider_type == "gemini":
+        info = _gemini_infer_pricing(model_id)
     return {
         "id": model_id,
         "name": info.get("name") or display_name or model_id,
@@ -75,7 +107,7 @@ async def fetch_models(
         if provider_type == "gemini":
             return await _fetch_gemini(api_key)
         if provider_type == "mistral":
-            return _mistral_ocr_models()
+            return await _fetch_mistral(api_key)
         if provider_type == "deepseek":
             url = base_url or "https://api.deepseek.com/v1"
             return await _fetch_openai_compat(api_key, url, provider_type)
@@ -87,17 +119,48 @@ async def fetch_models(
     return []
 
 
+_MISTRAL_OCR_MODEL = {
+    "id": "mistral-ocr-latest",
+    "name": "Mistral OCR",
+    "supports_vision": True,
+    "context_length": None,
+    "price_in": None,
+    "price_out": None,
+    "is_free": False,
+}
+
+_MISTRAL_TEXT_IDS = [
+    "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest",
+    "open-mistral-nemo", "pixtral-large-latest", "pixtral-12b-2409",
+]
+
+
 def _mistral_ocr_models() -> list[dict]:
-    """Mistral's dedicated OCR model. Billed per page, so token prices are N/A."""
-    return [{
-        "id": "mistral-ocr-latest",
-        "name": "Mistral OCR",
-        "supports_vision": True,   # surfaced in the Vision section
-        "context_length": None,
-        "price_in": None,
-        "price_out": None,
-        "is_free": False,
-    }]
+    """Static Mistral model list (OCR + known text models). No API call."""
+    return [_MISTRAL_OCR_MODEL] + [_enrich(mid) for mid in _MISTRAL_TEXT_IDS]
+
+
+async def _fetch_mistral(api_key: str) -> list[dict]:
+    """Fetch Mistral models via API; fall back to static list."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.mistral.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            r.raise_for_status()
+        ids = {m["id"] for m in r.json().get("data", [])}
+        result = [_MISTRAL_OCR_MODEL]
+        for mid in _MISTRAL_TEXT_IDS:
+            if mid in ids:
+                result.append(_enrich(mid))
+        already = {m["id"] for m in result}
+        for mid in sorted(ids):
+            if mid not in already and mid not in ("mistral-embed", "mistral-moderation-latest"):
+                result.append(_enrich(mid, provider_type="mistral"))
+        return result
+    except Exception:
+        return _mistral_ocr_models()
 
 
 async def _fetch_anthropic(api_key: str) -> list[dict]:
@@ -144,7 +207,7 @@ async def _fetch_gemini(api_key: str) -> list[dict]:
             continue
         raw_id = m.get("name", "")
         model_id = raw_id.removeprefix("models/")
-        item = _enrich(model_id, m.get("displayName", ""))
+        item = _enrich(model_id, m.get("displayName", ""), "gemini")
         if item["context_length"] is None:
             item["context_length"] = m.get("inputTokenLimit")
         # All Gemini models that support generateContent also support vision (multimodal)

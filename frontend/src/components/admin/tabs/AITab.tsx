@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { ChevronUp, ChevronDown, Plus, Trash2, RefreshCw } from "lucide-react";
+import { ChevronUp, ChevronDown, Plus, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
 import {
   listProviders, addProvider, toggleProvider, removeProvider,
-  updateProviderOrder, fetchProviderModels,
+  updateProviderOrder, fetchProviderModels, fetchProviderModelsById,
+  updateProviderModel,
   getArenaRatings, refreshArenaRatings,
   getAppSettings, updateAppSettings,
 } from "../../../api/documents";
@@ -18,7 +19,7 @@ const PROVIDER_TYPES = [
   { value: "gemini",     label: "Google Gemini" },
   { value: "deepseek",   label: "DeepSeek" },
   { value: "openrouter", label: "OpenRouter" },
-  { value: "mistral",    label: "Mistral (OCR)" },
+  { value: "mistral",    label: "Mistral" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,19 +53,31 @@ function inputPrice(price_in?: number | null): string {
   return `$${price_in < 0.01 ? price_in.toFixed(4) : price_in.toFixed(2)}`;
 }
 
-/** Lookup rating by model id: try exact match, then partial (e.g. "openai/gpt-4o" → "gpt-4o"). */
+/** Lookup rating by model id: exact → short segment → Gemini family prefix match. */
 function lookupRating(
   ratings: Record<string, ArenaRating>,
   modelId: string,
   forVision: boolean,
 ): number {
+  const pick = (r: ArenaRating) => forVision ? r.vision : r.text;
   const normalised = modelId.toLowerCase();
+
   const direct = ratings[normalised];
-  if (direct) return forVision ? direct.vision : direct.text;
-  // Try short model name (last segment of provider/model)
+  if (direct) return pick(direct);
+
+  // "openai/gpt-4o" → "gpt-4o"
   const short = normalised.split("/").pop() ?? "";
   const shortMatch = ratings[short];
-  if (shortMatch) return forVision ? shortMatch.vision : shortMatch.text;
+  if (shortMatch) return pick(shortMatch);
+
+  // Gemini family prefix match: "gemini-3.1-flash-lite-preview" → try "gemini-2.5-flash-lite"
+  if (normalised.startsWith("gemini-")) {
+    const isProModel = normalised.includes("-pro");
+    const isFlashLite = normalised.includes("flash-lite") || normalised.includes("flash-8b");
+    const isFlash = normalised.includes("flash") && !isFlashLite;
+    const family = isProModel ? "gemini-2.5-pro" : isFlashLite ? "gemini-2.5-flash-lite" : isFlash ? "gemini-2.5-flash" : null;
+    if (family && ratings[family]) return pick(ratings[family]);
+  }
   return 0;
 }
 
@@ -130,37 +143,32 @@ function ModelPicker({
                 key={m.id}
                 onClick={() => onSelect(m)}
                 style={{
-                  padding: "7px 10px",
+                  padding: "4px 8px",
                   cursor: "pointer",
                   borderBottom: "1px solid var(--color-border-soft)",
-                  background: isSelected ? "var(--color-accent-subtle, #f0f0ff)" : "transparent",
+                  background: isSelected ? "var(--color-tag)" : "transparent",
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: 5,
                 }}
               >
-                {/* Free badge */}
                 {m.is_free && (
                   <span style={{
-                    fontSize: 9, fontWeight: 700, padding: "1px 4px",
+                    fontSize: 8, fontWeight: 700, padding: "1px 3px",
                     borderRadius: 3, background: "#16a34a", color: "#fff", flexShrink: 0,
                   }}>FREE</span>
                 )}
-                {/* Vision badge */}
                 {m.supports_vision && !forVision && (
                   <span style={{
-                    fontSize: 9, fontWeight: 700, padding: "1px 4px",
+                    fontSize: 8, fontWeight: 700, padding: "1px 3px",
                     borderRadius: 3, background: "#6366f1", color: "#fff", flexShrink: 0,
                   }}>{ai.visionBadge}</span>
                 )}
-                {/* Model name */}
-                <span style={{ flex: 1, fontSize: 12.5, fontWeight: isSelected ? 600 : 400, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ flex: 1, fontSize: 12, fontWeight: isSelected ? 600 : 400, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {m.name !== m.id ? m.name : m.id}
                 </span>
-                {/* Stars */}
                 <Stars count={stars} />
-                {/* Price + context */}
-                <span className="text-xs text-muted" style={{ flexShrink: 0, textAlign: "right", fontSize: 11 }}>
+                <span className="text-xs text-muted" style={{ flexShrink: 0, textAlign: "right", fontSize: 10.5 }}>
                   {priceStr}{m.context_length ? ` · ${fmtCtx(m.context_length)}` : ""}
                 </span>
               </div>
@@ -221,7 +229,7 @@ function AddProviderForm({
   const [loadingModels, setLoadingModels] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const showBaseUrl = form.provider_type === "openai";
+  const showBaseUrl = ["openai", "mistral", "openrouter"].includes(form.provider_type);
 
   const handleFetchModels = async () => {
     setLoadingModels(true);
@@ -355,60 +363,129 @@ function ProviderRow({
   provider,
   isFirst,
   isLast,
+  ratings,
+  forVision,
   onToggle,
   onDelete,
   onMoveUp,
   onMoveDown,
+  onReload,
 }: {
   provider: AIProvider;
   isFirst: boolean;
   isLast: boolean;
+  ratings: Record<string, ArenaRating>;
+  forVision: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onReload: () => void;
 }) {
   const { t } = useT();
   const ai = t.admin.ai;
   const hasStats = provider.total_tokens_in > 0 || provider.total_tokens_out > 0;
 
+  const [editing, setEditing] = useState(false);
+  const [editModels, setEditModels] = useState<ProviderModel[]>([]);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pendingModel, setPendingModel] = useState<string | null>(null);
+
+  const openEdit = async () => {
+    if (editing) { setEditing(false); return; }
+    setEditing(true);
+    setPendingModel(null);
+    setLoadingEdit(true);
+    try {
+      const list = await fetchProviderModelsById(provider.id);
+      setEditModels(list);
+    } catch {
+      setEditModels([]);
+    } finally {
+      setLoadingEdit(false);
+    }
+  };
+
+  const saveModel = async () => {
+    if (!pendingModel) return;
+    setSaving(true);
+    try {
+      await updateProviderModel(provider.id, pendingModel);
+      onReload();
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <li className="provider-item" style={{ alignItems: "flex-start", gap: 6 }}>
-      {/* Priority arrows */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 1, paddingTop: 2, flexShrink: 0 }}>
-        <button className="icon-btn" onClick={onMoveUp} disabled={isFirst} title={ai.moveUp}
-          style={{ opacity: isFirst ? 0.25 : 1 }}>
-          <ChevronUp size={13} />
-        </button>
-        <button className="icon-btn" onClick={onMoveDown} disabled={isLast} title={ai.moveDown}
-          style={{ opacity: isLast ? 0.25 : 1 }}>
-          <ChevronDown size={13} />
-        </button>
+    <li className="provider-item" style={{ alignItems: "flex-start", gap: 6, flexDirection: "column", padding: "6px 8px" }}>
+      <div style={{ display: "flex", width: "100%", alignItems: "flex-start", gap: 6 }}>
+        {/* Priority arrows */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 1, paddingTop: 2, flexShrink: 0 }}>
+          <button className="icon-btn" onClick={onMoveUp} disabled={isFirst} title={ai.moveUp}
+            style={{ opacity: isFirst ? 0.25 : 1 }}>
+            <ChevronUp size={13} />
+          </button>
+          <button className="icon-btn" onClick={onMoveDown} disabled={isLast} title={ai.moveDown}
+            style={{ opacity: isLast ? 0.25 : 1 }}>
+            <ChevronDown size={13} />
+          </button>
+        </div>
+
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span className="provider-name" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {provider.name}
+          </span>
+          {hasStats && (
+            <div className="text-xs text-muted" style={{ marginTop: 1 }}>
+              {fmtTokens(provider.total_tokens_in)} {ai.tokensIn} ·{" "}
+              {fmtTokens(provider.total_tokens_out)} {ai.tokensOut} ·{" "}
+              ${provider.total_cost_usd.toFixed(4)}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="folder-actions" style={{ flexShrink: 0 }}>
+          <button className="icon-btn" onClick={openEdit} title="Сменить модель" style={{ color: editing ? "var(--color-accent)" : undefined }}>
+            <Pencil size={13} />
+          </button>
+          <button className="icon-btn" onClick={onToggle} title={provider.enabled ? t.enabled : t.disabled}>
+            <span className={`status-dot ${provider.enabled ? "done" : "pending"}`} />
+          </button>
+          <button className="icon-btn" onClick={onDelete} title={t.delete}>
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Info */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span className="provider-name" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {provider.name}
-        </span>
-        {hasStats && (
-          <div className="text-xs text-muted" style={{ marginTop: 2 }}>
-            {fmtTokens(provider.total_tokens_in)} {ai.tokensIn} ·{" "}
-            {fmtTokens(provider.total_tokens_out)} {ai.tokensOut} ·{" "}
-            ${provider.total_cost_usd.toFixed(4)}
+      {/* Inline model editor */}
+      {editing && (
+        <div style={{ width: "100%", paddingTop: 6, borderTop: "1px solid var(--color-border-soft)" }}>
+          {loadingEdit ? (
+            <p className="text-xs text-muted" style={{ marginBottom: 6 }}>{ai.fetchingModels}</p>
+          ) : editModels.length === 0 ? (
+            <p className="text-xs text-muted" style={{ marginBottom: 6 }}>{ai.noModels}</p>
+          ) : (
+            <ModelPicker
+              models={editModels}
+              selected={pendingModel ?? provider.model ?? ""}
+              ratings={ratings}
+              forVision={forVision}
+              onSelect={m => setPendingModel(m.id)}
+            />
+          )}
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <Button variant="primary" size="sm" loading={saving} disabled={!pendingModel || saving} onClick={saveModel}>
+              {t.save}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>{t.cancel}</Button>
           </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="folder-actions" style={{ flexShrink: 0 }}>
-        <button className="icon-btn" onClick={onToggle} title={provider.enabled ? t.enabled : t.disabled}>
-          <span className={`status-dot ${provider.enabled ? "done" : "pending"}`} />
-        </button>
-        <button className="icon-btn" onClick={onDelete} title={t.delete}>
-          <Trash2 size={14} />
-        </button>
-      </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -464,10 +541,13 @@ function ProviderSection({
               provider={p}
               isFirst={i === 0}
               isLast={i === providers.length - 1}
+              ratings={ratings}
+              forVision={taskType === "vision" || taskType === "premium"}
               onToggle={() => toggleProvider(p.id).then(onReload)}
               onDelete={() => removeProvider(p.id).then(onReload)}
               onMoveUp={() => moveProvider(i, "up")}
               onMoveDown={() => moveProvider(i, "down")}
+              onReload={onReload}
             />
           ))}
         </ul>

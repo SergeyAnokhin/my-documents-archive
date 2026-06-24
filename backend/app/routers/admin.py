@@ -225,6 +225,37 @@ def update_provider_order(provider_id: int, body: dict, db: Session = Depends(ge
     return AIProviderOut.model_validate(p)
 
 
+@router.patch("/providers/{provider_id}/model", response_model=AIProviderOut)
+def update_provider_model(provider_id: int, body: dict, db: Session = Depends(get_db)):
+    p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    new_model = str(body.get("model", "")).strip()
+    if not new_model:
+        raise HTTPException(status_code=400, detail="model is required")
+    p.model = new_model
+    # Regenerate name: keep existing key_name bracket if present
+    import re
+    bracket = re.search(r"\[([^\]]+)\]$", p.name or "")
+    key_label = bracket.group(1) if bracket else None
+    base = f"{p.provider_type}/{new_model}"
+    p.name = f"{base} [{key_label}]" if key_label else base
+    db.commit()
+    db.refresh(p)
+    return AIProviderOut.model_validate(p)
+
+
+@router.post("/providers/{provider_id}/models", response_model=list[ProviderModelInfo])
+async def fetch_provider_models_by_id(provider_id: int, db: Session = Depends(get_db)):
+    """Fetch available models for an existing provider using its stored API key."""
+    p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    from ..services.provider_models import fetch_models
+    models = await fetch_models(p.provider_type, p.api_key, p.base_url)
+    return models
+
+
 @router.delete("/providers/{provider_id}", status_code=204)
 def remove_provider(provider_id: int, db: Session = Depends(get_db)):
     p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()

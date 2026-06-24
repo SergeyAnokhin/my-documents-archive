@@ -121,7 +121,7 @@
 .lab-logs-btn.active { border-color: var(--color-accent, #6366f1); color: var(--color-accent, #6366f1); }
 .lab-logs-count {
   background: var(--color-accent, #6366f1);
-  color: #fff;
+  color: var(--color-accent-fg, #fff);
   border-radius: 8px;
   padding: 0 5px;
   font-size: 10px;
