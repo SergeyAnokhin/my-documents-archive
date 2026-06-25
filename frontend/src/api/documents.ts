@@ -4,6 +4,7 @@ import type {
   DocumentList,
   SearchResponse,
   IndexingStats,
+  TypeSuggestion,
   WatchedFolder,
   AIProvider,
   ArenaRating,
@@ -33,6 +34,12 @@ export const deleteDocument = (id: number) => api.delete(`/documents/${id}`);
 
 export const updateTags = (id: number, tags: string[]) =>
   api.patch<Document>(`/documents/${id}/tags`, tags);
+
+export const patchDocumentType = (id: number, document_type: string) =>
+  api.patch<Document>(`/documents/${id}/type`, { document_type });
+
+export const suggestDocumentTypes = (id: number) =>
+  api.post<{ suggestions: TypeSuggestion[]; existing_types: string[] }>(`/indexing/suggest-type/${id}`);
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +105,7 @@ export const refreshArenaRatings = () =>
   api.post<{ updated: number; ratings: Record<string, ArenaRating> }>("/admin/arena-ratings/refresh");
 
 export const reclassifyAll = () => api.post("/admin/reclassify-all");
+export const reclassifyUnclassified = () => api.post("/admin/reclassify-unclassified");
 
 export const getAppSettings = () => api.get<Record<string, string>>("/admin/settings");
 export const updateAppSettings = (body: Record<string, string>) =>

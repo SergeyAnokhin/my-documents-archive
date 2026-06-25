@@ -57,6 +57,20 @@ export const fr: Translations = {
   reclassifyStarted: "Reclassification lancée…",
   labMode: "Réglage OCR",
 
+  // Type picker
+  typePicker: {
+    title: "Changer le type",
+    suggested: "Suggestions",
+    customPlaceholder: "Saisir un type personnalisé…",
+    loading: "Chargement des suggestions…",
+    noSuggestions: "Impossible de charger les suggestions",
+    save: "Appliquer",
+    cancel: "Annuler",
+    manualBadge: "manuel",
+    unclassified: "Non classifié",
+    saved: "Type enregistré",
+  },
+
   noDocuments: "Aucun document",
   noDocumentsHint: "Téléversez un fichier ou synchronisez votre bibliothèque",
   noResults: "Aucun document trouvé",
@@ -87,6 +101,8 @@ export const fr: Translations = {
       cost: "Coût API",
       batchButton: "Lancer l'indexation par lots",
       reclassifyButton: "Reclassifier tout",
+      reclassifyUnclassifiedButton: "Classer les non classifiés",
+      unclassified: "Non classifiés",
       syncButton: "Synchroniser",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "URL du service",

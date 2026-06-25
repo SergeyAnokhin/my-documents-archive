@@ -8,6 +8,7 @@ GET  /api/indexing/status          pending/running counts
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -51,6 +52,33 @@ async def trigger_reclassify(
         raise HTTPException(status_code=404, detail="Document not found")
     background_tasks.add_task(reclassify_document, doc_id)
     return {"message": f"Re-classification queued for document {doc_id}"}
+
+
+@router.post("/suggest-type/{doc_id}")
+async def suggest_type(doc_id: int, db: Session = Depends(get_db)):
+    """Return top-3 LLM type suggestions for a document."""
+    doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    existing = [
+        r[0] for r in db.query(distinct(Document.document_type))
+        .filter(
+            Document.document_type.isnot(None),
+            Document.document_type != "unclassified",
+            Document.document_type != "other",
+        )
+        .all()
+    ]
+
+    from ..services.ai_analysis import suggest_document_types
+    suggestions = await suggest_document_types(
+        doc.summary or "",
+        doc.ocr_text or "",
+        existing,
+        db,
+    )
+    return {"suggestions": suggestions, "existing_types": existing}
 
 
 @router.get("/status")

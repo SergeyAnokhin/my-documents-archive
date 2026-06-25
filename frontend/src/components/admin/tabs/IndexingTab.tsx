@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
-import { getStats, syncLibrary, reclassifyAll, getAppSettings, updateAppSettings, getWorkerStatus } from "../../../api/documents";
+import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, getAppSettings, updateAppSettings, getWorkerStatus } from "../../../api/documents";
 import { api } from "../../../api/client";
 import type { IndexingStats, LabWorkerStatus } from "../../../types";
 
@@ -12,6 +12,7 @@ export function IndexingTab() {
   const [syncing, setSyncing] = useState(false);
   const [batching, setBatching] = useState(false);
   const [reclassifying, setReclassifying] = useState(false);
+  const [reclassifyingUnclassified, setReclassifyingUnclassified] = useState(false);
   const [msg, setMsg] = useState("");
 
   // Compute worker settings
@@ -68,6 +69,19 @@ export function IndexingTab() {
     }
   };
 
+  const handleReclassifyUnclassified = async () => {
+    setReclassifyingUnclassified(true);
+    try {
+      await reclassifyUnclassified();
+      flash("Classifying unclassified documents…");
+      await loadStats();
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setReclassifyingUnclassified(false);
+    }
+  };
+
   const handleSaveUrl = async () => {
     setSavingUrl(true);
     try {
@@ -105,12 +119,13 @@ export function IndexingTab() {
       {stats && (
         <>
           <div className="stats-grid">
-            <StatCard label={ix.total}    value={stats.total} />
-            <StatCard label={ix.indexed}  value={stats.indexed} accent />
-            <StatCard label={ix.analyzed} value={stats.analyzed} accent />
-            <StatCard label={ix.embedded} value={stats.embedded} accent />
-            <StatCard label={ix.pending}  value={stats.pending} />
-            <StatCard label={ix.errors}   value={stats.errors} danger={stats.errors > 0} />
+            <StatCard label={ix.total}        value={stats.total} />
+            <StatCard label={ix.indexed}      value={stats.indexed} accent />
+            <StatCard label={ix.analyzed}     value={stats.analyzed} accent />
+            <StatCard label={ix.embedded}     value={stats.embedded} accent />
+            <StatCard label={ix.pending}      value={stats.pending} />
+            <StatCard label={ix.errors}       value={stats.errors} danger={stats.errors > 0} />
+            <StatCard label={ix.unclassified} value={stats.unclassified} danger={stats.unclassified > 0} />
           </div>
           {stats.api_cost_total > 0 && (
             <p className="text-xs text-muted" style={{ marginTop: 8 }}>
@@ -131,6 +146,9 @@ export function IndexingTab() {
         </Button>
         <Button variant="secondary" loading={reclassifying} onClick={handleReclassify}>
           {ix.reclassifyButton}
+        </Button>
+        <Button variant="secondary" loading={reclassifyingUnclassified} onClick={handleReclassifyUnclassified}>
+          {ix.reclassifyUnclassifiedButton}
         </Button>
       </div>
 

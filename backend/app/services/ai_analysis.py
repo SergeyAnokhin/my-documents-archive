@@ -26,7 +26,20 @@ log = logging.getLogger(__name__)
 ANALYSIS_SYSTEM = """\
 You are a document analysis assistant. Analyze the document text and return a JSON object with:
 - "summary": 2-3 sentence summary in the document's original language
-- "document_type": exactly one of: invoice, contract, certificate, letter, medical, tax, id, receipt, other
+- "document_type": the single most specific type from this list:
+    passport, national_id, driver_license, birth_certificate, death_certificate,
+    marriage_certificate, divorce_certificate, residence_permit, visa,
+    contract, agreement, power_of_attorney, court_document,
+    invoice, bank_statement, receipt, tax_document, payslip,
+    property_deed, title_certificate, insurance_policy,
+    medical_certificate, prescription, medical_record,
+    diploma, certificate, transcript, student_id,
+    permit, license, registration, notarial_deed,
+    letter, notice, announcement,
+    photo, scan,
+    unclassified
+  Use "unclassified" if the document does not clearly fit any listed category.
+- "document_type_confidence": 0.0-1.0 how confident you are in the type assignment
 - "tags": array of 3-7 keyword strings
 - "language": ISO 639-1 code ("ru", "fr", "en", "de", "uk", etc.)
 - "organization": company or institution name, or null if absent
@@ -38,11 +51,30 @@ You are a document analysis assistant. Analyze the document text and return a JS
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
+SUGGEST_TYPES_SYSTEM = """\
+You are a document classification assistant.
+Given a document description and a list of existing document types, suggest the 3 most appropriate types.
+
+Return ONLY a JSON array with exactly 3 objects:
+[
+  {"type": "type_slug", "confidence": 0.9, "reason": "brief reason"},
+  {"type": "type_slug", "confidence": 0.6, "reason": "brief reason"},
+  {"type": "type_slug", "confidence": 0.3, "reason": "brief reason"}
+]
+
+Rules:
+- Prefer types from the existing list when they fit; suggest new specific types only when none fit
+- type_slug: lowercase with underscores (e.g. "passport", "birth_certificate", "bank_statement")
+- confidence: 0.0-1.0
+- reason: one concise sentence in the document's own language
+- Return only raw JSON, no markdown fences"""
+
 
 @dataclass
 class AnalysisResult:
     summary: str = ""
-    document_type: str = "other"
+    document_type: str = "unclassified"
+    document_type_confidence: float = 0.0
     tags: list = field(default_factory=list)
     language: str = ""
     organization: Optional[str] = None
@@ -247,9 +279,11 @@ def _parse_result(raw: str) -> AnalysisResult:
 
     data = json.loads(text)
     amount = data.get("amount")
+    confidence = data.get("document_type_confidence")
     return AnalysisResult(
         summary=str(data.get("summary", "")),
-        document_type=str(data.get("document_type", "other")),
+        document_type=str(data.get("document_type", "unclassified")),
+        document_type_confidence=float(confidence) if confidence is not None else 0.0,
         tags=[str(t) for t in data.get("tags", [])],
         language=str(data.get("language", "")),
         organization=data.get("organization") or None,
@@ -259,3 +293,38 @@ def _parse_result(raw: str) -> AnalysisResult:
         person_last_name=data.get("person_last_name") or None,
         document_date=data.get("document_date") or None,
     )
+
+
+async def suggest_document_types(
+    summary: str,
+    ocr_text: str,
+    existing_types: list[str],
+    db: Session,
+) -> list[dict]:
+    """Return up to 3 type suggestions from the LLM for a given document."""
+    providers = _get_providers(db)
+    if not providers:
+        return []
+
+    types_str = ", ".join(sorted(set(existing_types))) if existing_types else "(none yet)"
+    user_msg = (
+        f"Existing types: {types_str}\n\n"
+        f"Document summary: {summary or '(no summary)'}\n\n"
+        f"OCR text excerpt:\n{(ocr_text or '')[:1200]}"
+    )
+
+    for provider in providers:
+        try:
+            raw, _, _, _ = await _call_provider(provider, user_msg, SUGGEST_TYPES_SYSTEM)
+            text = raw.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+                text = "\n".join(lines[1:end])
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data[:3]
+        except Exception as e:
+            log.warning("Suggest-types provider '%s' failed: %s", provider.name, e)
+
+    return []

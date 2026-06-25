@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pathlib import Path
 from datetime import datetime
 
@@ -21,7 +21,7 @@ from ..schemas import (
 )
 from ..services.storage import scan_library_for_new_files, compute_file_hash, guess_mime
 from ..services.thumbnails import generate_thumbnail
-from ..services.indexer import index_document, index_pending_batch, reclassify_pending_batch
+from ..services.indexer import index_document, index_pending_batch, reclassify_pending_batch, reclassify_unclassified_batch
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -36,6 +36,15 @@ def get_stats(db: Session = Depends(get_db)):
     analyzed = base.filter(Document.analysis_status == "done").count()
     pending  = base.filter(Document.ocr_status == "pending").count()
     errors   = base.filter(Document.ocr_status == "error").count()
+
+    unclassified = base.filter(
+        Document.analysis_status == "done",
+        or_(
+            Document.document_type == "unclassified",
+            Document.document_type == "other",
+            Document.document_type.is_(None),
+        ),
+    ).count()
 
     cost_row = db.query(
         func.coalesce(func.sum(Document.api_cost_vision), 0) +
@@ -55,6 +64,7 @@ def get_stats(db: Session = Depends(get_db)):
         embedded=embedded,
         pending=pending,
         errors=errors,
+        unclassified=unclassified,
         api_cost_total=float(cost_row or 0),
     )
 
@@ -127,6 +137,19 @@ async def _run_reclassify_bg(limit: int) -> None:
     result = await reclassify_pending_batch(limit)
     import logging
     logging.getLogger(__name__).info("Admin reclassify complete: %s", result)
+
+
+@router.post("/reclassify-unclassified")
+async def reclassify_unclassified(background_tasks: BackgroundTasks, limit: int = 200):
+    """Re-run AI Analysis on all unclassified/other docs not manually set."""
+    background_tasks.add_task(_run_reclassify_unclassified_bg, limit)
+    return {"message": f"Unclassified re-classification queued (up to {limit} documents)"}
+
+
+async def _run_reclassify_unclassified_bg(limit: int) -> None:
+    result = await reclassify_unclassified_batch(limit)
+    import logging
+    logging.getLogger(__name__).info("Admin reclassify-unclassified complete: %s", result)
 
 
 # ── Watched Folders ───────────────────────────────────────────────────────────

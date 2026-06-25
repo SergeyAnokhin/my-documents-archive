@@ -141,4 +141,118 @@
   padding-top: var(--sp-4);
   border-top: 1px solid var(--color-border-soft);
   flex-shrink: 0;
+  display: flex;
+  gap: var(--sp-2);
 }
+
+/* Type badge button */
+.type-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: var(--color-tag);
+  color: var(--color-ink);
+  font-size: .8125rem;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.type-badge-btn:hover {
+  background: var(--color-surface-hover, var(--color-tag));
+  border-color: var(--color-ink-muted);
+}
+.type-badge-btn.unclassified {
+  color: var(--color-ink-muted);
+  border-style: dashed;
+}
+.type-badge-lock { opacity: .5; }
+.type-badge-edit { opacity: 0; transition: opacity var(--transition); }
+.type-badge-btn:hover .type-badge-edit { opacity: .5; }
+
+/* Inline type picker */
+.type-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface);
+  width: 100%;
+  max-width: 260px;
+}
+
+.type-picker-label {
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--color-ink-faint);
+  margin: 0;
+}
+
+.type-picker-loading {
+  font-size: .8125rem;
+  color: var(--color-ink-muted);
+  margin: 0;
+}
+
+.type-picker-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.type-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--radius-sm, 4px);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition);
+}
+.type-picker-option:hover:not(:disabled) {
+  background: var(--color-tag);
+}
+.type-picker-option:disabled { opacity: .5; cursor: default; }
+
+.type-picker-option-name {
+  font-size: .8125rem;
+  color: var(--color-ink);
+}
+.type-picker-option-conf {
+  font-size: .75rem;
+  color: var(--color-ink-faint);
+  flex-shrink: 0;
+}
+
+.type-picker-custom {
+  margin-top: var(--sp-1);
+}
+.type-picker-custom .admin-input {
+  width: 100%;
+  font-size: .8125rem;
+  padding: 4px 8px;
+}
+
+.type-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.type-picker-cancel {
+  font-size: .8125rem;
+  color: var(--color-ink-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.type-picker-cancel:hover { color: var(--color-ink); }

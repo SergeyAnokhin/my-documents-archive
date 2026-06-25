@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..database import get_db
 from ..models import Document
-from ..schemas import DocumentOut, DocumentList
+from ..schemas import DocumentOut, DocumentList, PatchTypeRequest
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -63,6 +63,19 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
     doc.is_deleted = True
     db.commit()
+
+
+@router.patch("/{doc_id}/type")
+def update_type(doc_id: int, body: PatchTypeRequest, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.document_type = body.document_type.strip()
+    doc.manually_classified = True
+    doc.classification_source = "manual"
+    db.commit()
+    db.refresh(doc)
+    return DocumentOut.model_validate(doc)
 
 
 @router.patch("/{doc_id}/tags")

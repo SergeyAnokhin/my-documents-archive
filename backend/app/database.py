@@ -49,6 +49,9 @@ def _apply_migrations(eng) -> None:
             "ALTER TABLE ai_providers ADD COLUMN extra_params TEXT",
             "ALTER TABLE documents ADD COLUMN person_first_name TEXT",
             "ALTER TABLE documents ADD COLUMN person_last_name TEXT",
+            "ALTER TABLE documents ADD COLUMN classification_confidence REAL",
+            "ALTER TABLE documents ADD COLUMN classification_source TEXT",
+            "ALTER TABLE documents ADD COLUMN manually_classified INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(text(stmt))

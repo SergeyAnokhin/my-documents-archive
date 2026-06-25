@@ -11,6 +11,9 @@ export interface Document {
   vision_description?: string;
   summary?: string;
   document_type?: string;
+  classification_confidence?: number;
+  classification_source?: "auto" | "manual";
+  manually_classified?: boolean;
   tags?: string[];
   language?: string;
   organization?: string;
@@ -50,6 +53,12 @@ export interface DocumentList {
   page_size: number;
 }
 
+export interface TypeSuggestion {
+  type: string;
+  confidence: number;
+  reason: string;
+}
+
 export interface IndexingStats {
   total: number;
   indexed: number;
@@ -57,6 +66,7 @@ export interface IndexingStats {
   embedded: number;
   pending: number;
   errors: number;
+  unclassified: number;
   api_cost_total: number;
 }
 

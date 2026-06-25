@@ -57,6 +57,20 @@ export const ru: Translations = {
   reclassifyStarted: "Переклассификация запущена…",
   labMode: "Тюнинг OCR",
 
+  // Type picker
+  typePicker: {
+    title: "Изменить тип",
+    suggested: "Предлагаемые",
+    customPlaceholder: "Введите свой тип…",
+    loading: "Загрузка предложений…",
+    noSuggestions: "Не удалось загрузить предложения",
+    save: "Применить",
+    cancel: "Отмена",
+    manualBadge: "вручную",
+    unclassified: "Не классифицирован",
+    saved: "Тип сохранён",
+  },
+
   noDocuments: "Документов пока нет",
   noDocumentsHint: "Загрузите файл или синхронизируйте библиотеку",
   noResults: "Документы не найдены",
@@ -87,6 +101,8 @@ export const ru: Translations = {
       cost: "Стоимость API",
       batchButton: "Запустить пакетное индексирование",
       reclassifyButton: "Переклассифицировать всё",
+      reclassifyUnclassifiedButton: "Классифицировать неизвестные",
+      unclassified: "Неклассифицированные",
       syncButton: "Синхронизировать",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "URL сервиса",

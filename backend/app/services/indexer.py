@@ -10,6 +10,7 @@ import asyncio
 import logging
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -141,8 +142,10 @@ async def _run_analysis(doc: Document, db: Session) -> None:
             doc.analysis_status = "skipped"
             _log(db, doc, "analysis", "skipped", "No AI provider configured")
         else:
-            doc.summary            = result.summary
-            doc.document_type      = result.document_type
+            doc.summary                   = result.summary
+            doc.document_type             = result.document_type
+            doc.classification_confidence = result.document_type_confidence
+            doc.classification_source     = "auto"
             doc.tags               = result.tags
             doc.language           = result.language
             doc.organization       = result.organization
@@ -251,7 +254,7 @@ async def reclassify_pending_batch(limit: int = 100) -> dict:
 # ── Re-classify single document ───────────────────────────────────────────────
 
 async def reclassify_document(document_id: int) -> None:
-    """Re-run AI Analysis (and re-embed) on an already-OCR'd document."""
+    """Re-run AI Analysis (and re-embed) on an already-OCR'd document. Resets manual classification."""
     db = SessionLocal()
     try:
         doc = db.query(Document).filter(Document.id == document_id).first()
@@ -262,11 +265,47 @@ async def reclassify_document(document_id: int) -> None:
             db.commit()
             return
         doc.analysis_status = "pending"
+        doc.manually_classified = False
         db.commit()
         await _run_analysis(doc, db)
         await _run_embedding(doc, db)
     except Exception as e:
         log.error("reclassify_document(%s) crashed: %s", document_id, e)
+    finally:
+        db.close()
+
+
+async def reclassify_unclassified_batch(limit: int = 200) -> dict:
+    """Re-run AI Analysis on unclassified / 'other' docs that were not manually classified."""
+    db = SessionLocal()
+    try:
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.ocr_status == "done",
+                Document.manually_classified != True,
+                or_(
+                    Document.document_type == "unclassified",
+                    Document.document_type == "other",
+                    Document.document_type.is_(None),
+                ),
+            )
+            .limit(limit)
+            .all()
+        )
+        processed = errors = 0
+        for doc in docs:
+            try:
+                doc.analysis_status = "pending"
+                db.commit()
+                await _run_analysis(doc, db)
+                await _run_embedding(doc, db)
+                processed += 1
+            except Exception as e:
+                errors += 1
+                log.error("Reclassify unclassified: doc %s failed: %s", doc.id, e)
+        return {"processed": processed, "errors": errors}
     finally:
         db.close()
 

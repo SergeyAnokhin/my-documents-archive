@@ -59,6 +59,20 @@ export const en = {
   reclassifyStarted: "Re-classification started…",
   labMode: "OCR Tuning",
 
+  // Type picker
+  typePicker: {
+    title: "Change type",
+    suggested: "Suggested",
+    customPlaceholder: "Enter custom type…",
+    loading: "Loading suggestions…",
+    noSuggestions: "Could not load suggestions",
+    save: "Apply",
+    cancel: "Cancel",
+    manualBadge: "manual",
+    unclassified: "Unclassified",
+    saved: "Type saved",
+  },
+
   // Empty states
   noDocuments: "No documents yet",
   noDocumentsHint: "Upload a file or sync your library to get started",
@@ -91,6 +105,8 @@ export const en = {
       cost: "API Cost",
       batchButton: "Start Batch Indexing",
       reclassifyButton: "Re-classify All",
+      reclassifyUnclassifiedButton: "Classify unclassified",
+      unclassified: "Unclassified",
       syncButton: "Sync Library",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "Service URL",

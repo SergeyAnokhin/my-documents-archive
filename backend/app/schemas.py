@@ -21,6 +21,9 @@ class DocumentOut(BaseModel):
     vision_description: Optional[str] = None
     summary: Optional[str] = None
     document_type: Optional[str] = None
+    classification_confidence: Optional[float] = None
+    classification_source: Optional[str] = None
+    manually_classified: bool = False
     tags: Optional[List[str]] = []
     language: Optional[str] = None
     organization: Optional[str] = None
@@ -148,6 +151,21 @@ class FetchModelsRequest(BaseModel):
     base_url: Optional[str] = None
 
 
+class TypeSuggestion(BaseModel):
+    type: str
+    confidence: float
+    reason: str
+
+
+class TypeSuggestionsResponse(BaseModel):
+    suggestions: List[TypeSuggestion]
+    existing_types: List[str]
+
+
+class PatchTypeRequest(BaseModel):
+    document_type: str
+
+
 class IndexingStats(BaseModel):
     total: int
     indexed: int
@@ -155,6 +173,7 @@ class IndexingStats(BaseModel):
     embedded: int
     pending: int
     errors: int
+    unclassified: int = 0
     api_cost_total: float
 
 

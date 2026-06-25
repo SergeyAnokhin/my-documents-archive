@@ -25,6 +25,9 @@ class Document(Base):
 
     # Classification
     document_type = Column(String(128), nullable=True)
+    classification_confidence = Column(Float, nullable=True)
+    classification_source = Column(String(16), nullable=True)  # 'auto' | 'manual'
+    manually_classified = Column(Boolean, default=False)
     tags = Column(JSON, default=list)
     language = Column(String(32), nullable=True)
 
