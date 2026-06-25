@@ -7,6 +7,7 @@ and have a "premium" provider judge the results. See services/lab.py.
 """
 
 import base64
+from datetime import datetime as _dt
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -216,6 +217,7 @@ async def apply_transform_endpoint(doc_id: int, body: LabTransformRequest, db: S
         raise HTTPException(status_code=400, detail=f"Apply failed: {e}")
     doc.file_size = new_size
     doc.file_hash = compute_file_hash(Path(doc.filepath))
+    doc.updated_at = _dt.utcnow()
     db.commit()
     generate_thumbnail(doc.filepath, doc.id)
     return LabApplyResult(ok=True, doc_id=doc_id, width=new_w, height=new_h, file_size=new_size)

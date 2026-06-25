@@ -410,7 +410,8 @@ export function LabPage() {
     setSavingId(fakeId);
     setSavedId(null);
     try {
-      await saveLabResult({ doc_id: docId, text: result.corrected || result.best, fields: result.fields, model_name: `Judge: ${providerName}` });
+      const bestText = results.find(r => r.label === result.best)?.text ?? "";
+      await saveLabResult({ doc_id: docId, text: result.corrected || bestText, fields: result.fields, model_name: `Judge: ${providerName}` });
       setSavedId(fakeId);
       addLog(`✓ Saved judge [${providerName}] corrected text to document`, "ok");
       setTimeout(() => setSavedId(id => id === fakeId ? null : id), 2500);

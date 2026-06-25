@@ -98,9 +98,13 @@ def download_document(doc_id: int, inline: bool = False, db: Session = Depends(g
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
     # inline=1 lets the OCR Lab embed PDFs/images instead of forcing a download.
+    # no-cache on inline: browser must revalidate via ETag before serving from cache,
+    # so after a transform the fresh file is shown immediately (304 if unchanged, 200 if not).
+    headers = {"Cache-Control": "no-cache"} if inline else {}
     return FileResponse(
         path=str(path),
         filename=doc.filename,
         media_type=doc.mime_type or "application/octet-stream",
         content_disposition_type="inline" if inline else "attachment",
+        headers=headers,
     )
