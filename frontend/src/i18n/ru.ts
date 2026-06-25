@@ -9,9 +9,7 @@ export const ru: Translations = {
 
   searchPlaceholder: "Поиск документов…",
   searchMode: {
-    fulltext: "Текст",
-    semantic: "Смысл",
-    hybrid: "Лучшее",
+    search: "Поиск",
     ask: "ИИ",
   },
   voiceSearch: "Голосовой поиск",

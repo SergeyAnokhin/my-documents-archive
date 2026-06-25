@@ -5,6 +5,8 @@
   width: 100%;
 }
 
+/* ── Input row ── */
+
 .search-input-wrap {
   position: relative;
   display: flex;
@@ -17,6 +19,7 @@
   color: var(--color-ink-faint);
   pointer-events: none;
   flex-shrink: 0;
+  z-index: 1;
 }
 
 .search-input {
@@ -32,6 +35,9 @@
   transition: border-color var(--transition), box-shadow var(--transition);
   -webkit-appearance: none;
 }
+/* Extra padding when mic button is shown */
+.search-input--has-mic { padding-right: 76px; }
+
 .search-input::placeholder { color: var(--color-ink-faint); }
 .search-input:focus {
   outline: none;
@@ -41,9 +47,22 @@
 /* Hide browser's native clear button */
 .search-input::-webkit-search-cancel-button { display: none; }
 
-.search-clear {
+/* Listening state: red glow */
+.search-input-wrap--listening .search-input {
+  border-color: #e53e3e;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #e53e3e 12%, transparent);
+}
+
+/* Right-side button cluster */
+.search-right-btns {
   position: absolute;
-  right: var(--sp-4);
+  right: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.search-clear {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -55,6 +74,38 @@
   transition: background var(--transition), color var(--transition);
 }
 .search-clear:hover { background: var(--color-border); color: var(--color-ink); }
+
+/* Mic button */
+.search-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.search-mic:hover { background: var(--color-tag); color: var(--color-ink); }
+.search-mic--active {
+  color: #e53e3e;
+  animation: mic-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.65; transform: scale(1.2); }
+}
+
+/* ── Bottom row: mode pills + filters ── */
+
+.search-bottom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
 
 /* Mode pills */
 .search-modes {
@@ -83,4 +134,20 @@
   background: var(--color-accent);
   color: var(--color-accent-fg);
   border-color: var(--color-accent);
+}
+
+/* AI pill — distinct style when active */
+.search-mode-pill--ai.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* ── Filter dropdowns row ── */
+.search-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--color-border);
 }

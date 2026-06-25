@@ -9,9 +9,7 @@ export const en = {
   // Home
   searchPlaceholder: "Search documents…",
   searchMode: {
-    fulltext: "Text",
-    semantic: "Smart",
-    hybrid: "Best",
+    search: "Search",
     ask: "AI",
   },
   voiceSearch: "Voice search",

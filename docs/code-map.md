@@ -23,7 +23,7 @@ docs/             Architecture docs (you are here)
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
-| `routers/search.py` | Full-text search with SQLite LIKE — prefix `/api/search` |
+| `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
 | `routers/admin.py` | Stats, sync, watched folders, AI providers, log — prefix `/api/admin` |
 | `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
@@ -61,7 +61,8 @@ docs/             Architecture docs (you are here)
 | `components/layout/Header.tsx` | Top nav: logo, language switcher, dark/light theme toggle (persisted in localStorage), admin gear icon |
 | `components/ui/Button.tsx` | Button component (primary/secondary/ghost/danger, sizes) |
 | `components/ui/Modal.tsx` | Accessible modal overlay |
-| `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid) |
+| `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid/ask) + voice input (Web Speech API, language follows UI lang) + year/language quick-filter chips |
+| `components/search/AIAnswer.tsx` | AI Q&A result card: answer text + source document list |
 | `components/documents/DocumentCard.tsx` | List row and grid tile rendering |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |
 | `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Inline `TypePicker` component on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type. |

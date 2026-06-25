@@ -1,8 +1,8 @@
 .viewer-layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: var(--sp-6);
-  height: 70vh;
+  grid-template-columns: 1fr 320px;
+  gap: var(--sp-5);
+  height: 76vh;
 }
 
 @media (max-width: 768px) {
@@ -16,35 +16,82 @@
   background: var(--color-tag);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  align-items: center;
-  justify-content: center;
 }
 
-.viewer-thumb {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+/* ── Zoom toolbar ────────────────────────────────────────────────────────── */
+
+.viewer-zoom-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 5px var(--sp-3);
+  border-bottom: 1px solid var(--color-border-soft);
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
 }
+
+.viewer-zoom-pct {
+  font-size: .75rem;
+  color: var(--color-ink-muted);
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Image canvas (zoom / pan area) ──────────────────────────────────────── */
+
+.viewer-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+.viewer-img-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.viewer-doc-img {
+  display: block;
+  max-width: none;
+}
+
+/* ── PDF iframe ──────────────────────────────────────────────────────────── */
+
+.viewer-pdf {
+  flex: 1;
+  width: 100%;
+  border: none;
+  display: block;
+}
+
+/* ── Fallback placeholder ────────────────────────────────────────────────── */
 
 .viewer-thumb-placeholder {
+  flex: 1;
   color: var(--color-ink-faint);
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
 }
+
+/* ── Nav arrows ──────────────────────────────────────────────────────────── */
 
 .viewer-nav {
   position: absolute;
-  bottom: var(--sp-4);
+  bottom: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: var(--sp-2);
+  z-index: 2;
 }
 
 .viewer-nav-btn {
-  width: 36px; height: 36px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   border: 1.5px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface) 85%, transparent);
@@ -58,7 +105,8 @@
 .viewer-nav-btn:hover:not(:disabled) { background: var(--color-surface); }
 .viewer-nav-btn:disabled { opacity: .3; cursor: default; }
 
-/* Right panel */
+/* ── Right panel ─────────────────────────────────────────────────────────── */
+
 .viewer-info {
   display: flex;
   flex-direction: column;
@@ -75,8 +123,8 @@
 
 .viewer-tab {
   flex: 1;
-  height: 36px;
-  font-size: .8125rem;
+  height: 34px;
+  font-size: .75rem;
   font-weight: 500;
   border: none;
   background: transparent;
@@ -90,14 +138,14 @@
 .viewer-tab-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--sp-4) 0;
+  padding: var(--sp-3) 0;
 }
 
 .viewer-summary {
   color: var(--color-ink-muted);
-  font-size: .9375rem;
+  font-size: .875rem;
   line-height: 1.6;
-  margin-bottom: var(--sp-4);
+  margin-bottom: var(--sp-3);
 }
 
 .viewer-meta-list {
@@ -114,7 +162,7 @@
 
 .viewer-meta-label {
   flex-shrink: 0;
-  width: 110px;
+  width: 100px;
   font-size: .8125rem;
   color: var(--color-ink-faint);
   display: flex;
@@ -138,14 +186,15 @@
 }
 
 .viewer-actions {
-  padding-top: var(--sp-4);
+  padding-top: var(--sp-3);
   border-top: 1px solid var(--color-border-soft);
   flex-shrink: 0;
   display: flex;
   gap: var(--sp-2);
 }
 
-/* Type badge button */
+/* ── Type badge button ───────────────────────────────────────────────────── */
+
 .type-badge-btn {
   display: inline-flex;
   align-items: center;
@@ -171,7 +220,8 @@
 .type-badge-edit { opacity: 0; transition: opacity var(--transition); }
 .type-badge-btn:hover .type-badge-edit { opacity: .5; }
 
-/* Inline type picker */
+/* ── Inline type picker ──────────────────────────────────────────────────── */
+
 .type-picker {
   display: flex;
   flex-direction: column;
@@ -181,7 +231,7 @@
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface);
   width: 100%;
-  max-width: 260px;
+  max-width: 240px;
 }
 
 .type-picker-label {

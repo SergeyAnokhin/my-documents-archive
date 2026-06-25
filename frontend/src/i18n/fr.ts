@@ -9,9 +9,7 @@ export const fr: Translations = {
 
   searchPlaceholder: "Rechercher des documents…",
   searchMode: {
-    fulltext: "Texte",
-    semantic: "Sens",
-    hybrid: "Optimal",
+    search: "Recherche",
     ask: "IA",
   },
   voiceSearch: "Recherche vocale",

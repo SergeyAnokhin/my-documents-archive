@@ -217,7 +217,7 @@ export interface LabApplyResult {
 
 export type ViewMode = "list" | "grid";
 export type GridSize = "sm" | "md" | "lg" | "xl";
-export type SearchMode = "fulltext" | "semantic" | "hybrid" | "ask";
+export type SearchMode = "search" | "ask";
 
 export interface AIAnswerResponse {
   answer: string;

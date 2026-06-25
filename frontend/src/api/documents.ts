@@ -65,6 +65,11 @@ export const searchDocuments = (params: Record<string, unknown> = {}) => {
   return api.get<SearchResponse>(`/search?${qs}`);
 };
 
+export const askDocuments = (query: string, language: string) =>
+  api.get<AIAnswerResponse>(
+    `/search/ask?${new URLSearchParams({ query, language }).toString()}`
+  );
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const getStats = () => api.get<IndexingStats>("/admin/stats");

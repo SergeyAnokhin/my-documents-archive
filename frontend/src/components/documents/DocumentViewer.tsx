@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, Lock, Pencil } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, Lock, Pencil, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import type { Document, TypeSuggestion } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
@@ -164,6 +164,65 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const [localType, setLocalType] = useState<string | undefined>(undefined);
   const [localManual, setLocalManual] = useState<boolean | undefined>(undefined);
 
+  // ── Zoom / Pan ──────────────────────────────────────────────────────────────
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(zoom);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const didAutoFitRef = useRef(false);
+  const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
+
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  // Reset zoom/pan when switching documents
+  useEffect(() => {
+    didAutoFitRef.current = false;
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [doc?.id]);
+
+  // Global pan tracking
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!canvasPanStartRef.current) return;
+      setPan({
+        x: canvasPanStartRef.current.panX + (e.clientX - canvasPanStartRef.current.mouseX),
+        y: canvasPanStartRef.current.panY + (e.clientY - canvasPanStartRef.current.mouseY),
+      });
+    };
+    const onUp = () => { canvasPanStartRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  // Mouse-wheel zoom (re-attach when doc changes so ref is fresh)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      setZoom(prevZoom => {
+        const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
+        setPan(prevPan => ({
+          x: mouseX - (mouseX - prevPan.x) * (newZoom / prevZoom),
+          y: mouseY - (mouseY - prevPan.y) * (newZoom / prevZoom),
+        }));
+        return newZoom;
+      });
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [doc?.id]);
+
   const displayType = localType !== undefined ? localType : doc?.document_type;
   const displayManual = localManual !== undefined ? localManual : doc?.manually_classified;
 
@@ -195,18 +254,104 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     }
   };
 
+  const handleImgLoad = () => {
+    if (didAutoFitRef.current) return;
+    didAutoFitRef.current = true;
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img || img.naturalWidth === 0) return;
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const fitZoom = Math.max(0.05, Math.min((cw - 24) / iw, (ch - 24) / ih));
+    setZoom(fitZoom);
+    setPan({ x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 });
+  };
+
+  const handleZoomReset = () => {
+    didAutoFitRef.current = false;
+    handleImgLoad();
+  };
+
+  const zoomAround = (factor: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const cx = canvas.clientWidth / 2;
+    const cy = canvas.clientHeight / 2;
+    setZoom(prevZoom => {
+      const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
+      setPan(prevPan => ({
+        x: cx - (cx - prevPan.x) * (newZoom / prevZoom),
+        y: cy - (cy - prevPan.y) * (newZoom / prevZoom),
+      }));
+      return newZoom;
+    });
+  };
+
+  const onCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    canvasPanStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
+    e.preventDefault();
+  };
+
   if (!doc) return null;
 
+  const isPdf = doc.mime_type === "application/pdf";
+  const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
+  const docUrl = `/api/documents/${doc.id}/download?inline=1`;
   const thumbV = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
   const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg${thumbV}` : null;
+  // Original for images, thumbnail as fallback for other types (e.g. Word docs)
+  const imgSrc = isImageMime ? docUrl : thumbUrl;
 
   return (
     <Modal open={!!doc} onClose={onClose} size="xl" title={doc.filename}>
       <div className="viewer-layout">
-        {/* Left — preview */}
+        {/* Left — document */}
         <div className="viewer-preview">
-          {thumbUrl ? (
-            <img src={thumbUrl} alt={doc.filename} className="viewer-thumb" />
+          {/* Zoom toolbar (not shown for PDF — browser viewer has native zoom) */}
+          {!isPdf && imgSrc && (
+            <div className="viewer-zoom-toolbar">
+              <button className="icon-btn" title="Zoom out" onClick={() => zoomAround(1 / 1.25)}>
+                <ZoomOut size={14} />
+              </button>
+              <span className="viewer-zoom-pct">{Math.round(zoom * 100)}%</span>
+              <button className="icon-btn" title="Zoom in" onClick={() => zoomAround(1.25)}>
+                <ZoomIn size={14} />
+              </button>
+              <button className="icon-btn" title="Fit to screen" onClick={handleZoomReset}>
+                <Maximize size={14} />
+              </button>
+            </div>
+          )}
+
+          {isPdf ? (
+            <iframe src={docUrl} title={doc.filename} className="viewer-pdf" />
+          ) : imgSrc ? (
+            <div
+              className="viewer-canvas"
+              ref={canvasRef}
+              onMouseDown={onCanvasMouseDown}
+              style={{ cursor: canvasPanStartRef.current ? "grabbing" : "grab" }}
+            >
+              <div
+                className="viewer-img-wrapper"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: "0 0",
+                }}
+              >
+                <img
+                  ref={imgRef}
+                  src={imgSrc}
+                  alt={doc.filename}
+                  className="viewer-doc-img"
+                  onLoad={handleImgLoad}
+                  draggable={false}
+                />
+              </div>
+            </div>
           ) : (
             <div className="viewer-thumb-placeholder">
               <FileText size={64} />

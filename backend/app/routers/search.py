@@ -11,6 +11,36 @@ from ..schemas import SearchResponse, SearchResult, DocumentOut, AIAnswerRespons
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 
+def _parse_query(query: str) -> tuple[list[str], list[str]]:
+    """Split query into exact phrases (quoted) and individual words.
+
+    Example: `договор "Иванов Иван" 2024` → (['Иванов Иван'], ['договор', '2024'])
+    """
+    phrases = re.findall(r'"([^"]+)"', query)
+    remainder = re.sub(r'"[^"]+"', '', query)
+    words = [w.strip() for w in remainder.split() if w.strip()]
+    return phrases, words
+
+
+def _apply_text_filter(q, phrases: list[str], words: list[str]):
+    """Add LIKE filters for all phrases and words to a SQLAlchemy query."""
+    COLS = lambda like: or_(
+        Document.filename.ilike(like),
+        Document.ocr_text.ilike(like),
+        Document.summary.ilike(like),
+        Document.document_type.ilike(like),
+        Document.tags.cast(String).ilike(like),
+        Document.person_first_name.ilike(like),
+        Document.person_last_name.ilike(like),
+        Document.organization.ilike(like),
+    )
+    for phrase in phrases:
+        q = q.filter(COLS(f"%{phrase}%"))
+    for word in words:
+        q = q.filter(COLS(f"%{word}%"))
+    return q
+
+
 def _highlight(text: Optional[str], query: str) -> Optional[str]:
     """Extract a ~200 char snippet around the first query hit."""
     if not text or not query:
@@ -83,19 +113,8 @@ def search_documents(
     # ── Full-text (default + fallback) ─────────────────────────────────────
     q = base
     if query:
-        terms = [t.strip() for t in query.split() if t.strip()]
-        for term in terms:
-            like = f"%{term}%"
-            q = q.filter(or_(
-                Document.filename.ilike(like),
-                Document.ocr_text.ilike(like),
-                Document.summary.ilike(like),
-                Document.document_type.ilike(like),
-                Document.tags.cast(String).ilike(like),
-                Document.person_first_name.ilike(like),
-                Document.person_last_name.ilike(like),
-                Document.organization.ilike(like),
-            ))
+        phrases, words = _parse_query(query)
+        q = _apply_text_filter(q, phrases, words)
 
     total = q.count()
     docs  = (
@@ -118,19 +137,8 @@ def _semantic_ids(query: str, n: int) -> list[int]:
 
 
 def _fulltext_ids(base_query, query: str) -> set[int]:
-    q = base_query
-    terms = [t.strip() for t in query.split() if t.strip()]
-    for term in terms:
-        like = f"%{term}%"
-        q = q.filter(or_(
-            Document.filename.ilike(like),
-            Document.ocr_text.ilike(like),
-            Document.summary.ilike(like),
-            Document.tags.cast(String).ilike(like),
-            Document.person_first_name.ilike(like),
-            Document.person_last_name.ilike(like),
-            Document.organization.ilike(like),
-        ))
+    phrases, words = _parse_query(query)
+    q = _apply_text_filter(base_query, phrases, words)
     return {d.id for d in q.with_entities(Document.id).all()}
 
 
@@ -204,19 +212,8 @@ async def ask_documents(
         docs_all.sort(key=lambda d: rank.get(d.id, 9999))
         docs = docs_all[:10]
     else:
-        terms = [t.strip() for t in query.split() if t.strip()]
-        q = base
-        for term in terms:
-            like = f"%{term}%"
-            q = q.filter(or_(
-                Document.filename.ilike(like),
-                Document.ocr_text.ilike(like),
-                Document.summary.ilike(like),
-                Document.tags.cast(String).ilike(like),
-                Document.person_first_name.ilike(like),
-                Document.person_last_name.ilike(like),
-                Document.organization.ilike(like),
-            ))
+        phrases, words = _parse_query(query)
+        q = _apply_text_filter(base, phrases, words)
         docs = q.order_by(Document.added_at.desc()).limit(10).all()
 
     source_docs = [DocumentOut.model_validate(d) for d in docs]
