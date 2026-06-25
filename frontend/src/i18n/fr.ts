@@ -227,6 +227,11 @@ export const fr: Translations = {
     failed: "Échec",
     logs: "Journaux",
     clearLogs: "Effacer",
+    saveResult: "Sauvegarder dans le document",
+    saved: "Sauvegardé !",
+    saving: "Sauvegarde…",
+    judgeFields: "Champs extraits par le juge",
+    noFields: "Aucun champ extrait",
   },
 
   loading: "Chargement…",

@@ -19,6 +19,7 @@ from ..schemas import (
     LabMethods, LabWorkerStatus, LabOcrRequest, LabOcrResult,
     LabVisionRequest, LabVisionResult,
     LabJudgeRequest, LabJudgeResult,
+    LabSaveRequest, LabSaveResult,
 )
 
 router = APIRouter(prefix="/api/lab", tags=["lab"])
@@ -81,13 +82,63 @@ async def run_vision(body: LabVisionRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Provider is not vision-capable")
     img = _doc_image(body.doc_id, db)
     try:
-        text, cost, ms, tin, tout = await lab.run_vision_ocr(img, provider, db)
+        text, fields, cost, ms, tin, tout = await lab.run_vision_ocr(img, provider, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Vision failed: {e}")
     return LabVisionResult(
-        provider_id=provider.id, name=provider.name, text=text,
+        provider_id=provider.id, name=provider.name,
+        model_name=provider.model or None,
+        text=text, fields=fields or None,
         cost=cost, ms=ms, tokens_in=tin, tokens_out=tout,
     )
+
+
+@router.post("/save", response_model=LabSaveResult)
+async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
+    """
+    Apply a lab recognition result to the document: saves OCR text, extracted fields,
+    and attribution (which model produced the result).
+    """
+    from datetime import datetime as _dt
+    doc = db.query(Document).filter(Document.id == body.doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc.ocr_text = body.text
+    doc.ocr_status = "done"
+    doc.ocr_model = body.model_name
+    doc.indexed_at = _dt.utcnow()
+
+    f = body.fields or {}
+    if f:
+        if f.get("document_type"):
+            doc.document_type = f["document_type"]
+            doc.classification_source = "auto"
+            doc.manually_classified = False
+        if f.get("document_date"):
+            try:
+                doc.document_date = _dt.strptime(f["document_date"], "%Y-%m-%d")
+            except Exception:
+                pass
+        if f.get("person_first_name") is not None:
+            doc.person_first_name = f["person_first_name"] or None
+        if f.get("person_last_name") is not None:
+            doc.person_last_name = f["person_last_name"] or None
+        if f.get("organization") is not None:
+            doc.organization = f["organization"] or None
+        if f.get("amount") is not None:
+            try:
+                doc.amount = float(f["amount"])
+            except Exception:
+                pass
+        if f.get("amount_currency") is not None:
+            doc.amount_currency = f["amount_currency"] or None
+        if f.get("language"):
+            doc.language = f["language"]
+        doc.analysis_status = "done"
+
+    db.commit()
+    return LabSaveResult(ok=True, doc_id=doc.id)
 
 
 @router.post("/judge", response_model=LabJudgeResult)

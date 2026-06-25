@@ -233,6 +233,11 @@ export const en = {
     failed: "Failed",
     logs: "Logs",
     clearLogs: "Clear",
+    saveResult: "Save to document",
+    saved: "Saved!",
+    saving: "Saving…",
+    judgeFields: "Judge's extracted fields",
+    noFields: "No fields extracted",
   },
 
   // Misc

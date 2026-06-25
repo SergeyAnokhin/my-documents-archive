@@ -5,8 +5,10 @@ methods perform on the **same first-page image**, and having a "premium" AI mode
 judge which transcription is best. Opened from the document viewer
 ("OCR Lab" button) at the route **`/lab/:id`**.
 
-Everything in the lab is **ephemeral** — no writes to the `documents` table. It is a
-tool for deciding which engines/models work best, not part of the indexing pipeline.
+Lab results are **ephemeral by default** — recognition runs do not write to the
+`documents` table. However, the user can click the **save (floppy disk) button** on
+any result card or the float modal, which calls `POST /api/lab/save` and writes the
+chosen OCR text, extracted fields, and model attribution (`ocr_model`) to the document.
 
 ## Layout
 
@@ -29,7 +31,7 @@ cost) with the recognized text. Re-running a method replaces its previous card
 |--------|--------------|-------|
 | `tesseract` | In-process (backend, pytesseract) | Always available |
 | `easyocr` | External compute worker `/ocr?engine=easyocr` | Only if the worker is reachable (`GET /lab/methods` probes `/health`) |
-| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in anthropic/openai/gemini/openrouter/mistral) | Uses the provider as a **verbatim transcriber** (prompt `OCR_VISION_PROMPT`), not the pipeline's "describe" prompt. Mistral OCR ignores the prompt and transcribes natively |
+| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in anthropic/openai/gemini/openrouter/mistral) | Uses the combined `VISION_ANALYSIS_PROMPT` — returns JSON with `text` (transcription) + `fields` (document_type, date, names, org, amount). Mistral OCR ignores the prompt and returns plain text; `_parse_vision_analysis()` falls back gracefully. |
 
 All methods operate on the same first-page JPEG produced by
 `ai_vision.load_first_page()`, so comparisons are fair.
@@ -38,13 +40,15 @@ All methods operate on the same first-page JPEG produced by
 
 A new provider `task_type` **`premium`** (configured in Admin → AI Settings →
 "Premium Vision (Judge)") is used only here. The judge ranks the candidate
-transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summary }`.
+transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summary, corrected, fields }`.
 
 - **With image** (`use_image=true`): the document image plus all transcriptions go to
   the premium vision model, which compares them against the original. Requires a
   vision-capable provider type.
 - **Text-only** (`use_image=false`): only the transcriptions are sent; the model
   judges internal readability/coherence. Works with any premium provider.
+- **`fields`**: the judge also extracts structured metadata (document_type, date, names, etc.)
+  from its own analysis — shown in the UI and can be saved to the document.
 
 ## Endpoints (`/api/lab`, [`backend/app/routers/lab.py`](../backend/app/routers/lab.py))
 
@@ -52,8 +56,9 @@ transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summa
 |--------|------|------|---------|
 | GET | `/lab/methods` | — | `{ ocr_methods[], worker_available }` |
 | POST | `/lab/ocr` | `{ doc_id, method }` | `{ method, text, ms }` |
-| POST | `/lab/vision` | `{ doc_id, provider_id }` | `{ provider_id, name, text, cost, ms }` |
-| POST | `/lab/judge` | `{ doc_id, provider_id, use_image, candidates[] }` | `{ rankings[], best, summary, cost, ms }` |
+| POST | `/lab/vision` | `{ doc_id, provider_id }` | `{ provider_id, name, model_name, text, fields, cost, ms }` |
+| POST | `/lab/judge` | `{ doc_id, provider_id, use_image, candidates[] }` | `{ rankings[], best, summary, corrected, fields, cost, ms }` |
+| POST | `/lab/save` | `{ doc_id, text, fields?, model_name }` | `{ ok, doc_id }` — writes OCR text + extracted fields + attribution to the document |
 
 ## Code map
 

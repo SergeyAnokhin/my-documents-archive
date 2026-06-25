@@ -227,6 +227,11 @@ export const ru: Translations = {
     failed: "Ошибка",
     logs: "Логи",
     clearLogs: "Очистить",
+    saveResult: "Сохранить в документ",
+    saved: "Сохранено!",
+    saving: "Сохранение…",
+    judgeFields: "Поля, извлечённые судьёй",
+    noFields: "Поля не извлечены",
   },
 
   loading: "Загрузка…",

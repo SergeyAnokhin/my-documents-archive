@@ -13,6 +13,7 @@ import type {
   LabMethods,
   LabWorkerStatus,
   LabJudgeResult,
+  ExtractedFields,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -130,8 +131,11 @@ export const runLabOcr = (doc_id: number, method: string) =>
   api.post<{ method: string; text: string; ms: number }>("/lab/ocr", { doc_id, method });
 
 export const runLabVision = (doc_id: number, provider_id: number) =>
-  api.post<{ provider_id: number; name: string; text: string; cost: number; ms: number; tokens_in: number; tokens_out: number }>(
-    "/lab/vision", { doc_id, provider_id });
+  api.post<{
+    provider_id: number; name: string; model_name: string | null;
+    text: string; cost: number; ms: number; tokens_in: number; tokens_out: number;
+    fields: import("../types").ExtractedFields | null;
+  }>("/lab/vision", { doc_id, provider_id });
 
 export const runLabJudge = (body: {
   doc_id: number;
@@ -140,3 +144,10 @@ export const runLabJudge = (body: {
   language: string;
   candidates: { label: string; text: string }[];
 }) => api.post<LabJudgeResult>("/lab/judge", body);
+
+export const saveLabResult = (body: {
+  doc_id: number;
+  text: string;
+  fields?: ExtractedFields;
+  model_name: string;
+}) => api.post<{ ok: boolean; doc_id: number }>("/lab/save", body);

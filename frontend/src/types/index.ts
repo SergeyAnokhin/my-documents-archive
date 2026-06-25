@@ -30,6 +30,7 @@ export interface Document {
   analysis_error?: string;
   api_cost_vision?: number;
   api_cost_analysis?: number;
+  ocr_model?: string;
 }
 
 export interface SearchResult {
@@ -122,6 +123,19 @@ export interface LogEntry {
   created_at?: string;
 }
 
+// ── Lab extracted fields ───────────────────────────────────────────────────
+
+export interface ExtractedFields {
+  document_type?: string;
+  document_date?: string;       // YYYY-MM-DD
+  person_first_name?: string;
+  person_last_name?: string;
+  organization?: string;
+  amount?: number;
+  amount_currency?: string;
+  language?: string;
+}
+
 // ── Lab (OCR calibration) ───────────────────────────────────────────────────
 
 export interface LabMethods {
@@ -140,15 +154,17 @@ export interface LabWorkerStatus {
 
 /** A single transcription result shown as a card in the lab. */
 export interface LabResult {
-  id: string;          // client-side unique key
+  id: string;            // client-side unique key
   kind: "ocr" | "vision";
-  label: string;       // method or provider name
-  providerId?: number; // for vision results
+  label: string;         // method or provider name
+  providerId?: number;   // for vision results
+  providerModel?: string;// actual model id (e.g. "claude-haiku-4-5-20251001")
   text: string;
   ms: number;
   cost?: number;
   tokens_in?: number;
   tokens_out?: number;
+  fields?: ExtractedFields; // extracted metadata (vision results only)
 }
 
 export interface LabRanking {
@@ -162,6 +178,7 @@ export interface LabJudgeResult {
   best: string;
   summary: string;
   corrected?: string;
+  fields?: ExtractedFields; // extracted by the judge from its own analysis
   cost: number;
   ms: number;
   tokens_in?: number;

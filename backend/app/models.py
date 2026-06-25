@@ -54,6 +54,9 @@ class Document(Base):
     api_cost_vision = Column(Float, default=0.0)
     api_cost_analysis = Column(Float, default=0.0)
 
+    # Which model produced the stored ocr_text (set from the OCR Lab "save" action)
+    ocr_model = Column(String(256), nullable=True)
+
     is_deleted = Column(Boolean, default=False)
 
 

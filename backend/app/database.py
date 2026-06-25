@@ -52,6 +52,7 @@ def _apply_migrations(eng) -> None:
             "ALTER TABLE documents ADD COLUMN classification_confidence REAL",
             "ALTER TABLE documents ADD COLUMN classification_source TEXT",
             "ALTER TABLE documents ADD COLUMN manually_classified INTEGER DEFAULT 0",
+            "ALTER TABLE documents ADD COLUMN ocr_model TEXT",
         ]:
             try:
                 conn.execute(text(stmt))

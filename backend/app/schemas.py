@@ -40,6 +40,7 @@ class DocumentOut(BaseModel):
     analysis_error: Optional[str] = None
     api_cost_vision: float = 0.0
     api_cost_analysis: float = 0.0
+    ocr_model: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -225,11 +226,13 @@ class LabVisionRequest(BaseModel):
 class LabVisionResult(BaseModel):
     provider_id: int
     name: str
+    model_name: Optional[str] = None
     text: str
     cost: float
     ms: int
     tokens_in: int = 0
     tokens_out: int = 0
+    fields: Optional[Any] = None  # ExtractedFields dict from combined vision+analysis prompt
 
 
 class LabCandidate(BaseModel):
@@ -256,7 +259,20 @@ class LabJudgeResult(BaseModel):
     best: str = ""
     summary: str = ""
     corrected: str = ""
+    fields: Optional[Any] = None  # ExtractedFields dict from judge's own analysis
     cost: float = 0.0
     ms: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
+
+
+class LabSaveRequest(BaseModel):
+    doc_id: int
+    text: str
+    fields: Optional[Any] = None  # ExtractedFields dict
+    model_name: str               # human-readable "Provider (model)" for attribution
+
+
+class LabSaveResult(BaseModel):
+    ok: bool
+    doc_id: int

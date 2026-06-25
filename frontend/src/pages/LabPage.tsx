@@ -1,18 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ZoomIn, ZoomOut, Maximize, Maximize2, Play, X, Scale, Trophy, Terminal,
+  ArrowLeft, ZoomIn, ZoomOut, Maximize, Maximize2, Play, X, Scale, Trophy, Terminal, Save,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
 import {
   getDocument, getLabMethods, listProviders,
-  runLabOcr, runLabVision, runLabJudge,
+  runLabOcr, runLabVision, runLabJudge, saveLabResult,
 } from "../api/documents";
 import type {
-  Document, AIProvider, LabMethods, LabResult, LabJudgeResult,
+  Document, AIProvider, LabMethods, LabResult, LabJudgeResult, ExtractedFields,
 } from "../types";
 import "./LabPage.css";
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  const min = Math.floor(ms / 60000);
+  const sec = Math.round((ms % 60000) / 1000);
+  return `${min} min ${sec} s`;
+}
+
+function FieldChips({ fields }: { fields: ExtractedFields }) {
+  const chips: { key: string; value: string }[] = [];
+  if (fields.document_type) chips.push({ key: "type", value: fields.document_type.replace(/_/g, " ") });
+  if (fields.document_date) chips.push({ key: "date", value: fields.document_date });
+  const name = [fields.person_first_name, fields.person_last_name].filter(Boolean).join(" ");
+  if (name) chips.push({ key: "person", value: name });
+  if (fields.organization) chips.push({ key: "org", value: fields.organization });
+  if (fields.amount != null) {
+    const amt = fields.amount_currency ? `${fields.amount} ${fields.amount_currency}` : String(fields.amount);
+    chips.push({ key: "amount", value: amt });
+  }
+  if (fields.language) chips.push({ key: "lang", value: fields.language });
+  if (chips.length === 0) return null;
+  return (
+    <div className="lab-field-chips">
+      {chips.map(c => (
+        <span key={c.key} className={`lab-field-chip lab-field-chip--${c.key}`} title={c.key}>
+          {c.value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter", "mistral"];
 
@@ -47,6 +79,10 @@ export function LabPage() {
   const [judgingIds, setJudgingIds] = useState<number[]>([]);
   const [judgeResults, setJudgeResults] = useState<Record<number, LabJudgeResult>>({});
   const [judgeErrors, setJudgeErrors] = useState<Record<number, string>>({});
+
+  // Save state: which result id is being saved / saved
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
 
   // Zoom
   const [zoom, setZoom] = useState(1);
@@ -169,7 +205,7 @@ export function LabPage() {
     try {
       const res = await runLabOcr(docId, method);
       upsert({ id: uid(), kind: "ocr", label: method, text: res.text, ms: res.ms });
-      addLog(`← OCR [${method}]: ${res.text.length} chars · ${res.ms}ms`, "ok");
+      addLog(`← OCR [${method}]: ${res.text.length} chars · ${formatMs(res.ms)}`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "ocr", label: method, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
       addLog(`✗ OCR [${method}]: ${(e as Error).message}`, "err");
@@ -183,15 +219,55 @@ export function LabPage() {
     addLog(`→ Vision [${p.name}]`);
     try {
       const res = await runLabVision(docId, p.id);
-      upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: res.text, ms: res.ms, cost: res.cost, tokens_in: res.tokens_in, tokens_out: res.tokens_out });
+      upsert({
+        id: uid(), kind: "vision", label: p.name, providerId: p.id,
+        providerModel: res.model_name || p.model || undefined,
+        text: res.text, ms: res.ms, cost: res.cost,
+        tokens_in: res.tokens_in, tokens_out: res.tokens_out,
+        fields: res.fields || undefined,
+      });
       const costStr = res.cost != null && res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
       const tokStr = res.tokens_in ? ` · ${res.tokens_in}+${res.tokens_out} tok` : "";
-      addLog(`← Vision [${p.name}]: ${res.text.length} chars · ${res.ms}ms${tokStr}${costStr}`, "ok");
+      const fieldsStr = res.fields?.document_type ? ` · ${res.fields.document_type}` : "";
+      addLog(`← Vision [${p.name}]: ${res.text.length} chars · ${formatMs(res.ms)}${tokStr}${costStr}${fieldsStr}`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
       addLog(`✗ Vision [${p.name}]: ${(e as Error).message}`, "err");
     } finally {
       setRunningVision(null);
+    }
+  };
+
+  const handleSave = async (r: LabResult) => {
+    setSavingId(r.id);
+    setSavedId(null);
+    const modelLabel = [r.label, r.providerModel].filter(Boolean).join(" · ");
+    try {
+      await saveLabResult({ doc_id: docId, text: r.text, fields: r.fields, model_name: modelLabel });
+      setSavedId(r.id);
+      addLog(`✓ Saved [${r.label}] to document`, "ok");
+      setTimeout(() => setSavedId(id => id === r.id ? null : id), 2500);
+    } catch (e) {
+      addLog(`✗ Save [${r.label}]: ${(e as Error).message}`, "err");
+    } finally {
+      setSavingId(id => id === r.id ? null : id);
+    }
+  };
+
+  const handleSaveJudge = async (providerId: number, providerName: string, result: LabJudgeResult) => {
+    const fakeId = `judge-${providerId}`;
+    setSavingId(fakeId);
+    setSavedId(null);
+    const modelLabel = `Judge: ${providerName}`;
+    try {
+      await saveLabResult({ doc_id: docId, text: result.corrected || result.best, fields: result.fields, model_name: modelLabel });
+      setSavedId(fakeId);
+      addLog(`✓ Saved judge [${providerName}] corrected text to document`, "ok");
+      setTimeout(() => setSavedId(id => id === fakeId ? null : id), 2500);
+    } catch (e) {
+      addLog(`✗ Save judge [${providerName}]: ${(e as Error).message}`, "err");
+    } finally {
+      setSavingId(id => id === fakeId ? null : id);
     }
   };
 
@@ -220,7 +296,7 @@ export function LabPage() {
         });
         setJudgeResults(prev => ({ ...prev, [providerId]: res }));
         const costStr = res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
-        addLog(`← Judge [${provider.name}]: best="${res.best}" · ${res.ms}ms${costStr}`, "ok");
+        addLog(`← Judge [${provider.name}]: best="${res.best}" · ${formatMs(res.ms)}${costStr}`, "ok");
       } catch (e) {
         setJudgeErrors(prev => ({ ...prev, [providerId]: (e as Error).message }));
         addLog(`✗ Judge [${provider.name}]: ${(e as Error).message}`, "err");
@@ -385,6 +461,8 @@ export function LabPage() {
               <div className="lab-results">
                 {results.map(r => {
                   const isBest = bestLabels.has(r.label);
+                  const isSaving = savingId === r.id;
+                  const isSaved = savedId === r.id;
                   return (
                     <div key={r.id} className={`lab-card${isBest ? " best" : ""}`}>
                       <div className="lab-card-head">
@@ -392,10 +470,18 @@ export function LabPage() {
                         <span className="lab-card-label">{r.label}</span>
                         {isBest && <Trophy size={13} className="lab-best-icon" />}
                         <span className="lab-card-meta">
-                          {r.text.length} {lab.chars} · {r.ms} ms
+                          {r.text.length} {lab.chars} · {formatMs(r.ms)}
                           {(r.tokens_in != null && r.tokens_in > 0) ? ` · ${r.tokens_in}↑${r.tokens_out}↓ tok` : ""}
                           {r.cost != null && r.cost > 0 ? ` · $${r.cost.toFixed(5)}` : ""}
                         </span>
+                        <button
+                          className={`icon-btn lab-save-btn${isSaved ? " saved" : ""}`}
+                          title={isSaved ? lab.saved : lab.saveResult}
+                          disabled={isSaving}
+                          onClick={() => handleSave(r)}
+                        >
+                          <Save size={13} />
+                        </button>
                         <button className="icon-btn" title={lab.expand}
                           onClick={() => { setExpandedResult(r); setModalPos({ x: 24, y: 80 }); }}>
                           <Maximize2 size={13} />
@@ -405,6 +491,9 @@ export function LabPage() {
                           <X size={13} />
                         </button>
                       </div>
+                      {r.fields && Object.keys(r.fields).length > 0 && (
+                        <FieldChips fields={r.fields} />
+                      )}
                       <pre className="lab-card-text">{r.text || "—"}</pre>
                     </div>
                   );
@@ -493,14 +582,42 @@ export function LabPage() {
                                 </li>
                               ))}
                             </ul>
-                            {result.corrected && (
+                            {result.fields && Object.keys(result.fields).length > 0 && (
+                              <div style={{ marginTop: 8 }}>
+                                <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.judgeFields}</p>
+                                <FieldChips fields={result.fields} />
+                              </div>
+                            )}
+                            {(result.corrected || result.fields) && (
                               <div style={{ marginTop: 10 }}>
-                                <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.corrected}</p>
-                                <pre className="lab-card-text" style={{ height: 120 }}>{result.corrected}</pre>
+                                {result.corrected && (
+                                  <>
+                                    <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.corrected}</p>
+                                    <pre className="lab-card-text" style={{ height: 120 }}>{result.corrected}</pre>
+                                  </>
+                                )}
+                                <div style={{ marginTop: 6 }}>
+                                  {(() => {
+                                    const fakeId = `judge-${p.id}`;
+                                    const isSaving = savingId === fakeId;
+                                    const isSaved = savedId === fakeId;
+                                    return (
+                                      <button
+                                        className={`lab-save-btn-inline${isSaved ? " saved" : ""}`}
+                                        title={isSaved ? lab.saved : lab.saveResult}
+                                        disabled={isSaving || (!result.corrected && !result.fields)}
+                                        onClick={() => handleSaveJudge(p.id, p.name, result)}
+                                      >
+                                        <Save size={12} />
+                                        {isSaved ? lab.saved : isSaving ? lab.saving : lab.saveResult}
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                             )}
                             <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                              {result.ms} ms
+                              {formatMs(result.ms)}
                               {result.tokens_in ? ` · ${result.tokens_in}↑${result.tokens_out}↓ tok` : ""}
                               {result.cost > 0 ? ` · $${result.cost.toFixed(5)}` : ""}
                             </p>
@@ -529,10 +646,30 @@ export function LabPage() {
               {expandedResult.kind === "ocr" ? "OCR" : "AI"}
             </span>
             <span className="lab-float-label">{expandedResult.label}</span>
+            <span className="lab-float-time text-muted">{formatMs(expandedResult.ms)}</span>
+            {(() => {
+              const isSaving = savingId === expandedResult.id;
+              const isSaved = savedId === expandedResult.id;
+              return (
+                <button
+                  className={`icon-btn lab-save-btn${isSaved ? " saved" : ""}`}
+                  title={isSaved ? lab.saved : lab.saveResult}
+                  disabled={isSaving}
+                  onClick={() => handleSave(expandedResult)}
+                >
+                  <Save size={13} />
+                </button>
+              );
+            })()}
             <button className="icon-btn" onClick={() => setExpandedResult(null)} title={lab.remove}>
               <X size={13} />
             </button>
           </div>
+          {expandedResult.fields && Object.keys(expandedResult.fields).length > 0 && (
+            <div className="lab-float-fields">
+              <FieldChips fields={expandedResult.fields} />
+            </div>
+          )}
           <pre className="lab-float-text">{expandedResult.text || "—"}</pre>
         </div>
       )}
