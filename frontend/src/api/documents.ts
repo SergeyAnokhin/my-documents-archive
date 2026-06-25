@@ -65,10 +65,17 @@ export const searchDocuments = (params: Record<string, unknown> = {}) => {
   return api.get<SearchResponse>(`/search?${qs}`);
 };
 
-export const askDocuments = (query: string, language: string) =>
-  api.get<AIAnswerResponse>(
-    `/search/ask?${new URLSearchParams({ query, language }).toString()}`
-  );
+export const askDocuments = (
+  query: string,
+  language: string,
+  year?: string | null,
+  filterLanguage?: string | null,
+) => {
+  const params: Record<string, string> = { query, language };
+  if (year) params.year = year;
+  if (filterLanguage) params.filter_language = filterLanguage;
+  return api.get<AIAnswerResponse>(`/search/ask?${new URLSearchParams(params).toString()}`);
+};
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 

@@ -144,25 +144,26 @@ export function SearchBar({
           ))}
         </div>
 
-        {/* Filter dropdowns — only in search mode */}
-        {!isAsk && (
-          <div className="search-filters">
-            <FilterDropdown
-              label={t.filters.year}
-              clearLabel={t.filters.allYears}
-              options={YEAR_OPTIONS}
-              value={filterYear}
-              onSelect={onFilterYear}
-            />
-            <FilterDropdown
-              label={t.filters.language}
-              clearLabel={t.filters.allLanguages}
-              options={LANG_OPTIONS}
-              value={filterLang}
-              onSelect={onFilterLang}
-            />
-          </div>
-        )}
+        {/* Filter dropdowns — always shown */}
+        <div className="search-filters">
+          <FilterDropdown
+            label={t.filters.year}
+            clearLabel={t.filters.allYears}
+            options={YEAR_OPTIONS}
+            value={filterYear}
+            onSelect={onFilterYear}
+          />
+          <FilterDropdown
+            label={t.filters.language}
+            clearLabel={t.filters.allLanguages}
+            options={LANG_OPTIONS}
+            value={filterLang}
+            onSelect={onFilterLang}
+          />
+          <button type="submit" className="search-submit-btn">
+            {isAsk ? t.aiSearch.submit : t.searchMode.search}
+          </button>
+        </div>
       </div>
     </form>
   );

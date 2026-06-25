@@ -151,3 +151,18 @@
   padding-left: var(--sp-3);
   border-left: 1px solid var(--color-border);
 }
+
+.search-submit-btn {
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  white-space: nowrap;
+}
+.search-submit-btn:hover { opacity: 0.85; }

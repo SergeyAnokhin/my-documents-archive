@@ -91,14 +91,14 @@ export function HomePage() {
     setAiLoading(true);
     setAiAnswer(null);
     try {
-      const res = await askDocuments(query, lang);
+      const res = await askDocuments(query, lang, filterYear, filterLang);
       setAiAnswer(res);
     } catch {
       /* ignore */
     } finally {
       setAiLoading(false);
     }
-  }, [query, lang]);
+  }, [query, lang, filterYear, filterLang]);
 
   // ── Mode change ─────────────────────────────────────────────────────────────
 

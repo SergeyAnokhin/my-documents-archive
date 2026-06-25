@@ -198,15 +198,23 @@ def _build_response(
 async def ask_documents(
     query: str = Query(""),
     language: str = Query("en"),
+    year: Optional[int] = None,
+    filter_language: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Answer a free-form question about the user's documents using AI."""
     if not query.strip():
         return AIAnswerResponse(answer="", sources=[], cost=0.0)
 
+    base = db.query(Document).filter(Document.is_deleted == False)
+    if year:
+        date_col = func.coalesce(Document.document_date, Document.added_at)
+        base = base.filter(extract("year", date_col) == year)
+    if filter_language:
+        base = base.filter(Document.language == filter_language)
+
     # Find relevant docs: semantic first, fallback to fulltext
     doc_ids = _semantic_ids(query, 12)
-    base = db.query(Document).filter(Document.is_deleted == False)
 
     if doc_ids:
         docs_all = base.filter(Document.id.in_(doc_ids)).all()
@@ -249,6 +257,8 @@ async def ask_documents(
             parts.append(f"Tags: {', '.join(doc.tags)}")
         if doc.summary:
             parts.append(f"Summary: {doc.summary[:600]}")
+        if doc.ocr_text:
+            parts.append(f"Text: {doc.ocr_text[:1000]}")
         context_parts.append("\n".join(parts))
 
     context = "\n\n---\n\n".join(context_parts)
