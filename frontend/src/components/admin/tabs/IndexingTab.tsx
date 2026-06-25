@@ -16,7 +16,7 @@ export function IndexingTab() {
 
   // Compute worker settings
   const [workerUrl, setWorkerUrl] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [checkingEngine, setCheckingEngine] = useState<"tesseract" | "easyocr" | null>(null);
   const [workerStatus, setWorkerStatus_] = useState<LabWorkerStatus | null>(null);
   const [savingUrl, setSavingUrl] = useState(false);
 
@@ -80,11 +80,10 @@ export function IndexingTab() {
     }
   };
 
-  const handleCheckWorker = async () => {
-    setChecking(true);
+  const handleCheckEngine = async (engine: "tesseract" | "easyocr") => {
+    setCheckingEngine(engine);
     setWorkerStatus_(null);
     try {
-      // Save URL first so the backend uses the current value
       if (workerUrl.trim()) {
         await updateAppSettings({ ocr_worker_url: workerUrl.trim() });
       }
@@ -93,7 +92,7 @@ export function IndexingTab() {
     } catch (e: unknown) {
       flash(e instanceof Error ? e.message : t.error);
     } finally {
-      setChecking(false);
+      setCheckingEngine(null);
     }
   };
 
@@ -148,22 +147,51 @@ export function IndexingTab() {
         <Button variant="secondary" loading={savingUrl} onClick={handleSaveUrl}>
           {t.save ?? "Save"}
         </Button>
-        <Button variant="secondary" loading={checking} onClick={handleCheckWorker}>
-          {ix.checkWorker}
+      </div>
+
+      {/* Per-engine test buttons */}
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={checkingEngine === "tesseract"}
+          disabled={checkingEngine !== null}
+          onClick={() => handleCheckEngine("tesseract")}
+        >
+          Tesseract
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={checkingEngine === "easyocr"}
+          disabled={checkingEngine !== null}
+          onClick={() => handleCheckEngine("easyocr")}
+        >
+          EasyOCR
         </Button>
       </div>
 
       {workerStatus && (
-        <div style={{ marginTop: 8, fontSize: "0.875rem", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+        <div style={{ marginTop: 8, fontSize: "0.875rem", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          {workerStatus.reachable && (
+            <span className="status-dot done pulse" title={ix.workerUp} />
+          )}
           <span style={{ color: workerStatus.reachable ? "var(--color-success)" : "var(--color-error)", fontWeight: 500 }}>
             {workerStatus.reachable ? ix.workerUp : ix.workerDown}
           </span>
           {workerStatus.reachable && (
             <>
-              <span className="text-muted">— {ix.workerEngines}: {workerStatus.engines.join(", ") || "—"}</span>
-              {!workerStatus.worker_available && (
-                <span style={{ color: "var(--color-error)" }}>({ix.workerNoEasyocr})</span>
-              )}
+              <span className="engine-pill ok">
+                <span className="engine-pill-dot" />
+                Tesseract
+              </span>
+              <span className={`engine-pill ${workerStatus.engines.includes("easyocr") ? "ok" : "err"}`}>
+                <span className="engine-pill-dot" />
+                EasyOCR
+                {!workerStatus.engines.includes("easyocr") && (
+                  <span style={{ fontSize: 10, marginLeft: 2 }}>— {ix.workerNoEasyocr}</span>
+                )}
+              </span>
             </>
           )}
         </div>

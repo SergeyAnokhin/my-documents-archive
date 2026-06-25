@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ZoomIn, ZoomOut, Maximize, Play, X, Scale, Trophy, Terminal,
+  ArrowLeft, ZoomIn, ZoomOut, Maximize, Maximize2, Play, X, Scale, Trophy, Terminal,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import "./LabPage.css";
 
-const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter"];
+const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter", "mistral"];
 
 function uid() {
   return Math.random().toString(36).slice(2);
@@ -65,13 +65,35 @@ export function LabPage() {
     e.preventDefault();
   };
 
+  // Floating text modal
+  const [expandedResult, setExpandedResult] = useState<LabResult | null>(null);
+  const [modalPos, setModalPos] = useState({ x: 24, y: 80 });
+  const modalDragStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
+
+  const onModalDragStart = (e: React.MouseEvent, curPos: { x: number; y: number }) => {
+    modalDragStart.current = { mx: e.clientX, my: e.clientY, px: curPos.x, py: curPos.y };
+    e.preventDefault();
+  };
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
-      const dx = resizeStartX.current - e.clientX;
-      setPanelWidth(Math.max(300, Math.min(900, resizeStartWidth.current + dx)));
+      if (isResizing.current) {
+        const dx = resizeStartX.current - e.clientX;
+        setPanelWidth(Math.max(300, Math.min(900, resizeStartWidth.current + dx)));
+      }
+      if (modalDragStart.current) {
+        const dx = e.clientX - modalDragStart.current.mx;
+        const dy = e.clientY - modalDragStart.current.my;
+        setModalPos({
+          x: Math.max(0, modalDragStart.current.px + dx),
+          y: Math.max(0, modalDragStart.current.py + dy),
+        });
+      }
     };
-    const onUp = () => { isResizing.current = false; };
+    const onUp = () => {
+      isResizing.current = false;
+      modalDragStart.current = null;
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -272,7 +294,16 @@ export function LabPage() {
 
           {/* Local OCR */}
           <section className="lab-section">
-            <h3 className="lab-section-title">{lab.localOcr}</h3>
+            <h3 className="lab-section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {lab.localOcr}
+              {methods?.worker_reachable && (
+                <span
+                  className="status-dot done pulse"
+                  title="Compute-сервис доступен"
+                  style={{ marginTop: 1 }}
+                />
+              )}
+            </h3>
             <div className="lab-actions-row">
               {(methods?.ocr_methods ?? ["tesseract"]).map(m => (
                 <Button
@@ -339,6 +370,10 @@ export function LabPage() {
                           {(r.tokens_in != null && r.tokens_in > 0) ? ` · ${r.tokens_in}↑${r.tokens_out}↓ tok` : ""}
                           {r.cost != null && r.cost > 0 ? ` · $${r.cost.toFixed(5)}` : ""}
                         </span>
+                        <button className="icon-btn" title={lab.expand}
+                          onClick={() => { setExpandedResult(r); setModalPos({ x: 24, y: 80 }); }}>
+                          <Maximize2 size={13} />
+                        </button>
                         <button className="icon-btn" title={lab.remove}
                           onClick={() => setResults(prev => prev.filter(x => x.id !== r.id))}>
                           <X size={13} />
@@ -414,6 +449,28 @@ export function LabPage() {
           </section>
         </aside>
       </div>
+
+      {/* Floating text modal */}
+      {expandedResult && (
+        <div
+          className="lab-float-modal"
+          style={{ left: modalPos.x, top: modalPos.y }}
+        >
+          <div
+            className="lab-float-header"
+            onMouseDown={e => onModalDragStart(e, modalPos)}
+          >
+            <span className={`lab-kind ${expandedResult.kind}`}>
+              {expandedResult.kind === "ocr" ? "OCR" : "AI"}
+            </span>
+            <span className="lab-float-label">{expandedResult.label}</span>
+            <button className="icon-btn" onClick={() => setExpandedResult(null)} title={lab.remove}>
+              <X size={13} />
+            </button>
+          </div>
+          <pre className="lab-float-text">{expandedResult.text || "—"}</pre>
+        </div>
+      )}
     </div>
   );
 }

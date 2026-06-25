@@ -34,7 +34,10 @@ npm run dev            # → http://localhost:3000
 # OCR Worker (optional, separate machine)
 cd compute
 pip install -r requirements.txt
+# Windows + miniforge/conda only: MKL vs OpenBLAS conflict fix
+pip install numpy scipy scikit-image --force-reinstall
 uvicorn app.main:app --host 0.0.0.0 --port 8001
+# Connect from admin panel using http://localhost:8001 (not 0.0.0.0:8001)
 ```
 
 Set `LIBRARY_PATH` env var (default: `./library`) to point at your document folder.
@@ -53,6 +56,7 @@ npm test
 | [docs/architecture.md](docs/architecture.md) | System overview, components, data flow, phases |
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
 | [docs/lab-mode.md](docs/lab-mode.md) | OCR Lab (`/lab/:id`): compare OCR engines & vision models, premium "judge" |
+| [docs/compute-worker.md](docs/compute-worker.md) | External OCR worker: install (incl. Windows+conda MKL fix), endpoints, engine detection |
 | [docs/First_Specification.md](docs/First_Specification.md) | Full product specification — **large, high-level; read only when explicitly working on the spec, not for code tasks** |
 
 ## Project Structure
@@ -74,5 +78,5 @@ docs/        Architecture docs + AI navigation index
 | 4 | ✅ Done | AI Vision (optional), semantic + hybrid search (ChromaDB + sentence-transformers) |
 | 5 | ✅ Done | Folder watcher (watchdog) — auto-picks new files from watched folders |
 | 6 | ✅ Done | Developer Mode tab in document viewer: pipeline statuses, Re-classify, Re-index |
-| 7 | ✅ Scaffolded | External OCR worker |
+| 7 | ✅ Done | External OCR worker (Tesseract + EasyOCR) |
 | 8 | ✅ Done | OCR Lab (`/lab/:id`): compare Tesseract / EasyOCR / vision models on one document; premium AI "judge" ranks the transcriptions |

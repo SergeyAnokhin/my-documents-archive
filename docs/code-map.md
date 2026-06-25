@@ -42,7 +42,7 @@ docs/             Architecture docs (you are here)
 
 | File | Responsibility |
 |------|---------------|
-| `main.py` | FastAPI OCR worker — `/ocr` (POST) and `/health` (GET); engines: tesseract, easyocr |
+| `main.py` | FastAPI OCR worker — `/ocr` (POST) and `/health` (GET); engines detected at startup via `_probe()` subprocess (isolates native DLL crashes from the main process); see [compute-worker.md](compute-worker.md) |
 
 ## Frontend (`frontend/src/`)
 
@@ -118,3 +118,4 @@ Admin reclassify
 - **App settings**: `/api/admin/settings` accepts any key, but the only key the backend actually reads is `enable_ai_vision` (in `services/indexer.py`). `enable_ai_analysis`, `ai_analysis_model`, `ai_vision_model` in `config.py` are env fallbacks, not DB-backed settings.
 - **AI providers live in the DB** (`AIProvider` rows, added via Admin UI), not in env. The `*_api_key` fields in `config.py` are only fallback overrides.
 - **Tests**: `npm test` from repo root runs all three suites (backend/compute pytest, frontend vitest). See [testing.md](testing.md). Test files live in `backend/tests/`, `compute/tests/`, and `frontend/src/**/*.test.ts`.
+- **Compute worker native crash (Windows+conda)**: On miniforge/miniconda, `import easyocr` → `from skimage import io` triggers an OpenBLAS vs MKL DLL conflict when torch (MKL-linked) is already loaded. Exit code `3228369023` (STATUS_ACCESS_VIOLATION), NOT catchable by `except Exception`. Fix: `pip install numpy scipy scikit-image --force-reinstall`. The worker uses `_probe()` (subprocess) at startup to survive this crash in the probe itself. See [compute-worker.md](compute-worker.md).

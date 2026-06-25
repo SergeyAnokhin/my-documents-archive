@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ChevronUp, ChevronDown, Plus, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { Button } from "../../ui/Button";
+import { Modal } from "../../ui/Modal";
 import { useT } from "../../../i18n";
 import {
   listProviders, addProvider, toggleProvider, removeProvider,
@@ -90,7 +91,9 @@ function Stars({ count }: { count: number }) {
   );
 }
 
-// ── Model picker with search ──────────────────────────────────────────────────
+// ── Model picker with search and sort ────────────────────────────────────────
+
+type SortKey = "default" | "rating" | "price";
 
 function ModelPicker({
   models,
@@ -108,29 +111,69 @@ function ModelPicker({
   const { t } = useT();
   const ai = t.admin.ai;
   const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("default");
+
+  const priceKey = (m: ProviderModel) => {
+    if (m.is_free) return -1;
+    if (m.price_in == null) return Infinity;
+    return m.price_in * 0.75 + (m.price_out ?? m.price_in) * 0.25;
+  };
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     const base = forVision ? models.filter(m => m.supports_vision) : models;
-    return q ? base.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : base;
-  }, [models, query, forVision]);
+    let result = q ? base.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : base;
+    if (sortBy === "rating") {
+      result = [...result].sort((a, b) => lookupRating(ratings, b.id, forVision) - lookupRating(ratings, a.id, forVision));
+    } else if (sortBy === "price") {
+      result = [...result].sort((a, b) => priceKey(a) - priceKey(b));
+    }
+    return result;
+  }, [models, query, forVision, sortBy, ratings]);
+
+  const sortBtn = (key: SortKey, label: string, title: string) => (
+    <button
+      key={key}
+      title={title}
+      onClick={() => setSortBy(key)}
+      style={{
+        padding: "4px 9px",
+        borderRadius: 4,
+        border: "1.5px solid var(--color-border)",
+        background: sortBy === key ? "var(--color-accent)" : "var(--color-surface)",
+        color: sortBy === key ? "var(--color-accent-fg)" : "var(--color-ink-muted)",
+        fontSize: 12,
+        cursor: "pointer",
+        flexShrink: 0,
+        fontWeight: sortBy === key ? 700 : 400,
+        lineHeight: 1.4,
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div>
-      <input
-        className="admin-input"
-        placeholder={ai.searchModels}
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        style={{ marginBottom: 6 }}
-      />
+      <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+        <input
+          className="admin-input"
+          placeholder={ai.searchModels}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        {sortBtn("default", "—", ai.sortDefault ?? "По умолчанию")}
+        {sortBtn("rating", "★", ai.sortRating ?? "По рейтингу")}
+        {sortBtn("price", "$", ai.sortPrice ?? "По цене")}
+      </div>
       {filtered.length === 0 ? (
         <p className="text-xs text-muted">{forVision ? "No vision-capable models found" : ai.noModels}</p>
       ) : (
         <div style={{
           border: "1.5px solid var(--color-border)",
           borderRadius: 6,
-          maxHeight: 240,
+          maxHeight: 340,
           overflowY: "auto",
         }}>
           {filtered.map(m => {
@@ -143,7 +186,7 @@ function ModelPicker({
                 key={m.id}
                 onClick={() => onSelect(m)}
                 style={{
-                  padding: "4px 8px",
+                  padding: "5px 8px",
                   cursor: "pointer",
                   borderBottom: "1px solid var(--color-border-soft)",
                   background: isSelected ? "var(--color-tag)" : "transparent",
@@ -228,6 +271,7 @@ function AddProviderForm({
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showModelModal, setShowModelModal] = useState(false);
 
   const showBaseUrl = ["openai", "mistral", "openrouter"].includes(form.provider_type);
 
@@ -241,6 +285,7 @@ function AddProviderForm({
         base_url: form.base_url || undefined,
       });
       setModels(list);
+      if (list.length > 0) setShowModelModal(true);
     } finally {
       setLoadingModels(false);
     }
@@ -253,6 +298,7 @@ function AddProviderForm({
       model: m.id,
       name: autoName(f.provider_type, m.id, kn),
     }));
+    setShowModelModal(false);
   };
 
   const handleSave = async () => {
@@ -276,36 +322,34 @@ function AddProviderForm({
 
   return (
     <div className="provider-form" style={{ marginTop: 8 }}>
-      {/* Provider type */}
-      <select
-        className="admin-input"
-        value={form.provider_type}
-        onChange={e => setForm(f => ({ ...f, provider_type: e.target.value, model: "", name: "" }))}
-      >
-        {PROVIDER_TYPES.map(pt => (
-          <option key={pt.value} value={pt.value}>{pt.label}</option>
-        ))}
-      </select>
-
-      {/* API key */}
-      <input
-        className="admin-input"
-        placeholder={ai.apiKey}
-        type="password"
-        value={form.api_key}
-        onChange={e => setForm(f => ({ ...f, api_key: e.target.value, name: f.model ? autoName(f.provider_type, f.model, f.key_name || defaultKeyName(e.target.value)) : "" }))}
-      />
-
-      {/* Key label */}
-      <input
-        className="admin-input"
-        placeholder={ai.keyName}
-        value={form.key_name}
-        onChange={e => {
-          const kn = e.target.value;
-          setForm(f => ({ ...f, key_name: kn, name: f.model ? autoName(f.provider_type, f.model, kn || defaultKeyName(f.api_key)) : "" }));
-        }}
-      />
+      {/* Row 1: Provider type + API key + Key name in one line */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(110px,1fr) minmax(140px,2fr) minmax(110px,1fr)", gap: 8 }}>
+        <select
+          className="admin-input"
+          value={form.provider_type}
+          onChange={e => setForm(f => ({ ...f, provider_type: e.target.value, model: "", name: "" }))}
+        >
+          {PROVIDER_TYPES.map(pt => (
+            <option key={pt.value} value={pt.value}>{pt.label}</option>
+          ))}
+        </select>
+        <input
+          className="admin-input"
+          placeholder={ai.apiKey}
+          type="password"
+          value={form.api_key}
+          onChange={e => setForm(f => ({ ...f, api_key: e.target.value, name: f.model ? autoName(f.provider_type, f.model, f.key_name || defaultKeyName(e.target.value)) : "" }))}
+        />
+        <input
+          className="admin-input"
+          placeholder={ai.keyName}
+          value={form.key_name}
+          onChange={e => {
+            const kn = e.target.value;
+            setForm(f => ({ ...f, key_name: kn, name: f.model ? autoName(f.provider_type, f.model, kn || defaultKeyName(f.api_key)) : "" }));
+          }}
+        />
+      </div>
 
       {/* Optional base URL */}
       {showBaseUrl && (
@@ -317,27 +361,31 @@ function AddProviderForm({
         />
       )}
 
-      {/* Fetch models */}
-      <Button
-        variant="secondary"
-        size="sm"
-        loading={loadingModels}
-        disabled={!form.api_key}
-        onClick={handleFetchModels}
-      >
-        {loadingModels ? ai.fetchingModels : ai.fetchModels}
-      </Button>
-
-      {/* Model picker */}
-      {models.length > 0 && (
-        <ModelPicker
-          models={models}
-          selected={form.model}
-          ratings={ratings}
-          forVision={forVision}
-          onSelect={handleSelectModel}
-        />
-      )}
+      {/* Fetch models + selected model chip */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={loadingModels}
+          disabled={!form.api_key}
+          onClick={handleFetchModels}
+        >
+          {loadingModels ? ai.fetchingModels : ai.fetchModels}
+        </Button>
+        {form.model && (
+          <button
+            onClick={() => models.length > 0 && setShowModelModal(true)}
+            style={{
+              fontSize: 11, fontFamily: "monospace", color: "var(--color-ink-muted)",
+              background: "var(--color-tag)", border: "none", borderRadius: 4,
+              padding: "3px 8px", cursor: models.length > 0 ? "pointer" : "default",
+            }}
+            title={models.length > 0 ? ai.selectModel : undefined}
+          >
+            {form.model}
+          </button>
+        )}
+      </div>
 
       {/* Provider name (auto-filled, editable) */}
       <input
@@ -353,6 +401,17 @@ function AddProviderForm({
         </Button>
         <Button variant="ghost" size="sm" onClick={onCancel}>{t.cancel}</Button>
       </div>
+
+      {/* Model picker modal */}
+      <Modal open={showModelModal} onClose={() => setShowModelModal(false)} title={ai.selectModel} size="md">
+        <ModelPicker
+          models={models}
+          selected={form.model}
+          ratings={ratings}
+          forVision={forVision}
+          onSelect={handleSelectModel}
+        />
+      </Modal>
     </div>
   );
 }
@@ -386,17 +445,16 @@ function ProviderRow({
   const ai = t.admin.ai;
   const hasStats = provider.total_tokens_in > 0 || provider.total_tokens_out > 0;
 
-  const [editing, setEditing] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editModels, setEditModels] = useState<ProviderModel[]>([]);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
 
   const openEdit = async () => {
-    if (editing) { setEditing(false); return; }
-    setEditing(true);
     setPendingModel(null);
     setLoadingEdit(true);
+    setEditOpen(true);
     try {
       const list = await fetchProviderModelsById(provider.id);
       setEditModels(list);
@@ -419,11 +477,15 @@ function ProviderRow({
     }
   };
 
+  const handleSelectEditModel = (m: ProviderModel) => {
+    setPendingModel(m.id);
+  };
+
   return (
-    <li className="provider-item" style={{ alignItems: "flex-start", gap: 6, flexDirection: "column", padding: "6px 8px" }}>
-      <div style={{ display: "flex", width: "100%", alignItems: "flex-start", gap: 6 }}>
-        {/* Priority arrows */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 1, paddingTop: 2, flexShrink: 0 }}>
+    <li className="provider-item" style={{ alignItems: "flex-start", gap: 6, flexDirection: "column", padding: "5px 8px" }}>
+      <div style={{ display: "flex", width: "100%", alignItems: "center", gap: 4 }}>
+        {/* Priority arrows — horizontal to keep card single-line */}
+        <div style={{ display: "flex", flexDirection: "row", gap: 1, flexShrink: 0 }}>
           <button className="icon-btn" onClick={onMoveUp} disabled={isFirst} title={ai.moveUp}
             style={{ opacity: isFirst ? 0.25 : 1 }}>
             <ChevronUp size={13} />
@@ -450,7 +512,7 @@ function ProviderRow({
 
         {/* Actions */}
         <div className="folder-actions" style={{ flexShrink: 0 }}>
-          <button className="icon-btn" onClick={openEdit} title="Сменить модель" style={{ color: editing ? "var(--color-accent)" : undefined }}>
+          <button className="icon-btn" onClick={openEdit} title="Сменить модель" style={{ color: editOpen ? "var(--color-accent)" : undefined }}>
             <Pencil size={13} />
           </button>
           <button className="icon-btn" onClick={onToggle} title={provider.enabled ? t.enabled : t.disabled}>
@@ -462,30 +524,30 @@ function ProviderRow({
         </div>
       </div>
 
-      {/* Inline model editor */}
-      {editing && (
-        <div style={{ width: "100%", paddingTop: 6, borderTop: "1px solid var(--color-border-soft)" }}>
-          {loadingEdit ? (
-            <p className="text-xs text-muted" style={{ marginBottom: 6 }}>{ai.fetchingModels}</p>
-          ) : editModels.length === 0 ? (
-            <p className="text-xs text-muted" style={{ marginBottom: 6 }}>{ai.noModels}</p>
-          ) : (
+      {/* Model picker modal */}
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={ai.selectModel} size="md">
+        {loadingEdit ? (
+          <p className="text-xs text-muted">{ai.fetchingModels}</p>
+        ) : editModels.length === 0 ? (
+          <p className="text-xs text-muted">{ai.noModels}</p>
+        ) : (
+          <>
             <ModelPicker
               models={editModels}
               selected={pendingModel ?? provider.model ?? ""}
               ratings={ratings}
               forVision={forVision}
-              onSelect={m => setPendingModel(m.id)}
+              onSelect={handleSelectEditModel}
             />
-          )}
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            <Button variant="primary" size="sm" loading={saving} disabled={!pendingModel || saving} onClick={saveModel}>
-              {t.save}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>{t.cancel}</Button>
-          </div>
-        </div>
-      )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <Button variant="primary" size="sm" loading={saving} disabled={!pendingModel || saving} onClick={saveModel}>
+                {t.save}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setEditOpen(false)}>{t.cancel}</Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </li>
   );
 }

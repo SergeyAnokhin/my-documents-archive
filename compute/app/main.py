@@ -11,6 +11,8 @@ Usage:
 
 import io
 import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -29,22 +31,49 @@ app = FastAPI(
 OCR_LANGUAGES = os.getenv("OCR_LANGUAGES", "rus+fra+eng")
 
 
+# ── Engine detection at startup ───────────────────────────────────────────────
+# Run in a subprocess so a native DLL crash (e.g. bad CUDA build of torch)
+# does not kill the main server process.
+
+def _probe(module: str) -> bool:
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip()
+            if err:
+                print(f"[ocr-worker] {module} probe failed: {err[:300]}", flush=True)
+            else:
+                print(f"[ocr-worker] {module} probe exited with code {r.returncode}", flush=True)
+        return r.returncode == 0
+    except Exception as e:
+        print(f"[ocr-worker] {module} probe error: {e}", flush=True)
+        return False
+
+_HAS_TESSERACT = False
+try:
+    import pytesseract
+    pytesseract.get_tesseract_version()
+    _HAS_TESSERACT = True
+except Exception:
+    pass
+
+_HAS_EASYOCR = _probe("easyocr")
+
+print(f"[ocr-worker] engines: tesseract={_HAS_TESSERACT}, easyocr={_HAS_EASYOCR}", flush=True)
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
     engines = []
-    try:
-        import pytesseract
-        pytesseract.get_tesseract_version()
+    if _HAS_TESSERACT:
         engines.append("tesseract")
-    except Exception:
-        pass
-    try:
-        import easyocr  # noqa: F401
+    if _HAS_EASYOCR:
         engines.append("easyocr")
-    except Exception:
-        pass
     return {"status": "ok", "engines": engines, "languages": OCR_LANGUAGES}
 
 
@@ -119,6 +148,9 @@ def _tesseract(img: Image.Image, langs: str) -> str:
 
 
 def _easyocr(img: Image.Image, langs: str) -> str:
+    import PIL.Image as _pil
+    if not hasattr(_pil, "ANTIALIAS"):
+        _pil.ANTIALIAS = _pil.LANCZOS  # Pillow ≥10 removed ANTIALIAS
     import easyocr
     import numpy as np
     # EasyOCR uses list of 2-letter codes: ["ru", "fr", "en"]
@@ -127,6 +159,11 @@ def _easyocr(img: Image.Image, langs: str) -> str:
     for part in langs.replace("+", ",").split(","):
         part = part.strip()
         lang_list.append(lang_map.get(part, part))
+
+    # Cyrillic model is only compatible with English — drop other Latin langs
+    cyrillic_langs = {"ru", "rs_cyrillic", "be", "bg", "uk", "mn"}
+    if any(l in cyrillic_langs for l in lang_list):
+        lang_list = [l for l in lang_list if l in cyrillic_langs or l == "en"]
 
     reader = easyocr.Reader(lang_list, gpu=False, verbose=False)
     results = reader.readtext(np.array(img), detail=0)
