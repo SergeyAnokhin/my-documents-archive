@@ -102,7 +102,7 @@ async def run_judge(body: LabJudgeRequest, db: Session = Depends(get_db)):
         img = _doc_image(body.doc_id, db)
     candidates = [{"label": c.label, "text": c.text} for c in body.candidates]
     try:
-        result = await lab.judge(candidates, provider, db, img_bytes=img)
+        result = await lab.judge(candidates, provider, db, img_bytes=img, language=body.language)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Judge failed: {e}")
     return LabJudgeResult(**result)

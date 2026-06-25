@@ -81,6 +81,8 @@ export const updateProviderOrder = (id: number, sort_order: number) =>
   api.patch<AIProvider>(`/admin/providers/${id}/order`, { sort_order });
 export const updateProviderModel = (id: number, model: string) =>
   api.patch<AIProvider>(`/admin/providers/${id}/model`, { model });
+export const updateProviderSettings = (id: number, params: Record<string, unknown>) =>
+  api.patch<AIProvider>(`/admin/providers/${id}/settings`, params);
 export const fetchProviderModels = (body: {
   provider_type: string;
   api_key: string;
@@ -127,5 +129,6 @@ export const runLabJudge = (body: {
   doc_id: number;
   provider_id: number;
   use_image: boolean;
+  language: string;
   candidates: { label: string; text: string }[];
 }) => api.post<LabJudgeResult>("/lab/judge", body);

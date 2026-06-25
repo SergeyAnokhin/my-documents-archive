@@ -26,6 +26,8 @@ class DocumentOut(BaseModel):
     organization: Optional[str] = None
     amount: Optional[float] = None
     amount_currency: Optional[str] = None
+    person_first_name: Optional[str] = None
+    person_last_name: Optional[str] = None
     thumbnail_path: Optional[str] = None
     ocr_status: str = "pending"
     vision_status: str = "pending"
@@ -113,6 +115,7 @@ class AIProviderOut(BaseModel):
     total_tokens_in: int = 0
     total_tokens_out: int = 0
     total_cost_usd: float = 0.0
+    extra_params: Optional[Any] = None
 
     model_config = {"from_attributes": True}
 
@@ -126,6 +129,7 @@ class AIProviderCreate(BaseModel):
     task_type: str = "both"
     sort_order: int = 0
     key_name: Optional[str] = None
+    extra_params: Optional[Any] = None
 
 
 class ProviderModelInfo(BaseModel):
@@ -218,6 +222,7 @@ class LabJudgeRequest(BaseModel):
     doc_id: int
     provider_id: int
     use_image: bool = True
+    language: str = "en"
     candidates: List[LabCandidate]
 
 
@@ -231,6 +236,7 @@ class LabJudgeResult(BaseModel):
     rankings: List[LabRanking] = []
     best: str = ""
     summary: str = ""
+    corrected: str = ""
     cost: float = 0.0
     ms: int = 0
     tokens_in: int = 0

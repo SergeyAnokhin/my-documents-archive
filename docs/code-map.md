@@ -51,9 +51,10 @@ docs/             Architecture docs (you are here)
 | `main.tsx` | React root mount |
 | `App.tsx` | Root component: language context + `BrowserRouter` routes (`/` home, `/lab/:id` OCR Lab) |
 | `index.css` | Global CSS variables (design tokens), resets, utilities |
-| `i18n/en.ts` | English strings |
+| `i18n/en.ts` | English strings (source of `Translations` type) |
 | `i18n/ru.ts` | Russian strings |
-| `i18n/index.ts` | `LangContext`, `useT()` hook |
+| `i18n/fr.ts` | French strings |
+| `i18n/index.ts` | `Lang` type (`"en" \| "ru" \| "fr"`), `LangContext`, `useT()` hook |
 | `types/index.ts` | All TypeScript interfaces (`Document`, `SearchResult`, etc.) |
 | `api/client.ts` | Thin `fetch` wrapper (`api.get/post/patch/delete/upload`) |
 | `api/documents.ts` | Typed API calls for documents, search, upload, admin |

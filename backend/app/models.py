@@ -32,6 +32,8 @@ class Document(Base):
     organization = Column(String(256), nullable=True)
     amount = Column(Float, nullable=True)
     amount_currency = Column(String(8), nullable=True)
+    person_first_name = Column(String(128), nullable=True)
+    person_last_name = Column(String(128), nullable=True)
 
     # Thumbnail
     thumbnail_path = Column(String(1024), nullable=True)
@@ -93,6 +95,8 @@ class AIProvider(Base):
     total_tokens_in = Column(Integer, default=0)
     total_tokens_out = Column(Integer, default=0)
     total_cost_usd = Column(Float, default=0.0)
+    # Provider-specific fine-tuning options (e.g. image_policy for Mistral, temperature for chat)
+    extra_params = Column(JSON, nullable=True)
 
 
 class AppSettings(Base):

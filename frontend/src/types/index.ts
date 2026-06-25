@@ -16,6 +16,8 @@ export interface Document {
   organization?: string;
   amount?: number;
   amount_currency?: string;
+  person_first_name?: string;
+  person_last_name?: string;
   thumbnail_path?: string;
   ocr_status: "pending" | "done" | "error" | "skipped";
   vision_status: "pending" | "done" | "error" | "skipped";
@@ -80,6 +82,7 @@ export interface AIProvider {
   total_tokens_in: number;
   total_tokens_out: number;
   total_cost_usd: number;
+  extra_params?: Record<string, unknown>;
 }
 
 export interface ProviderModel {
@@ -147,6 +150,7 @@ export interface LabJudgeResult {
   rankings: LabRanking[];
   best: string;
   summary: string;
+  corrected?: string;
   cost: number;
   ms: number;
   tokens_in?: number;

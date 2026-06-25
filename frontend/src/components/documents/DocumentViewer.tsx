@@ -145,6 +145,18 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                     <span>{doc.organization}</span>
                   </div>
                 )}
+                {(doc.person_first_name || doc.person_last_name) && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">Person</span>
+                    <span>{[doc.person_first_name, doc.person_last_name].filter(Boolean).join(" ")}</span>
+                  </div>
+                )}
+                {doc.document_date && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">Date</span>
+                    <span>{formatDate(doc.document_date)}</span>
+                  </div>
+                )}
                 {doc.amount != null && (
                   <div className="viewer-meta-row">
                     <span className="viewer-meta-label">Amount</span>

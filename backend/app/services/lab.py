@@ -43,19 +43,59 @@ Transcribe ALL text from this scanned document image, verbatim and complete.
 Preserve the original line breaks and reading order. Do not translate, summarise,
 or comment. Output ONLY the transcribed text — no labels, no markdown."""
 
-JUDGE_SYSTEM = """\
+_LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "ru": "Russian",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "zh": "Chinese",
+}
+
+
+def _judge_system(with_image: bool, language: str = "en") -> str:
+    """Build the judge system prompt for the given mode and UI language."""
+    lang_name = _LANG_NAMES.get(language, "English")
+
+    if with_image:
+        eval_ctx = (
+            "A document image is also provided.\n\n"
+            "Compare each transcription against the image: judge which ones capture the text "
+            "most accurately, completely, and without garbled characters or missing words."
+        )
+        corrected_hint = "fix obvious errors using the image as the ground truth"
+    else:
+        eval_ctx = (
+            "No document image is available — judge based on internal text quality only.\n\n"
+            "Since these are OCR scan results, they may contain recognition errors: garbled "
+            "characters, wrong words, broken word boundaries, or unreadable fragments. Evaluate "
+            "which transcription reads most correctly and coherently — correct grammar, plausible "
+            "words, consistent structure."
+        )
+        corrected_hint = "resolve conflicting readings in favour of the most plausible option"
+
+    return f"""\
 You are an expert OCR quality evaluator. You are given several transcriptions of the
-SAME document, each produced by a different method and identified by a label.
-Judge how accurate and readable each transcription is — coherent words, correct
-numbers, no garbled characters or nonsense. If a document image is provided, compare
-the transcriptions against it; otherwise judge purely on internal readability.
+SAME scanned document, each produced by a different recognition method and identified
+by a label. {eval_ctx}
+
+Only if combining the transcriptions would produce a meaningfully better result, provide
+it under "corrected" ({corrected_hint}).
+If the best transcription is already accurate enough, or the differences between
+transcriptions are negligible, set "corrected" to an empty string — do not invent
+improvements.
+
+IMPORTANT: Write ALL evaluation text (comments, summary, corrected content) in {lang_name}.
+Do NOT translate the original transcribed texts themselves.
 
 Return ONLY a raw JSON object (no markdown fences):
-{
-  "rankings": [{"label": "<label>", "score": <0-100 int>, "comment": "<short reason>"}],
+{{
+  "rankings": [{{"label": "<label>", "score": <0-100 int>, "comment": "<short reason>"}}],
   "best": "<label of the best transcription>",
-  "summary": "<one-sentence overall conclusion>"
-}
+  "summary": "<one-sentence overall conclusion>",
+  "corrected": "<improved text, or empty string if no meaningful improvement is possible>"
+}}
 Use the exact labels provided. Order "rankings" best-first."""
 
 
@@ -146,12 +186,14 @@ async def judge(
     provider,
     db: Session,
     img_bytes: Optional[bytes] = None,
+    language: str = "en",
 ) -> dict:
     """
     Ask a provider to rank the candidate transcriptions.
 
     candidates: [{"label": str, "text": str}, ...]
     img_bytes:  include the document image (premium-vision judging) or None (text-only).
+    language:   UI language code — judge will write its analysis in that language.
     Returns the parsed judge JSON plus "cost".
     """
     blocks = "\n\n".join(
@@ -163,12 +205,13 @@ async def judge(
         f"Evaluate and rank them.\n\n{blocks}"
     )
 
+    system = _judge_system(img_bytes is not None, language)
     start = time.perf_counter()
     if img_bytes is not None:
-        prompt = f"{JUDGE_SYSTEM}\n\n{user_msg}"
+        prompt = f"{system}\n\n{user_msg}"
         raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt)
     else:
-        raw, tin, tout, cost = await ai_analysis.run_text(provider, JUDGE_SYSTEM, user_msg)
+        raw, tin, tout, cost = await ai_analysis.run_text(provider, system, user_msg)
     ms = int((time.perf_counter() - start) * 1000)
     _update_stats(db, provider, tin, tout, cost)
 

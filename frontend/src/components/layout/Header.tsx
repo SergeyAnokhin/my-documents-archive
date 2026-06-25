@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { Settings, Globe, Moon, Sun } from "lucide-react";
 import { useT, type Lang } from "../../i18n";
+
+const LANG_CYCLE: Lang[] = ["en", "ru", "fr"];
+const LANG_NEXT_LABEL: Record<Lang, string> = { en: "RU", ru: "FR", fr: "EN" };
+const LANG_NEXT_TITLE: Record<Lang, string> = { en: "Русский", ru: "Français", fr: "English" };
 import { IndexingBadge } from "../ui/IndexingBadge";
 import "./Header.css";
 
@@ -56,12 +60,12 @@ export function Header({ onAdminOpen }: Props) {
           {/* Language switcher */}
           <button
             className="lang-btn"
-            onClick={() => setLang(lang === "en" ? "ru" : "en")}
+            onClick={() => setLang(LANG_CYCLE[(LANG_CYCLE.indexOf(lang) + 1) % LANG_CYCLE.length])}
             aria-label="Switch language"
-            title={lang === "en" ? "Русский" : "English"}
+            title={LANG_NEXT_TITLE[lang]}
           >
             <Globe size={15} />
-            <span>{lang === "en" ? "RU" : "EN"}</span>
+            <span>{LANG_NEXT_LABEL[lang]}</span>
           </button>
 
           {/* Admin */}

@@ -225,6 +225,19 @@ def update_provider_order(provider_id: int, body: dict, db: Session = Depends(ge
     return AIProviderOut.model_validate(p)
 
 
+@router.patch("/providers/{provider_id}/settings", response_model=AIProviderOut)
+def update_provider_settings(provider_id: int, body: dict, db: Session = Depends(get_db)):
+    """Replace extra_params for a provider (fine-tuning options like image_policy, temperature)."""
+    p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    # Strip None/empty values so the stored dict stays clean
+    p.extra_params = {k: v for k, v in body.items() if v is not None and v != ""}
+    db.commit()
+    db.refresh(p)
+    return AIProviderOut.model_validate(p)
+
+
 @router.patch("/providers/{provider_id}/model", response_model=AIProviderOut)
 def update_provider_model(provider_id: int, body: dict, db: Session = Depends(get_db)):
     p = db.query(AIProvider).filter(AIProvider.id == provider_id).first()

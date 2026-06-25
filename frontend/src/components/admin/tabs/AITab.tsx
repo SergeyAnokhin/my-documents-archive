@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
-import { ChevronUp, ChevronDown, Plus, Trash2, RefreshCw, Pencil } from "lucide-react";
+import { ChevronUp, ChevronDown, Plus, Trash2, RefreshCw, Pencil, Settings } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
 import { useT } from "../../../i18n";
 import {
   listProviders, addProvider, toggleProvider, removeProvider,
   updateProviderOrder, fetchProviderModels, fetchProviderModelsById,
-  updateProviderModel,
+  updateProviderModel, updateProviderSettings,
   getArenaRatings, refreshArenaRatings,
   getAppSettings, updateAppSettings,
 } from "../../../api/documents";
@@ -265,7 +265,7 @@ function AddProviderForm({
 }) {
   const { t } = useT();
   const ai = t.admin.ai;
-  const forVision = taskType === "vision" || taskType === "premium";
+  const forVision = taskType === "vision";
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [models, setModels] = useState<ProviderModel[]>([]);
@@ -416,6 +416,81 @@ function AddProviderForm({
   );
 }
 
+// ── Provider settings panel ───────────────────────────────────────────────────
+
+function ProviderSettingsPanel({
+  providerType,
+  settings,
+  onChange,
+}: {
+  providerType: string;
+  settings: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const { t } = useT();
+  const ai = t.admin.ai;
+
+  if (providerType === "mistral") {
+    const policy = (settings.image_policy ?? "placeholder") as string;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <p className="text-xs text-muted" style={{ marginBottom: 8 }}>{ai.imagePolicyHint}</p>
+          {[
+            { value: "placeholder", label: ai.imagePolicyPlaceholder },
+            { value: "strip",       label: ai.imagePolicyStrip },
+          ].map(opt => (
+            <label key={opt.value} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginBottom: 6 }}>
+              <input
+                type="radio"
+                name="image_policy"
+                value={opt.value}
+                checked={policy === opt.value}
+                onChange={() => onChange("image_policy", opt.value)}
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Chat providers: temperature + max_tokens
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div>
+        <label style={{ fontSize: 12, color: "var(--color-ink-muted)", display: "block", marginBottom: 2 }}>
+          {ai.temperatureLabel}
+        </label>
+        <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{ai.temperatureHint}</p>
+        <input
+          className="admin-input"
+          type="number"
+          min="0" max="2" step="0.1"
+          value={settings.temperature != null ? String(settings.temperature) : ""}
+          placeholder="1.0"
+          onChange={e => onChange("temperature", e.target.value === "" ? undefined : parseFloat(e.target.value))}
+        />
+      </div>
+      <div>
+        <label style={{ fontSize: 12, color: "var(--color-ink-muted)", display: "block", marginBottom: 2 }}>
+          {ai.maxTokensLabel}
+        </label>
+        <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{ai.maxTokensHint}</p>
+        <input
+          className="admin-input"
+          type="number"
+          min="256" max="32768" step="256"
+          value={settings.max_tokens != null ? String(settings.max_tokens) : ""}
+          placeholder="2048"
+          onChange={e => onChange("max_tokens", e.target.value === "" ? undefined : parseInt(e.target.value))}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Provider row ──────────────────────────────────────────────────────────────
 
 function ProviderRow({
@@ -451,6 +526,10 @@ function ProviderRow({
   const [saving, setSaving] = useState(false);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingSettings, setPendingSettings] = useState<Record<string, unknown>>({});
+  const [savingSettings, setSavingSettings] = useState(false);
+
   const openEdit = async () => {
     setPendingModel(null);
     setLoadingEdit(true);
@@ -471,7 +550,7 @@ function ProviderRow({
     try {
       await updateProviderModel(provider.id, pendingModel);
       onReload();
-      setEditing(false);
+      setEditOpen(false);
     } finally {
       setSaving(false);
     }
@@ -479,6 +558,25 @@ function ProviderRow({
 
   const handleSelectEditModel = (m: ProviderModel) => {
     setPendingModel(m.id);
+  };
+
+  const openSettings = () => {
+    setPendingSettings({ ...(provider.extra_params ?? {}) });
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const cleaned = Object.fromEntries(
+        Object.entries(pendingSettings).filter(([, v]) => v !== undefined && v !== null && v !== "")
+      );
+      await updateProviderSettings(provider.id, cleaned);
+      onReload();
+      setSettingsOpen(false);
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   return (
@@ -515,6 +613,9 @@ function ProviderRow({
           <button className="icon-btn" onClick={openEdit} title="Сменить модель" style={{ color: editOpen ? "var(--color-accent)" : undefined }}>
             <Pencil size={13} />
           </button>
+          <button className="icon-btn" onClick={openSettings} title={ai.providerSettings} style={{ color: settingsOpen ? "var(--color-accent)" : undefined }}>
+            <Settings size={13} />
+          </button>
           <button className="icon-btn" onClick={onToggle} title={provider.enabled ? t.enabled : t.disabled}>
             <span className={`status-dot ${provider.enabled ? "done" : "pending"}`} />
           </button>
@@ -547,6 +648,21 @@ function ProviderRow({
             </div>
           </>
         )}
+      </Modal>
+
+      {/* Provider settings modal */}
+      <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title={ai.providerSettings} size="sm">
+        <ProviderSettingsPanel
+          providerType={provider.provider_type}
+          settings={pendingSettings}
+          onChange={(key, value) => setPendingSettings(prev => ({ ...prev, [key]: value }))}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <Button variant="primary" size="sm" loading={savingSettings} disabled={savingSettings} onClick={saveSettings}>
+            {t.save}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(false)}>{t.cancel}</Button>
+        </div>
       </Modal>
     </li>
   );
@@ -604,7 +720,7 @@ function ProviderSection({
               isFirst={i === 0}
               isLast={i === providers.length - 1}
               ratings={ratings}
-              forVision={taskType === "vision" || taskType === "premium"}
+              forVision={taskType === "vision"}
               onToggle={() => toggleProvider(p.id).then(onReload)}
               onDelete={() => removeProvider(p.id).then(onReload)}
               onMoveUp={() => moveProvider(i, "up")}

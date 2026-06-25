@@ -316,13 +316,56 @@
 }
 
 /* Judge */
-.lab-checkbox {
+.lab-judge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.lab-judge-item {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12.5px;
-  margin-top: 8px;
   cursor: pointer;
+  user-select: none;
+}
+.lab-judge-item input[type="checkbox"] { flex-shrink: 0; }
+.lab-judge-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-judge-running {
+  font-size: 11px;
+  color: var(--color-ink-muted);
+  animation: blink 1s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.lab-capability-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+.lab-capability-badge.vision { background: #6366f1; }
+.lab-capability-badge.text   { background: #6b7280; }
+
+.lab-verdict-judge-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink-muted);
 }
 .lab-verdict {
   margin-top: 14px;

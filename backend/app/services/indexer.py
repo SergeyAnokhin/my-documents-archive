@@ -141,15 +141,22 @@ async def _run_analysis(doc: Document, db: Session) -> None:
             doc.analysis_status = "skipped"
             _log(db, doc, "analysis", "skipped", "No AI provider configured")
         else:
-            doc.summary          = result.summary
-            doc.document_type    = result.document_type
-            doc.tags             = result.tags
-            doc.language         = result.language
-            doc.organization     = result.organization
-            doc.amount           = result.amount
-            doc.amount_currency  = result.amount_currency
-            doc.api_cost_analysis = result.cost_usd
-            doc.analysis_status  = "done"
+            doc.summary            = result.summary
+            doc.document_type      = result.document_type
+            doc.tags               = result.tags
+            doc.language           = result.language
+            doc.organization       = result.organization
+            doc.amount             = result.amount
+            doc.amount_currency    = result.amount_currency
+            doc.person_first_name  = result.person_first_name
+            doc.person_last_name   = result.person_last_name
+            if result.document_date:
+                try:
+                    doc.document_date = datetime.strptime(result.document_date, "%Y-%m-%d")
+                except ValueError:
+                    pass
+            doc.api_cost_analysis  = result.cost_usd
+            doc.analysis_status    = "done"
             _log(db, doc, "analysis", "done",
                  f"Type: {result.document_type}, lang: {result.language}")
     except Exception as e:

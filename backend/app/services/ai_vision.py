@@ -128,6 +128,7 @@ class _Synthetic:
     base_url: Optional[str]
     model: Optional[str] = None
     id: None = None
+    extra_params: Optional[dict] = None
 
 
 def _get_providers(db: Session) -> list:
@@ -180,11 +181,15 @@ def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: 
 
 async def _call_anthropic(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import anthropic
+    extra = getattr(provider, "extra_params", None) or {}
     model = getattr(provider, "model", None) or VISION_DEFAULTS["anthropic"]
+    max_tokens = int(extra.get("max_tokens", 2048))
+    kwargs: dict = {"model": model, "max_tokens": max_tokens}
+    if "temperature" in extra:
+        kwargs["temperature"] = float(extra["temperature"])
     client = anthropic.AsyncAnthropic(api_key=provider.api_key)
     resp = await client.messages.create(
-        model=model,
-        max_tokens=2048,
+        **kwargs,
         messages=[{
             "role": "user",
             "content": [
@@ -202,14 +207,17 @@ async def _call_anthropic(provider, b64: str, prompt: str = VISION_PROMPT) -> tu
 
 async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import openai
+    extra = getattr(provider, "extra_params", None) or {}
     model = getattr(provider, "model", None) or VISION_DEFAULTS.get(provider.provider_type, "gpt-4o-mini")
     kwargs: dict = {"api_key": provider.api_key}
     if getattr(provider, "base_url", None):
         kwargs["base_url"] = provider.base_url
     client = openai.AsyncOpenAI(**kwargs)
+    create_kwargs: dict = {"model": model, "max_tokens": int(extra.get("max_tokens", 2048))}
+    if "temperature" in extra:
+        create_kwargs["temperature"] = float(extra["temperature"])
     resp = await client.chat.completions.create(
-        model=model,
-        max_tokens=2048,
+        **create_kwargs,
         messages=[{
             "role": "user",
             "content": [
@@ -229,10 +237,23 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
     return text, tin, tout, cost
 
 
-def _parse_mistral_ocr(data: dict) -> tuple[str, float]:
-    """Join per-page markdown and price by pages_processed. Returns (text, cost_usd)."""
+def _parse_mistral_ocr(data: dict, image_policy: str = "placeholder") -> tuple[str, float]:
+    """Join per-page markdown, apply image_policy, return (text, cost_usd).
+
+    image_policy:
+      "placeholder" — replace ![img](url) with [изображение]
+      "strip"       — remove image references entirely
+    """
+    import re
     text = "\n\n".join(p.get("markdown", "") for p in data.get("pages", [])).strip()
     pages = data.get("usage_info", {}).get("pages_processed", 1)
+
+    if image_policy == "strip":
+        text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    else:  # "placeholder" (default)
+        text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '[изображение]', text)
+
     return text, pages * MISTRAL_OCR_PRICE_PER_PAGE
 
 
@@ -240,6 +261,10 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
     """Mistral OCR — dedicated document-transcription endpoint (not chat).
     Ignores the prompt; returns the page markdown as the description text."""
     import httpx
+    extra = getattr(provider, "extra_params", None) or {}
+    image_policy = extra.get("image_policy", "placeholder")
+    include_image_base64 = bool(extra.get("include_image_base64", False))
+
     model = getattr(provider, "model", None) or VISION_DEFAULTS["mistral"]
     b64 = base64.b64encode(img_bytes).decode()
     async with httpx.AsyncClient(timeout=120) as client:
@@ -249,24 +274,28 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
             json={
                 "model": model,
                 "document": {"type": "image_url", "image_url": f"data:image/jpeg;base64,{b64}"},
-                "include_image_base64": False,
+                "include_image_base64": include_image_base64,
             },
         )
         resp.raise_for_status()
         data = resp.json()
-    text, cost = _parse_mistral_ocr(data)
+    text, cost = _parse_mistral_ocr(data, image_policy)
     return text, 0, 0, cost
 
 
 async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import google.generativeai as genai
+    extra = getattr(provider, "extra_params", None) or {}
     model_name = getattr(provider, "model", None) or VISION_DEFAULTS["gemini"]
     genai.configure(api_key=provider.api_key)
     gm = genai.GenerativeModel(model_name)
     image_part = {"mime_type": "image/jpeg", "data": img_bytes}
+    gen_cfg: dict = {"max_output_tokens": int(extra.get("max_tokens", 2048))}
+    if "temperature" in extra:
+        gen_cfg["temperature"] = float(extra["temperature"])
     resp = await asyncio.to_thread(
         gm.generate_content,
         [prompt, image_part],
-        generation_config={"max_output_tokens": 2048},
+        generation_config=gen_cfg,
     )
     return resp.text, 0, 0, 0.0

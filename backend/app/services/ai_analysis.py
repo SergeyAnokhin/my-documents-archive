@@ -32,6 +32,9 @@ You are a document analysis assistant. Analyze the document text and return a JS
 - "organization": company or institution name, or null if absent
 - "amount": numeric monetary value (no currency symbol), or null if absent
 - "amount_currency": ISO 4217 code ("USD", "EUR", "RUB", "GBP"), or null if absent
+- "person_first_name": first name of the most important person in the document, or null if absent
+- "person_last_name": last name of the most important person in the document, or null if absent
+- "document_date": the most significant date found in the document in YYYY-MM-DD format, or null if absent
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
@@ -45,6 +48,9 @@ class AnalysisResult:
     organization: Optional[str] = None
     amount: Optional[float] = None
     amount_currency: Optional[str] = None
+    person_first_name: Optional[str] = None
+    person_last_name: Optional[str] = None
+    document_date: Optional[str] = None  # YYYY-MM-DD string
     cost_usd: float = 0.0
 
 
@@ -249,4 +255,7 @@ def _parse_result(raw: str) -> AnalysisResult:
         organization=data.get("organization") or None,
         amount=float(amount) if amount is not None else None,
         amount_currency=data.get("amount_currency") or None,
+        person_first_name=data.get("person_first_name") or None,
+        person_last_name=data.get("person_last_name") or None,
+        document_date=data.get("document_date") or None,
     )

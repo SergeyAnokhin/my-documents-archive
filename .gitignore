@@ -208,3 +208,4 @@ dmypy.json
 # PyInstaller
 *.spec
 **/*.db
+backend/library/*

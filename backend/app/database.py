@@ -46,6 +46,9 @@ def _apply_migrations(eng) -> None:
             "ALTER TABLE ai_providers ADD COLUMN total_tokens_out INTEGER DEFAULT 0",
             "ALTER TABLE ai_providers ADD COLUMN total_cost_usd REAL DEFAULT 0.0",
             "ALTER TABLE ai_providers ADD COLUMN key_name TEXT",
+            "ALTER TABLE ai_providers ADD COLUMN extra_params TEXT",
+            "ALTER TABLE documents ADD COLUMN person_first_name TEXT",
+            "ALTER TABLE documents ADD COLUMN person_last_name TEXT",
         ]:
             try:
                 conn.execute(text(stmt))

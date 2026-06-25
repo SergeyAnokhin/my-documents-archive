@@ -28,7 +28,7 @@ interface LogLine {
 }
 
 export function LabPage() {
-  const { t } = useT();
+  const { t, lang } = useT();
   const lab = t.lab;
   const { id } = useParams();
   const docId = Number(id);
@@ -42,21 +42,29 @@ export function LabPage() {
   const [runningOcr, setRunningOcr] = useState<string | null>(null);
   const [runningVision, setRunningVision] = useState<number | null>(null);
 
-  // Judge
-  const [judgeProvider, setJudgeProvider] = useState<number | null>(null);
-  const [useImage, setUseImage] = useState(true);
-  const [judging, setJudging] = useState(false);
-  const [judgeResult, setJudgeResult] = useState<LabJudgeResult | null>(null);
-  const [judgeError, setJudgeError] = useState("");
+  // Judge — multi-select
+  const [judgeProviders, setJudgeProviders] = useState<number[]>([]);
+  const [judgingIds, setJudgingIds] = useState<number[]>([]);
+  const [judgeResults, setJudgeResults] = useState<Record<number, LabJudgeResult>>({});
+  const [judgeErrors, setJudgeErrors] = useState<Record<number, string>>({});
 
   // Zoom
   const [zoom, setZoom] = useState(1);
 
-  // Resizable split
-  const [panelWidth, setPanelWidth] = useState(440);
+  // Resizable split — width persisted in localStorage
+  const [panelWidth, setPanelWidth] = useState(() => {
+    try {
+      const v = localStorage.getItem("lab-panel-width");
+      if (v) return Math.max(300, Math.min(900, Number(v)));
+    } catch {}
+    return 440;
+  });
+  const panelWidthRef = useRef(panelWidth);
   const isResizing = useRef(false);
   const resizeStartX = useRef(0);
-  const resizeStartWidth = useRef(440);
+  const resizeStartWidth = useRef(panelWidth);
+
+  useEffect(() => { panelWidthRef.current = panelWidth; }, [panelWidth]);
 
   const onResizerDown = (e: React.MouseEvent) => {
     isResizing.current = true;
@@ -91,6 +99,9 @@ export function LabPage() {
       }
     };
     const onUp = () => {
+      if (isResizing.current) {
+        try { localStorage.setItem("lab-panel-width", String(panelWidthRef.current)); } catch {}
+      }
       isResizing.current = false;
       modalDragStart.current = null;
     };
@@ -137,11 +148,16 @@ export function LabPage() {
     [providers],
   );
 
+  const bestLabels = useMemo(
+    () => new Set(Object.values(judgeResults).map(r => r.best)),
+    [judgeResults],
+  );
+
   useEffect(() => {
-    if (judgeProvider === null && premiumProviders.length > 0) {
-      setJudgeProvider(premiumProviders[0].id);
+    if (judgeProviders.length === 0 && premiumProviders.length > 0) {
+      setJudgeProviders(premiumProviders.filter(p => p.enabled).map(p => p.id));
     }
-  }, [premiumProviders, judgeProvider]);
+  }, [premiumProviders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Replace any prior result with the same label, then append the fresh one.
   const upsert = (r: LabResult) =>
@@ -180,28 +196,38 @@ export function LabPage() {
   };
 
   const handleJudge = async () => {
-    if (judgeProvider === null || results.length < 2) return;
-    setJudging(true);
-    setJudgeError("");
-    setJudgeResult(null);
-    const judgeName = premiumProviders.find(p => p.id === judgeProvider)?.name ?? String(judgeProvider);
-    addLog(`→ Judge [${judgeName}] on ${results.length} candidates`);
-    try {
-      const res = await runLabJudge({
-        doc_id: docId,
-        provider_id: judgeProvider,
-        use_image: useImage,
-        candidates: results.map(r => ({ label: r.label, text: r.text })),
-      });
-      setJudgeResult(res);
-      const costStr = res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
-      addLog(`← Judge: best="${res.best}" · ${res.ms}ms${costStr}`, "ok");
-    } catch (e) {
-      setJudgeError((e as Error).message);
-      addLog(`✗ Judge [${judgeName}]: ${(e as Error).message}`, "err");
-    } finally {
-      setJudging(false);
-    }
+    const toRun = judgeProviders.filter(id => premiumProviders.some(p => p.id === id));
+    if (toRun.length === 0 || results.length < 2) return;
+    setJudgingIds(toRun);
+    setJudgeErrors({});
+    setJudgeResults(prev => {
+      const next = { ...prev };
+      toRun.forEach(id => delete next[id]);
+      return next;
+    });
+
+    await Promise.all(toRun.map(async (providerId) => {
+      const provider = premiumProviders.find(p => p.id === providerId)!;
+      const hasVision = VISION_CAPABLE.includes(provider.provider_type);
+      addLog(`→ Judge [${provider.name}]${hasVision ? " +image" : ""} on ${results.length} candidates`);
+      try {
+        const res = await runLabJudge({
+          doc_id: docId,
+          provider_id: providerId,
+          use_image: hasVision,
+          language: lang,
+          candidates: results.map(r => ({ label: r.label, text: r.text })),
+        });
+        setJudgeResults(prev => ({ ...prev, [providerId]: res }));
+        const costStr = res.cost > 0 ? ` · $${res.cost.toFixed(5)}` : "";
+        addLog(`← Judge [${provider.name}]: best="${res.best}" · ${res.ms}ms${costStr}`, "ok");
+      } catch (e) {
+        setJudgeErrors(prev => ({ ...prev, [providerId]: (e as Error).message }));
+        addLog(`✗ Judge [${provider.name}]: ${(e as Error).message}`, "err");
+      } finally {
+        setJudgingIds(prev => prev.filter(id => id !== providerId));
+      }
+    }));
   };
 
   const downloadUrl = `/api/documents/${docId}/download?inline=1`;
@@ -358,7 +384,7 @@ export function LabPage() {
             ) : (
               <div className="lab-results">
                 {results.map(r => {
-                  const isBest = judgeResult?.best === r.label;
+                  const isBest = bestLabels.has(r.label);
                   return (
                     <div key={r.id} className={`lab-card${isBest ? " best" : ""}`}>
                       <div className="lab-card-head">
@@ -395,55 +421,94 @@ export function LabPage() {
             ) : (
               <>
                 <p className="text-xs text-muted" style={{ marginBottom: 8 }}>{lab.judgeHint}</p>
-                <select
-                  className="admin-input"
-                  value={judgeProvider ?? ""}
-                  onChange={e => setJudgeProvider(Number(e.target.value))}
-                >
-                  {premiumProviders.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <label className="lab-checkbox">
-                  <input type="checkbox" checked={useImage} onChange={e => setUseImage(e.target.checked)} />
-                  {lab.useImage}
-                </label>
+
+                {/* Multi-select judge list */}
+                <div className="lab-judge-list">
+                  {premiumProviders.map(p => {
+                    const hasVision = VISION_CAPABLE.includes(p.provider_type);
+                    const isChecked = judgeProviders.includes(p.id);
+                    const isRunning = judgingIds.includes(p.id);
+                    return (
+                      <label key={p.id} className="lab-judge-item">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => setJudgeProviders(prev =>
+                            e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id),
+                          )}
+                        />
+                        <span className={`lab-capability-badge ${hasVision ? "vision" : "text"}`}>
+                          {hasVision ? t.admin.ai.visionBadge : lab.textBadge}
+                        </span>
+                        <span className="lab-judge-name">{p.name}</span>
+                        {isRunning && <span className="lab-judge-running">…</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+
                 <Button
                   variant="primary"
                   size="sm"
                   icon={<Scale size={14} />}
-                  loading={judging}
-                  disabled={results.length < 2}
+                  loading={judgingIds.length > 0}
+                  disabled={results.length < 2 || judgeProviders.length === 0}
                   onClick={handleJudge}
                   style={{ marginTop: 8 }}
                 >
-                  {judging ? lab.comparing : lab.compare}
+                  {judgingIds.length > 0 ? lab.comparing : lab.compare}
                 </Button>
                 {results.length < 2 && <p className="text-xs text-muted" style={{ marginTop: 6 }}>{lab.needTwo}</p>}
-                {judgeError && <p className="text-xs" style={{ color: "var(--color-error)", marginTop: 6 }}>{judgeError}</p>}
 
-                {judgeResult && (
-                  <div className="lab-verdict">
-                    <div className="lab-verdict-best">
-                      <Trophy size={15} /> {lab.best}: <strong>{judgeResult.best}</strong>
-                    </div>
-                    {judgeResult.summary && <p className="lab-verdict-summary">{judgeResult.summary}</p>}
-                    <ul className="lab-verdict-list">
-                      {judgeResult.rankings.map((rk, i) => (
-                        <li key={i} className="lab-verdict-item">
-                          <span className="lab-verdict-score">{rk.score}</span>
-                          <span className="lab-verdict-label">{rk.label}</span>
-                          <span className="lab-verdict-comment text-muted">{rk.comment}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                      {judgeResult.ms} ms
-                      {judgeResult.tokens_in ? ` · ${judgeResult.tokens_in}↑${judgeResult.tokens_out}↓ tok` : ""}
-                      {judgeResult.cost > 0 ? ` · $${judgeResult.cost.toFixed(5)}` : ""}
-                    </p>
-                  </div>
-                )}
+                {/* One verdict block per judge that has a result or error */}
+                {premiumProviders
+                  .filter(p => judgeResults[p.id] || judgeErrors[p.id])
+                  .map(p => {
+                    const result = judgeResults[p.id];
+                    const error = judgeErrors[p.id];
+                    const hasVision = VISION_CAPABLE.includes(p.provider_type);
+                    return (
+                      <div key={p.id}>
+                        <div className="lab-verdict-judge-header">
+                          <span className={`lab-capability-badge ${hasVision ? "vision" : "text"}`}>
+                            {hasVision ? t.admin.ai.visionBadge : lab.textBadge}
+                          </span>
+                          <span>{p.name}</span>
+                        </div>
+                        {error && (
+                          <p className="text-xs" style={{ color: "var(--color-error)", marginTop: 4 }}>{error}</p>
+                        )}
+                        {result && (
+                          <div className="lab-verdict">
+                            <div className="lab-verdict-best">
+                              <Trophy size={15} /> {lab.best}: <strong>{result.best}</strong>
+                            </div>
+                            {result.summary && <p className="lab-verdict-summary">{result.summary}</p>}
+                            <ul className="lab-verdict-list">
+                              {result.rankings.map((rk, i) => (
+                                <li key={i} className="lab-verdict-item">
+                                  <span className="lab-verdict-score">{rk.score}</span>
+                                  <span className="lab-verdict-label">{rk.label}</span>
+                                  <span className="lab-verdict-comment text-muted">{rk.comment}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {result.corrected && (
+                              <div style={{ marginTop: 10 }}>
+                                <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.corrected}</p>
+                                <pre className="lab-card-text" style={{ height: 120 }}>{result.corrected}</pre>
+                              </div>
+                            )}
+                            <p className="text-xs text-muted" style={{ marginTop: 6 }}>
+                              {result.ms} ms
+                              {result.tokens_in ? ` · ${result.tokens_in}↑${result.tokens_out}↓ tok` : ""}
+                              {result.cost > 0 ? ` · $${result.cost.toFixed(5)}` : ""}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </>
             )}
           </section>
