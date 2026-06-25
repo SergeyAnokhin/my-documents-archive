@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, extract, String
+from sqlalchemy import or_, extract, func, String
 from typing import Optional
 import re
 
@@ -73,9 +73,11 @@ def search_documents(
 
     # ── Metadata filters (apply to all modes) ──────────────────────────────
     if year:
-        base = base.filter(extract("year", Document.added_at) == year)
+        date_col = func.coalesce(Document.document_date, Document.added_at)
+        base = base.filter(extract("year", date_col) == year)
     if month:
-        base = base.filter(extract("month", Document.added_at) == month)
+        date_col = func.coalesce(Document.document_date, Document.added_at)
+        base = base.filter(extract("month", date_col) == month)
     if document_type:
         base = base.filter(Document.document_type == document_type)
     if language:
