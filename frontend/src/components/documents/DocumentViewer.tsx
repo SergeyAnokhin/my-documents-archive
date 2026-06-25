@@ -167,17 +167,20 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   // ── Zoom / Pan ──────────────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const zoomRef = useRef(zoom);
+  // Refs hold the committed values synchronously so rapid events (wheel scroll)
+  // always chain off the latest value rather than a stale render snapshot.
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const didAutoFitRef = useRef(false);
   const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
 
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-
   // Reset zoom/pan when switching documents
   useEffect(() => {
     didAutoFitRef.current = false;
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [doc?.id]);
@@ -186,10 +189,12 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!canvasPanStartRef.current) return;
-      setPan({
+      const newPan = {
         x: canvasPanStartRef.current.panX + (e.clientX - canvasPanStartRef.current.mouseX),
         y: canvasPanStartRef.current.panY + (e.clientY - canvasPanStartRef.current.mouseY),
-      });
+      };
+      panRef.current = newPan;
+      setPan(newPan);
     };
     const onUp = () => { canvasPanStartRef.current = null; };
     window.addEventListener("mousemove", onMove);
@@ -200,7 +205,23 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     };
   }, []);
 
-  // Mouse-wheel zoom (re-attach when doc changes so ref is fresh)
+  // Core zoom primitive — updates refs synchronously so rapid events chain correctly,
+  // then schedules React state updates for re-render.
+  const applyZoomAt = (factor: number, cx: number, cy: number) => {
+    const prevZoom = zoomRef.current;
+    const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
+    const ratio = newZoom / prevZoom;
+    const newPan = {
+      x: cx - (cx - panRef.current.x) * ratio,
+      y: cy - (cy - panRef.current.y) * ratio,
+    };
+    zoomRef.current = newZoom;
+    panRef.current = newPan;
+    setZoom(newZoom);
+    setPan(newPan);
+  };
+
+  // Mouse-wheel zoom toward cursor position
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -208,16 +229,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
       const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      setZoom(prevZoom => {
-        const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
-        setPan(prevPan => ({
-          x: mouseX - (mouseX - prevPan.x) * (newZoom / prevZoom),
-          y: mouseY - (mouseY - prevPan.y) * (newZoom / prevZoom),
-        }));
-        return newZoom;
-      });
+      applyZoomAt(factor, e.clientX - rect.left, e.clientY - rect.top);
     };
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
@@ -265,8 +277,11 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     const iw = img.naturalWidth;
     const ih = img.naturalHeight;
     const fitZoom = Math.max(0.05, Math.min((cw - 24) / iw, (ch - 24) / ih));
+    const fitPan = { x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 };
+    zoomRef.current = fitZoom;
+    panRef.current = fitPan;
     setZoom(fitZoom);
-    setPan({ x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 });
+    setPan(fitPan);
   };
 
   const handleZoomReset = () => {
@@ -277,16 +292,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const zoomAround = (factor: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const cx = canvas.clientWidth / 2;
-    const cy = canvas.clientHeight / 2;
-    setZoom(prevZoom => {
-      const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
-      setPan(prevPan => ({
-        x: cx - (cx - prevPan.x) * (newZoom / prevZoom),
-        y: cy - (cy - prevPan.y) * (newZoom / prevZoom),
-      }));
-      return newZoom;
-    });
+    const rect = canvas.getBoundingClientRect();
+    applyZoomAt(factor, rect.width / 2, rect.height / 2);
   };
 
   const onCanvasMouseDown = (e: React.MouseEvent) => {
