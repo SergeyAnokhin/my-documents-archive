@@ -15,6 +15,7 @@ import io
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -154,6 +155,114 @@ Use the exact labels provided. Order "rankings" best-first."""
 def load_image(filepath: str) -> bytes:
     """First page as resized JPEG bytes — the single image every method works on."""
     return ai_vision.load_first_page(filepath)
+
+
+# ── Image info & manipulation ──────────────────────────────────────────────────
+
+_SAVE_FMT: dict[str, str] = {
+    ".jpg": "JPEG", ".jpeg": "JPEG",
+    ".png": "PNG", ".tiff": "TIFF", ".tif": "TIFF",
+    ".webp": "WEBP", ".bmp": "BMP",
+}
+
+
+def get_image_info(filepath: str) -> dict:
+    """Return width, height, file_size, format, can_adjust_quality for the document."""
+    path = Path(filepath)
+    file_size = path.stat().st_size
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            img = ai_vision._pdf_first_page(path)
+            return {"width": img.width, "height": img.height,
+                    "file_size": file_size, "format": "PDF",
+                    "can_adjust_quality": False}
+        except Exception:
+            return {"width": 0, "height": 0,
+                    "file_size": file_size, "format": "PDF",
+                    "can_adjust_quality": False}
+    with Image.open(filepath) as img:
+        fmt = (img.format or suffix.strip(".")).upper()
+        w, h = img.size
+    can_quality = fmt in ("JPEG", "JPG", "PNG", "WEBP")
+    return {"width": w, "height": h, "file_size": file_size,
+            "format": fmt, "can_adjust_quality": can_quality}
+
+
+def _open_doc_image(filepath: str) -> Image.Image:
+    """Open document as RGB PIL Image (first page for PDFs)."""
+    path = Path(filepath)
+    if path.suffix.lower() == ".pdf":
+        return ai_vision._pdf_first_page(path)
+    return Image.open(filepath).convert("RGB")
+
+
+def _apply_crop_scale(img: Image.Image, crop: Optional[dict], scale: Optional[float]) -> Image.Image:
+    if crop:
+        x = max(0, int(crop.get("x", 0)))
+        y = max(0, int(crop.get("y", 0)))
+        w = max(1, int(crop.get("w", img.width)))
+        h = max(1, int(crop.get("h", img.height)))
+        x = min(x, img.width - 1)
+        y = min(y, img.height - 1)
+        w = min(w, img.width - x)
+        h = min(h, img.height - y)
+        img = img.crop((x, y, x + w, y + h))
+    if scale is not None and 0 < scale < 1.0:
+        new_w = max(1, round(img.width * scale))
+        new_h = max(1, round(img.height * scale))
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+    return img
+
+
+def preview_transform(
+    filepath: str,
+    crop: Optional[dict],
+    scale: Optional[float],
+    quality: Optional[int],
+) -> tuple[bytes, int, int]:
+    """Return (jpeg_bytes, new_width, new_height) for a transform preview."""
+    img = _open_doc_image(filepath)
+    img = _apply_crop_scale(img, crop, scale)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=max(10, min(95, quality or 85)))
+    return buf.getvalue(), img.width, img.height
+
+
+def apply_transform(
+    filepath: str,
+    crop: Optional[dict],
+    scale: Optional[float],
+    quality: Optional[int],
+) -> tuple[int, int, int]:
+    """
+    Apply transform permanently to the file.
+    Returns (new_width, new_height, new_file_size).
+    """
+    path = Path(filepath)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        raise ValueError("Cannot modify PDF files")
+
+    with Image.open(filepath) as img_orig:
+        original_format = img_orig.format
+        img = img_orig.convert("RGB")
+
+    img = _apply_crop_scale(img, crop, scale)
+
+    save_fmt = _SAVE_FMT.get(suffix, original_format or "JPEG")
+    q = max(10, min(95, quality or 85))
+    save_kwargs: dict = {}
+    if save_fmt == "JPEG":
+        save_kwargs = {"quality": q, "optimize": True}
+    elif save_fmt == "PNG":
+        save_kwargs = {"compress_level": max(0, min(9, round((100 - q) / 100 * 9)))}
+    elif save_fmt == "WEBP":
+        save_kwargs = {"quality": q}
+
+    img.save(filepath, format=save_fmt, **save_kwargs)
+    new_size = path.stat().st_size
+    return img.width, img.height, new_size
 
 
 # ── Local / worker OCR ──────────────────────────────────────────────────────────

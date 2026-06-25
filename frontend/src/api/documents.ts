@@ -3,6 +3,7 @@ import type {
   Document,
   DocumentList,
   SearchResponse,
+  AIAnswerResponse,
   IndexingStats,
   TypeSuggestion,
   WatchedFolder,
@@ -14,6 +15,10 @@ import type {
   LabWorkerStatus,
   LabJudgeResult,
   ExtractedFields,
+  LabImageInfo,
+  LabTransformParams,
+  LabPreviewResult,
+  LabApplyResult,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -151,3 +156,12 @@ export const saveLabResult = (body: {
   fields?: ExtractedFields;
   model_name: string;
 }) => api.post<{ ok: boolean; doc_id: number }>("/lab/save", body);
+
+export const getLabImageInfo = (docId: number) =>
+  api.get<LabImageInfo>(`/lab/${docId}/image-info`);
+
+export const previewLabTransform = (docId: number, params: LabTransformParams) =>
+  api.post<LabPreviewResult>(`/lab/${docId}/preview-transform`, params);
+
+export const applyLabTransform = (docId: number, params: LabTransformParams) =>
+  api.post<LabApplyResult>(`/lab/${docId}/apply-transform`, params);

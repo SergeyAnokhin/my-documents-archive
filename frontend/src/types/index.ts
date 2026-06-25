@@ -22,6 +22,7 @@ export interface Document {
   person_first_name?: string;
   person_last_name?: string;
   thumbnail_path?: string;
+  updated_at?: string;
   ocr_status: "pending" | "done" | "error" | "skipped";
   vision_status: "pending" | "done" | "error" | "skipped";
   analysis_status: "pending" | "done" | "error" | "skipped";
@@ -185,6 +186,42 @@ export interface LabJudgeResult {
   tokens_out?: number;
 }
 
+export interface LabImageInfo {
+  width: number;
+  height: number;
+  file_size: number;
+  format: string;
+  can_adjust_quality: boolean;
+}
+
+export interface LabTransformParams {
+  crop?: { x: number; y: number; w: number; h: number };
+  scale?: number;
+  quality?: number;
+}
+
+export interface LabPreviewResult {
+  image_b64: string;
+  width: number;
+  height: number;
+  file_size: number;
+}
+
+export interface LabApplyResult {
+  ok: boolean;
+  doc_id: number;
+  width: number;
+  height: number;
+  file_size: number;
+}
+
 export type ViewMode = "list" | "grid";
 export type GridSize = "sm" | "md" | "lg" | "xl";
-export type SearchMode = "fulltext" | "semantic" | "hybrid";
+export type SearchMode = "fulltext" | "semantic" | "hybrid" | "ask";
+
+export interface AIAnswerResponse {
+  answer: string;
+  sources: Document[];
+  cost: number;
+  no_provider?: boolean;
+}

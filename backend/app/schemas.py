@@ -41,6 +41,7 @@ class DocumentOut(BaseModel):
     api_cost_vision: float = 0.0
     api_cost_analysis: float = 0.0
     ocr_model: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -276,3 +277,39 @@ class LabSaveRequest(BaseModel):
 class LabSaveResult(BaseModel):
     ok: bool
     doc_id: int
+
+
+class LabImageInfo(BaseModel):
+    width: int
+    height: int
+    file_size: int
+    format: str               # e.g. "JPEG", "PNG", "PDF"
+    can_adjust_quality: bool  # True for JPEG/PNG/WEBP
+
+
+class LabTransformRequest(BaseModel):
+    crop: Optional[dict] = None   # {x, y, w, h} in original image pixels
+    scale: Optional[float] = None # 0.1 … 1.0 (downscale factor)
+    quality: Optional[int] = None # 10 … 95
+
+
+class LabPreviewResult(BaseModel):
+    image_b64: str  # base64 JPEG preview
+    width: int
+    height: int
+    file_size: int  # bytes of the preview JPEG
+
+
+class LabApplyResult(BaseModel):
+    ok: bool
+    doc_id: int
+    width: int
+    height: int
+    file_size: int  # updated file size on disk
+
+
+class AIAnswerResponse(BaseModel):
+    answer: str
+    sources: List[DocumentOut]
+    cost: float = 0.0
+    no_provider: bool = False

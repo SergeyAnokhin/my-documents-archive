@@ -6,6 +6,7 @@ recognition on a single document's first page so the user can compare methods
 and have a "premium" provider judge the results. See services/lab.py.
 """
 
+import base64
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,7 +21,9 @@ from ..schemas import (
     LabVisionRequest, LabVisionResult,
     LabJudgeRequest, LabJudgeResult,
     LabSaveRequest, LabSaveResult,
+    LabImageInfo, LabTransformRequest, LabPreviewResult, LabApplyResult,
 )
+from ..services.thumbnails import generate_thumbnail
 
 router = APIRouter(prefix="/api/lab", tags=["lab"])
 
@@ -139,6 +142,54 @@ async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
 
     db.commit()
     return LabSaveResult(ok=True, doc_id=doc.id)
+
+
+@router.get("/{doc_id}/image-info", response_model=LabImageInfo)
+async def image_info(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not Path(doc.filepath).exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    try:
+        return LabImageInfo(**lab.get_image_info(doc.filepath))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read image: {e}")
+
+
+@router.post("/{doc_id}/preview-transform", response_model=LabPreviewResult)
+async def preview_transform_endpoint(doc_id: int, body: LabTransformRequest, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not Path(doc.filepath).exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    try:
+        jpeg_bytes, w, h = lab.preview_transform(doc.filepath, body.crop, body.scale, body.quality)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Preview failed: {e}")
+    return LabPreviewResult(
+        image_b64=base64.b64encode(jpeg_bytes).decode(),
+        width=w, height=h,
+        file_size=len(jpeg_bytes),
+    )
+
+
+@router.post("/{doc_id}/apply-transform", response_model=LabApplyResult)
+async def apply_transform_endpoint(doc_id: int, body: LabTransformRequest, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not Path(doc.filepath).exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    try:
+        new_w, new_h, new_size = lab.apply_transform(doc.filepath, body.crop, body.scale, body.quality)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Apply failed: {e}")
+    doc.file_size = new_size
+    db.commit()
+    generate_thumbnail(doc.filepath, doc.id)
+    return LabApplyResult(ok=True, doc_id=doc_id, width=new_w, height=new_h, file_size=new_size)
 
 
 @router.post("/judge", response_model=LabJudgeResult)

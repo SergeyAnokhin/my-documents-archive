@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, extract
+from sqlalchemy import or_, extract, String
 from typing import Optional
 import re
 
 from ..database import get_db
-from ..models import Document
-from ..schemas import SearchResponse, SearchResult, DocumentOut
+from ..models import Document, AIProvider
+from ..schemas import SearchResponse, SearchResult, DocumentOut, AIAnswerResponse
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -91,6 +91,10 @@ def search_documents(
                 Document.ocr_text.ilike(like),
                 Document.summary.ilike(like),
                 Document.document_type.ilike(like),
+                Document.tags.cast(String).ilike(like),
+                Document.person_first_name.ilike(like),
+                Document.person_last_name.ilike(like),
+                Document.organization.ilike(like),
             ))
 
     total = q.count()
@@ -122,6 +126,10 @@ def _fulltext_ids(base_query, query: str) -> set[int]:
             Document.filename.ilike(like),
             Document.ocr_text.ilike(like),
             Document.summary.ilike(like),
+            Document.tags.cast(String).ilike(like),
+            Document.person_first_name.ilike(like),
+            Document.person_last_name.ilike(like),
+            Document.organization.ilike(like),
         ))
     return {d.id for d in q.with_entities(Document.id).all()}
 
@@ -172,3 +180,98 @@ def _build_response(
         page_size=page_size,
         mode=mode,
     )
+
+
+# ── AI Q&A endpoint ───────────────────────────────────────────────────────────
+
+@router.get("/ask", response_model=AIAnswerResponse)
+async def ask_documents(
+    query: str = Query(""),
+    language: str = Query("en"),
+    db: Session = Depends(get_db),
+):
+    """Answer a free-form question about the user's documents using AI."""
+    if not query.strip():
+        return AIAnswerResponse(answer="", sources=[], cost=0.0)
+
+    # Find relevant docs: semantic first, fallback to fulltext
+    doc_ids = _semantic_ids(query, 12)
+    base = db.query(Document).filter(Document.is_deleted == False)
+
+    if doc_ids:
+        docs_all = base.filter(Document.id.in_(doc_ids)).all()
+        rank = {did: i for i, did in enumerate(doc_ids)}
+        docs_all.sort(key=lambda d: rank.get(d.id, 9999))
+        docs = docs_all[:10]
+    else:
+        terms = [t.strip() for t in query.split() if t.strip()]
+        q = base
+        for term in terms:
+            like = f"%{term}%"
+            q = q.filter(or_(
+                Document.filename.ilike(like),
+                Document.ocr_text.ilike(like),
+                Document.summary.ilike(like),
+                Document.tags.cast(String).ilike(like),
+                Document.person_first_name.ilike(like),
+                Document.person_last_name.ilike(like),
+                Document.organization.ilike(like),
+            ))
+        docs = q.order_by(Document.added_at.desc()).limit(10).all()
+
+    source_docs = [DocumentOut.model_validate(d) for d in docs]
+
+    # Pick first enabled analysis provider
+    provider = (
+        db.query(AIProvider)
+        .filter(AIProvider.enabled == True, AIProvider.task_type.in_(["analysis", "both"]))
+        .order_by(AIProvider.sort_order)
+        .first()
+    )
+    if not provider:
+        return AIAnswerResponse(answer="", sources=source_docs, cost=0.0, no_provider=True)
+
+    # Build context from retrieved documents
+    context_parts = []
+    for i, doc in enumerate(docs, 1):
+        parts = [f"[{i}] {doc.filename}"]
+        if doc.document_type:
+            parts.append(f"Type: {doc.document_type}")
+        if doc.document_date:
+            parts.append(f"Date: {doc.document_date.strftime('%Y-%m-%d')}")
+        name = " ".join(filter(None, [doc.person_first_name, doc.person_last_name]))
+        if name:
+            parts.append(f"Person: {name}")
+        if doc.organization:
+            parts.append(f"Organization: {doc.organization}")
+        if doc.amount:
+            parts.append(f"Amount: {doc.amount} {doc.amount_currency or ''}")
+        if doc.tags:
+            parts.append(f"Tags: {', '.join(doc.tags)}")
+        if doc.summary:
+            parts.append(f"Summary: {doc.summary[:600]}")
+        context_parts.append("\n".join(parts))
+
+    context = "\n\n---\n\n".join(context_parts)
+
+    lang_names = {"en": "English", "ru": "Russian", "fr": "French"}
+    resp_lang = lang_names.get(language, "English")
+
+    system = (
+        "You are a personal document assistant helping a user search their scanned document archive. "
+        "The documents below were retrieved as most relevant to the user's question. "
+        "Answer the question based on these documents. "
+        "Reference specific documents using their numbers in brackets like [1] or [2]. "
+        "If the answer is not found in the documents, say so honestly. "
+        f"Respond in {resp_lang}."
+    )
+    user_msg = f"Documents:\n\n{context}\n\nQuestion: {query}"
+
+    try:
+        from ..services.ai_analysis import run_text
+        answer, _, _, cost = await run_text(provider, system, user_msg)
+    except Exception as exc:
+        answer = str(exc)
+        cost = 0.0
+
+    return AIAnswerResponse(answer=answer, sources=source_docs, cost=cost)

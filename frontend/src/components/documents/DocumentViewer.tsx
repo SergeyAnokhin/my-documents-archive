@@ -197,7 +197,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
 
   if (!doc) return null;
 
-  const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg` : null;
+  const thumbV = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
+  const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg${thumbV}` : null;
 
   return (
     <Modal open={!!doc} onClose={onClose} size="xl" title={doc.filename}>
@@ -399,6 +400,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                   <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
                     {doc.analysis_error}
                   </p>
+                )}
+
+                {/* OCR model attribution */}
+                {doc.ocr_model && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">{t.lab.ocrModel}</span>
+                    <span className="text-sm text-mono">{doc.ocr_model}</span>
+                  </div>
                 )}
 
                 {/* Classification info */}

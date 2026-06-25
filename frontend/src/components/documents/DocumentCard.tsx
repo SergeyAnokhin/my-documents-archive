@@ -18,7 +18,8 @@ function formatDate(iso?: string): string {
 
 function Thumbnail({ doc }: { doc: Document }) {
   if (doc.thumbnail_path) {
-    const url = `/thumbnails/${doc.id}.jpg`;
+    const v = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
+    const url = `/thumbnails/${doc.id}.jpg${v}`;
     return <img src={url} alt="" className="doc-thumb-img" loading="lazy" />;
   }
   return (
