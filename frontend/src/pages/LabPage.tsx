@@ -356,7 +356,7 @@ export function LabPage() {
     addLog(`→ OCR [${method}]`);
     try {
       const res = await runLabOcr(docId, method);
-      upsert({ id: uid(), kind: "ocr", label: method, text: res.text, ms: res.ms });
+      upsert({ id: uid(), kind: "ocr", label: method, text: res.text, ms: res.ms, fields: res.fields || undefined });
       addLog(`← OCR [${method}]: ${res.text.length} chars · ${formatMs(res.ms)}`, "ok");
     } catch (e) {
       upsert({ id: uid(), kind: "ocr", label: method, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });

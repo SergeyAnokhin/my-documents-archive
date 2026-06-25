@@ -217,6 +217,7 @@ class LabOcrResult(BaseModel):
     method: str
     text: str
     ms: int
+    fields: Optional[Any] = None  # auto-analyzed metadata extracted from OCR text
 
 
 class LabVisionRequest(BaseModel):

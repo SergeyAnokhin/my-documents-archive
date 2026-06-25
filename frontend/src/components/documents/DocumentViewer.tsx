@@ -299,9 +299,9 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
 
   const isPdf = doc.mime_type === "application/pdf";
   const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
-  const docUrl = `/api/documents/${doc.id}/download?inline=1`;
-  const thumbV = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
-  const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg${thumbV}` : null;
+  const vParam = doc.updated_at ? new Date(doc.updated_at).getTime() : "";
+  const docUrl = `/api/documents/${doc.id}/download?inline=1${vParam ? `&v=${vParam}` : ""}`;
+  const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg${vParam ? `?v=${vParam}` : ""}` : null;
   // Original for images, thumbnail as fallback for other types (e.g. Word docs)
   const imgSrc = isImageMime ? docUrl : thumbUrl;
 

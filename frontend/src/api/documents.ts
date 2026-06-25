@@ -138,7 +138,7 @@ export const getLabMethods = () => api.get<LabMethods>("/lab/methods");
 export const getWorkerStatus = () => api.get<LabWorkerStatus>("/lab/worker-status");
 
 export const runLabOcr = (doc_id: number, method: string) =>
-  api.post<{ method: string; text: string; ms: number }>("/lab/ocr", { doc_id, method });
+  api.post<{ method: string; text: string; ms: number; fields: import("../types").ExtractedFields | null }>("/lab/ocr", { doc_id, method });
 
 export const runLabVision = (doc_id: number, provider_id: number) =>
   api.post<{

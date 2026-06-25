@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Document, AIProvider
 from ..services import lab
+from ..services.ai_analysis import analyze_document
 from ..services.ai_vision import VISION_CAPABLE
 from ..schemas import (
     LabMethods, LabWorkerStatus, LabOcrRequest, LabOcrResult,
@@ -24,8 +25,31 @@ from ..schemas import (
     LabImageInfo, LabTransformRequest, LabPreviewResult, LabApplyResult,
 )
 from ..services.thumbnails import generate_thumbnail
+from ..services.storage import compute_file_hash
 
 router = APIRouter(prefix="/api/lab", tags=["lab"])
+
+
+async def _auto_analyze(text: str, db: Session) -> dict | None:
+    """Run text analysis on OCR output and return an ExtractedFields dict, or None."""
+    if not text or not text.strip():
+        return None
+    try:
+        result = await analyze_document(text, db)
+        if result is None:
+            return None
+        return {
+            "document_type": result.document_type,
+            "document_date": result.document_date,
+            "person_first_name": result.person_first_name,
+            "person_last_name": result.person_last_name,
+            "organization": result.organization,
+            "amount": result.amount,
+            "amount_currency": result.amount_currency,
+            "language": result.language,
+        }
+    except Exception:
+        return None
 
 
 def _doc_image(doc_id: int, db: Session) -> bytes:
@@ -75,7 +99,8 @@ async def run_ocr(body: LabOcrRequest, db: Session = Depends(get_db)):
         text, ms = await lab.run_local_ocr(img, body.method, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"OCR failed: {e}")
-    return LabOcrResult(method=body.method, text=text, ms=ms)
+    fields = await _auto_analyze(text, db)
+    return LabOcrResult(method=body.method, text=text, ms=ms, fields=fields)
 
 
 @router.post("/vision", response_model=LabVisionResult)
@@ -88,6 +113,9 @@ async def run_vision(body: LabVisionRequest, db: Session = Depends(get_db)):
         text, fields, cost, ms, tin, tout = await lab.run_vision_ocr(img, provider, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Vision failed: {e}")
+    # If vision returned no fields (e.g. Mistral OCR plain-text mode), fall back to text analysis
+    if not fields:
+        fields = await _auto_analyze(text, db)
     return LabVisionResult(
         provider_id=provider.id, name=provider.name,
         model_name=provider.model or None,
@@ -187,6 +215,7 @@ async def apply_transform_endpoint(doc_id: int, body: LabTransformRequest, db: S
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Apply failed: {e}")
     doc.file_size = new_size
+    doc.file_hash = compute_file_hash(Path(doc.filepath))
     db.commit()
     generate_thumbnail(doc.filepath, doc.id)
     return LabApplyResult(ok=True, doc_id=doc_id, width=new_w, height=new_h, file_size=new_size)
