@@ -83,3 +83,5 @@ Database travels with the documents — both are in the same backed-up directory
 | 5 | Folder watcher (watchdog): auto-indexes files dropped into watched folders | ✅ Done |
 | 6 | Developer Mode tab: pipeline step statuses, per-document Re-classify / Re-index | ✅ Done |
 | 7 | External OCR worker (compute/) | ✅ Scaffolded |
+| 8 | OCR Lab (`/lab/:id`): compare Tesseract / EasyOCR / vision models; premium AI judge ranks transcriptions | ✅ Done |
+| 9 | Smart classification: expanded 30-type taxonomy, `unclassified` state, confidence tracking, per-doc LLM type picker, batch "classify unclassified" button | ✅ Done |

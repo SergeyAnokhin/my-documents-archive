@@ -257,7 +257,7 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
 
 async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     import google.generativeai as genai
-    model_name = getattr(provider, "model", None) or "gemini-1.5-flash"
+    model_name = getattr(provider, "model", None) or "gemini-2.5-flash"
     genai.configure(api_key=provider.api_key)
     gm = genai.GenerativeModel(model_name, system_instruction=system)
     resp = await asyncio.to_thread(

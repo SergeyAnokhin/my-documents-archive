@@ -65,6 +65,22 @@ _OPENAI_TEXT_MODELS = [
     "gpt-4o-mini", "gpt-4o", "o3-mini", "o1-mini", "gpt-4-turbo", "gpt-3.5-turbo",
 ]
 
+# Gemini model ID prefixes that are no longer available for inference.
+# Google keeps these in the /v1beta/models list but returns 404 on generate_content.
+_GEMINI_DEPRECATED_PREFIXES = (
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-exp",
+)
+
+
+def _is_gemini_deprecated(model_id: str) -> bool:
+    return any(
+        model_id == p or model_id.startswith(p + "-")
+        for p in _GEMINI_DEPRECATED_PREFIXES
+    )
+
 
 def _gemini_infer_pricing(model_id: str) -> dict:
     """Infer approximate pricing for unknown Gemini models by name pattern."""
@@ -194,6 +210,7 @@ async def _fetch_openai_compat(api_key: str, base_url: str, provider_type: str) 
 
 
 async def _fetch_gemini(api_key: str) -> list[dict]:
+    import re as _re
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(
             "https://generativelanguage.googleapis.com/v1beta/models",
@@ -207,12 +224,24 @@ async def _fetch_gemini(api_key: str) -> list[dict]:
             continue
         raw_id = m.get("name", "")
         model_id = raw_id.removeprefix("models/")
+        if _is_gemini_deprecated(model_id):
+            continue
         item = _enrich(model_id, m.get("displayName", ""), "gemini")
         if item["context_length"] is None:
             item["context_length"] = m.get("inputTokenLimit")
         # All Gemini models that support generateContent also support vision (multimodal)
         item["supports_vision"] = True
         result.append(item)
+
+    # Drop versioned snapshots (e.g. gemini-2.0-flash-lite-001) when the stable
+    # alias (gemini-2.0-flash-lite) is also present — Google keeps deprecated
+    # snapshots in the list but they return 404 on inference.
+    stable_ids = {item["id"] for item in result}
+    _versioned = _re.compile(r"^(.*)-(\d{3})$")
+    result = [
+        item for item in result
+        if not (m := _versioned.match(item["id"])) or m.group(1) not in stable_ids
+    ]
 
     # Known models (with pricing) first, then unknown sorted by id
     result.sort(key=lambda x: (x["price_in"] is None, x["id"]))

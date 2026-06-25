@@ -21,20 +21,20 @@ docs/             Architecture docs (you are here)
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
 | `models.py` | ORM models: `Document`, `WatchedFolder`, `IndexingLog`, `AIProvider`, `AppSettings` |
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
-| `routers/documents.py` | CRUD: list, get, delete, patch tags — prefix `/api/documents` |
+| `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
 | `routers/search.py` | Full-text search with SQLite LIKE — prefix `/api/search` |
 | `routers/admin.py` | Stats, sync, watched folders, AI providers, log — prefix `/api/admin` |
 | `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
-| `services/ai_analysis.py` | AI Analysis: calls Anthropic/OpenAI/Gemini/DeepSeek/OpenRouter to produce summary, tags, document_type, language, organization, amount |
+| `services/ai_analysis.py` | AI Analysis: produces summary, document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy: 30+ slugs (`passport`, `birth_certificate`, `contract`, `invoice`, `diploma`, … `unclassified`). Also exposes `suggest_document_types(summary, ocr_text, existing_types, db)` → top-3 suggestions for the UI picker. |
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini/OpenRouter + **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing, returns verbatim transcription). Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. Mistral also supports text models (OpenAI-compat) for analysis. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
-| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; batch, reclassify |
+| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
-| `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status — prefix `/api/indexing` |
+| `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
 | `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
 
@@ -64,9 +64,9 @@ docs/             Architecture docs (you are here)
 | `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid) |
 | `components/documents/DocumentCard.tsx` | List row and grid tile rendering |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |
-| `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details) |
+| `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Inline `TypePicker` component on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type. |
 | `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
-| `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify buttons (incl. `StatCard`) |
+| `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify / "Classify unclassified" buttons (incl. `StatCard`). Shows `unclassified` count as a danger card. |
 | `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
 | `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle. Three sections: Analysis, Vision, Premium (Judge). Providers support inline model editing (pencil icon fetches models via stored API key). Mistral supports OCR + text models. |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
@@ -120,3 +120,5 @@ Admin reclassify
 - **AI providers live in the DB** (`AIProvider` rows, added via Admin UI), not in env. The `*_api_key` fields in `config.py` are only fallback overrides.
 - **Tests**: `npm test` from repo root runs all three suites (backend/compute pytest, frontend vitest). See [testing.md](testing.md). Test files live in `backend/tests/`, `compute/tests/`, and `frontend/src/**/*.test.ts`.
 - **Compute worker native crash (Windows+conda)**: On miniforge/miniconda, `import easyocr` → `from skimage import io` triggers an OpenBLAS vs MKL DLL conflict when torch (MKL-linked) is already loaded. Exit code `3228369023` (STATUS_ACCESS_VIOLATION), NOT catchable by `except Exception`. Fix: `pip install numpy scipy scikit-image --force-reinstall`. The worker uses `_probe()` (subprocess) at startup to survive this crash in the probe itself. See [compute-worker.md](compute-worker.md).
+- **Classification fields**: `Document` has three classification-tracking columns added in Phase 9: `classification_confidence` (float, LLM self-reported), `classification_source` (`"auto"`/`"manual"`), `manually_classified` (bool). Docs with `manually_classified=True` are skipped by `reclassify_unclassified_batch()` but are re-classified if the user explicitly clicks "Re-classify" in dev mode (`reclassify_document()` resets the flag).
+- **`unclassified` vs `other`**: the LLM prompt no longer outputs `"other"` — it outputs `"unclassified"`. Old documents may still have `"other"`; all batch jobs and stats queries treat them identically.
