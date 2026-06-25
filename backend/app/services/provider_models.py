@@ -85,13 +85,20 @@ def _is_gemini_deprecated(model_id: str) -> bool:
 def _gemini_infer_pricing(model_id: str) -> dict:
     """Infer approximate pricing for unknown Gemini models by name pattern."""
     mid = model_id.lower()
-    if "pro" in mid:
+    # Open-source Gemma models are free through AI Studio
+    if "gemma" in mid:
+        return {"in": 0.0, "out": 0.0, "vision": False}
+    # Pro-tier: pro models, deep research, robotics, ultra
+    if any(k in mid for k in ("pro", "research", "robotics", "ultra")):
         return {"in": 1.25, "out": 10.0, "vision": True}
-    if "flash-lite" in mid or "flash-8b" in mid:
+    # Flash-lite tier: lite variants, nano, clip (music/multimodal)
+    if any(k in mid for k in ("flash-lite", "flash-8b", "nano", "clip")):
         return {"in": 0.075, "out": 0.30, "vision": True}
-    if "flash" in mid:
+    # Flash tier: flash, computer-use (flash-based), other experimental
+    if any(k in mid for k in ("flash", "computer-use")):
         return {"in": 0.10, "out": 0.40, "vision": True}
-    return {}
+    # Unknown Gemini model: flash-tier as conservative estimate
+    return {"in": 0.10, "out": 0.40, "vision": True}
 
 
 def _enrich(model_id: str, display_name: str = "", provider_type: str = "") -> dict:

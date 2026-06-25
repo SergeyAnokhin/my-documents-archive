@@ -209,9 +209,15 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
     import openai
     extra = getattr(provider, "extra_params", None) or {}
     model = getattr(provider, "model", None) or VISION_DEFAULTS.get(provider.provider_type, "gpt-4o-mini")
+    _base_url_defaults = {
+        "deepseek":   "https://api.deepseek.com/v1",
+        "mistral":    "https://api.mistral.ai/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
+    }
     kwargs: dict = {"api_key": provider.api_key}
-    if getattr(provider, "base_url", None):
-        kwargs["base_url"] = provider.base_url
+    base_url = getattr(provider, "base_url", None) or _base_url_defaults.get(provider.provider_type)
+    if base_url:
+        kwargs["base_url"] = base_url
     client = openai.AsyncOpenAI(**kwargs)
     create_kwargs: dict = {"model": model, "max_tokens": int(extra.get("max_tokens", 2048))}
     if "temperature" in extra:

@@ -108,6 +108,7 @@ export interface ProviderModel {
 export interface ArenaRating {
   text: number;    // 0-5 stars
   vision: number;  // 0-5 stars
+  elo?: number;    // actual Elo score from Chatbot Arena (e.g. 1320)
 }
 
 export interface LogEntry {

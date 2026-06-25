@@ -15,13 +15,14 @@ import type { AIProvider, ProviderModel, ArenaRating } from "../../../types";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PROVIDER_TYPES = [
-  { value: "anthropic",  label: "Anthropic (Claude)" },
   { value: "openai",     label: "OpenAI" },
   { value: "gemini",     label: "Google Gemini" },
   { value: "deepseek",   label: "DeepSeek" },
   { value: "openrouter", label: "OpenRouter" },
   { value: "mistral",    label: "Mistral" },
 ];
+
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -54,39 +55,68 @@ function inputPrice(price_in?: number | null): string {
   return `$${price_in < 0.01 ? price_in.toFixed(4) : price_in.toFixed(2)}`;
 }
 
-/** Lookup rating by model id: exact → short segment → Gemini family prefix match. */
-function lookupRating(
+interface ModelRating {
+  stars: number;      // 0-5 for quick visual fallback
+  elo: number | null; // actual Elo score when available (e.g. 1320)
+}
+
+/**
+ * Lookup rating by model id.
+ * Tries: exact → strip provider prefix → strip date/preview suffix → Gemini family prefix.
+ */
+function lookupModelRating(
   ratings: Record<string, ArenaRating>,
   modelId: string,
   forVision: boolean,
-): number {
-  const pick = (r: ArenaRating) => forVision ? r.vision : r.text;
+): ModelRating {
+  const pickRating = (r: ArenaRating): ModelRating => ({
+    stars: forVision ? r.vision : r.text,
+    elo: r.elo ?? null,
+  });
+
   const normalised = modelId.toLowerCase();
 
-  const direct = ratings[normalised];
-  if (direct) return pick(direct);
+  // 1. Exact match
+  if (ratings[normalised]) return pickRating(ratings[normalised]);
 
-  // "openai/gpt-4o" → "gpt-4o"
+  // 2. Strip provider prefix: "openai/gpt-4o" → "gpt-4o"
   const short = normalised.split("/").pop() ?? "";
-  const shortMatch = ratings[short];
-  if (shortMatch) return pick(shortMatch);
+  if (short !== normalised && ratings[short]) return pickRating(ratings[short]);
 
-  // Gemini family prefix match: "gemini-3.1-flash-lite-preview" → try "gemini-2.5-flash-lite"
+  // 3. Strip date suffix: "gpt-4o-2024-11-20" → "gpt-4o"
+  const withoutDate = normalised.replace(/-\d{4}-\d{2}(-\d{2})?$/, "");
+  if (withoutDate !== normalised) {
+    if (ratings[withoutDate]) return pickRating(ratings[withoutDate]);
+    const shortDate = withoutDate.split("/").pop() ?? "";
+    if (shortDate !== withoutDate && ratings[shortDate]) return pickRating(ratings[shortDate]);
+  }
+
+  // 4. Strip preview/exp/latest suffix: "gemini-3.1-flash-preview" → "gemini-3.1-flash"
+  const withoutSuffix = normalised.replace(/-(preview|exp|latest|snapshot|experimental)(-\S+)?$/, "");
+  if (withoutSuffix !== normalised && ratings[withoutSuffix]) return pickRating(ratings[withoutSuffix]);
+
+  // 5. Gemini family prefix match: "gemini-3.1-flash-lite-preview" → "gemini-2.5-flash-lite"
   if (normalised.startsWith("gemini-")) {
     const isProModel = normalised.includes("-pro");
     const isFlashLite = normalised.includes("flash-lite") || normalised.includes("flash-8b");
     const isFlash = normalised.includes("flash") && !isFlashLite;
     const family = isProModel ? "gemini-2.5-pro" : isFlashLite ? "gemini-2.5-flash-lite" : isFlash ? "gemini-2.5-flash" : null;
-    if (family && ratings[family]) return pick(ratings[family]);
+    if (family && ratings[family]) return pickRating(ratings[family]);
   }
-  return 0;
+
+  return { stars: 0, elo: null };
 }
 
-function Stars({ count }: { count: number }) {
-  if (count === 0) return null;
+/** Stars with color by context: gold = text rating, indigo = vision rating. Elo shown in tooltip. */
+function RatingStars({ rating, forVision }: { rating: ModelRating; forVision: boolean }) {
+  if (rating.stars === 0) return null;
+  const color = forVision ? "#818cf8" : "#f59e0b";
+  const tooltip = rating.elo
+    ? `Arena Elo: ${rating.elo} · ${rating.stars}/5`
+    : `${rating.stars}/5`;
   return (
-    <span style={{ fontSize: 11, color: "#f59e0b", letterSpacing: 1, flexShrink: 0 }} title={`${count}/5 stars`}>
-      {"★".repeat(count)}{"☆".repeat(5 - count)}
+    <span style={{ fontSize: 11, color, letterSpacing: 1, flexShrink: 0 }} title={tooltip}>
+      {"★".repeat(rating.stars)}{"☆".repeat(5 - rating.stars)}
     </span>
   );
 }
@@ -119,12 +149,18 @@ function ModelPicker({
     return m.price_in * 0.75 + (m.price_out ?? m.price_in) * 0.25;
   };
 
+  // Numeric sort key for rating: prefer actual Elo, approximate from stars as fallback
+  const ratingKey = (m: ProviderModel) => {
+    const r = lookupModelRating(ratings, m.id, forVision);
+    return r.elo ?? (r.stars * 70 + 1050);
+  };
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     const base = forVision ? models.filter(m => m.supports_vision) : models;
     let result = q ? base.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : base;
     if (sortBy === "rating") {
-      result = [...result].sort((a, b) => lookupRating(ratings, b.id, forVision) - lookupRating(ratings, a.id, forVision));
+      result = [...result].sort((a, b) => ratingKey(b) - ratingKey(a));
     } else if (sortBy === "price") {
       result = [...result].sort((a, b) => priceKey(a) - priceKey(b));
     }
@@ -177,7 +213,7 @@ function ModelPicker({
           overflowY: "auto",
         }}>
           {filtered.map(m => {
-            const stars = lookupRating(ratings, m.id, forVision);
+            const rating = lookupModelRating(ratings, m.id, forVision);
             const priceStr = forVision ? inputPrice(m.price_in) : blendedPrice(m.price_in, m.price_out);
             const isSelected = selected === m.id;
 
@@ -210,7 +246,7 @@ function ModelPicker({
                 <span style={{ flex: 1, fontSize: 12, fontWeight: isSelected ? 600 : 400, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {m.name !== m.id ? m.name : m.id}
                 </span>
-                <Stars count={stars} />
+                <RatingStars rating={rating} forVision={forVision} />
                 <span className="text-xs text-muted" style={{ flexShrink: 0, textAlign: "right", fontSize: 10.5 }}>
                   {priceStr}{m.context_length ? ` · ${fmtCtx(m.context_length)}` : ""}
                 </span>
@@ -235,7 +271,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  provider_type: "anthropic",
+  provider_type: "gemini",
   api_key: "",
   base_url: "",
   model: "",
@@ -273,7 +309,7 @@ function AddProviderForm({
   const [saving, setSaving] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
 
-  const showBaseUrl = ["openai", "mistral", "openrouter"].includes(form.provider_type);
+  const showBaseUrl = ["openai", "mistral"].includes(form.provider_type);
 
   const handleFetchModels = async () => {
     setLoadingModels(true);
@@ -327,7 +363,16 @@ function AddProviderForm({
         <select
           className="admin-input"
           value={form.provider_type}
-          onChange={e => setForm(f => ({ ...f, provider_type: e.target.value, model: "", name: "" }))}
+          onChange={e => {
+            const pt = e.target.value;
+            setForm(f => ({
+              ...f,
+              provider_type: pt,
+              model: "",
+              name: "",
+              base_url: pt === "openrouter" ? OPENROUTER_BASE_URL : "",
+            }));
+          }}
         >
           {PROVIDER_TYPES.map(pt => (
             <option key={pt.value} value={pt.value}>{pt.label}</option>
