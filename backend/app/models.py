@@ -112,3 +112,31 @@ class AppSettings(Base):
     key = Column(String(128), primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_type = Column(String(64), nullable=False)
+    title = Column(String(256), nullable=False)
+    status = Column(String(16), default="idle")  # idle|running|done|error|stopped
+    config = Column(JSON, nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    progress_current = Column(Integer, default=0)
+    progress_total = Column(Integer, default=0)
+    result_summary = Column(JSON, nullable=True)
+
+
+class TaskLog(Base):
+    __tablename__ = "task_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    level = Column(String(16), default="info")  # info|warning|error
+    created_at = Column(DateTime, server_default=func.now())

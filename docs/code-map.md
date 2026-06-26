@@ -43,6 +43,7 @@ docs/             Architecture docs (you are here)
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
 | `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
+| `routers/tasks.py` | Task queue CRUD + run/stop/logs — prefix `/api/tasks`. Used by the Tasks panel (advanced mode only). |
 
 ## Compute (`compute/app/`)
 
@@ -89,6 +90,9 @@ docs/             Architecture docs (you are here)
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
+| `contexts/AdvancedModeContext.tsx` | Boolean context for "advanced user mode" — persisted in localStorage; enables OCR Tuning button and Tasks panel |
+| `components/tasks/TasksPanel.tsx` | Task management panel (advanced mode only): block grid, drag-reorder, run/stop, logs modal |
+| `components/tasks/TasksPanel.css` | Styles for task cards, badges, progress bars, create form, logs modal |
 | `pages/HomePage.tsx` | Main page: hero search, toolbar, document grid/list |
 | `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`) **orchestrator**: document viewer (zoom/pan/crop/transform) + OCR/vision/judge handlers. Presentational pieces live in `pages/lab/`. See [lab-mode.md](lab-mode.md) |
 | `pages/lab/labUtils.ts` | `formatMs`, `formatFileSize`, `uid`, `VISION_CAPABLE` |
@@ -132,6 +136,23 @@ Admin reclassify
 ## Database Location
 
 `library/.docintell/docintell.db` — stays with documents, backed up together.
+
+## Advanced User Mode
+
+Enabled via the **Zap** (⚡) button in the header (persisted to localStorage). When active:
+- **OCR Tuning** button appears in DocumentViewer (navigates to `/lab/:id`)
+- **Tasks** button appears in the header → opens `TasksPanel`
+
+`TasksPanel` shows processing jobs as draggable cards (3-column grid). Task types:
+| Type | Description |
+|------|-------------|
+| `index_unindexed` | OCR + AI analysis for pending documents |
+| `sync_library` | Scan library + index new files |
+| `reclassify_unclassified` | AI classification for unclassified docs |
+| `reclassify_all` | Re-run AI analysis on all docs |
+| `batch_ocr_mistral` | Placeholder — Mistral batch OCR (coming) |
+
+Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag.
 
 ## Planned (not yet implemented)
 

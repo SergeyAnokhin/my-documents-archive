@@ -5,6 +5,7 @@ import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
+import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument } from "../../api/documents";
 import { TypePicker } from "./TypePicker";
 import "./DocumentViewer.css";
@@ -30,6 +31,7 @@ function formatDate(iso?: string) {
 export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext }: Props) {
   const { t } = useT();
   const navigate = useNavigate();
+  const { advancedMode } = useAdvancedMode();
   const [activeTab, setActiveTab] = useState<"preview" | "text" | "details" | "dev">("preview");
   const [devMsg, setDevMsg] = useState("");
   const [devLoading, setDevLoading] = useState<"reindex" | "reclassify" | null>(null);
@@ -487,14 +489,16 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
 
           {/* Download */}
           <div className="viewer-actions">
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<FlaskConical size={14} />}
-              onClick={() => navigate(`/lab/${doc.id}`)}
-            >
-              {t.labMode}
-            </Button>
+            {advancedMode && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<FlaskConical size={14} />}
+                onClick={() => navigate(`/lab/${doc.id}`)}
+              >
+                {t.labMode}
+              </Button>
+            )}
             <a href={`/api/documents/${doc.id}/download`} download>
               <Button variant="secondary" size="sm" icon={<Download size={14} />}>
                 {t.download}

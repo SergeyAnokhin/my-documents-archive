@@ -19,6 +19,8 @@ import type {
   LabTransformParams,
   LabPreviewResult,
   LabApplyResult,
+  Task,
+  TaskLog,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -179,3 +181,30 @@ export const previewLabTransform = (docId: number, params: LabTransformParams) =
 
 export const applyLabTransform = (docId: number, params: LabTransformParams) =>
   api.post<LabApplyResult>(`/lab/${docId}/apply-transform`, params);
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+export const listTasks = () => api.get<Task[]>("/tasks");
+
+export const createTask = (body: {
+  task_type: string;
+  title: string;
+  config?: Record<string, unknown>;
+  sort_order?: number;
+}) => api.post<Task>("/tasks", body);
+
+export const updateTask = (id: number, body: {
+  title?: string;
+  config?: Record<string, unknown>;
+  sort_order?: number;
+}) => api.patch<Task>(`/tasks/${id}`, body);
+
+export const deleteTask = (id: number) => api.delete(`/tasks/${id}`);
+
+export const runTask = (id: number) => api.post<{ message: string }>(`/tasks/${id}/run`);
+
+export const stopTask = (id: number) => api.post<{ message: string }>(`/tasks/${id}/stop`);
+
+export const stopAllTasks = () => api.post<{ message: string }>("/tasks/stop-all");
+
+export const getTaskLogs = (id: number) => api.get<TaskLog[]>(`/tasks/${id}/logs`);

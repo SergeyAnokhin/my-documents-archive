@@ -243,7 +243,7 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
     return text, tin, tout, cost
 
 
-def _parse_mistral_ocr(data: dict, image_policy: str = "placeholder") -> tuple[str, float]:
+def parse_mistral_ocr(data: dict, image_policy: str = "placeholder") -> tuple[str, float]:
     """Join per-page markdown, apply image_policy, return (text, cost_usd).
 
     image_policy:
@@ -285,7 +285,7 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
         )
         resp.raise_for_status()
         data = resp.json()
-    text, cost = _parse_mistral_ocr(data, image_policy)
+    text, cost = parse_mistral_ocr(data, image_policy)
     return text, 0, 0, cost
 
 

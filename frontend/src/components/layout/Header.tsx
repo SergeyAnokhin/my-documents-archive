@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Settings, Globe, Moon, Sun } from "lucide-react";
+import { Settings, Globe, Moon, Sun, Zap, ListTodo } from "lucide-react";
 import { useT, type Lang } from "../../i18n";
+import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
+import { IndexingBadge } from "../ui/IndexingBadge";
+import "./Header.css";
 
 const LANG_CYCLE: Lang[] = ["en", "ru", "fr"];
 const LANG_NEXT_LABEL: Record<Lang, string> = { en: "RU", ru: "FR", fr: "EN" };
 const LANG_NEXT_TITLE: Record<Lang, string> = { en: "Русский", ru: "Français", fr: "English" };
-import { IndexingBadge } from "../ui/IndexingBadge";
-import "./Header.css";
 
 function getInitialTheme(): "light" | "dark" {
   try {
@@ -24,15 +25,17 @@ function applyTheme(theme: "light" | "dark") {
 
 interface Props {
   onAdminOpen: () => void;
+  onTasksOpen: () => void;
 }
 
-export function Header({ onAdminOpen }: Props) {
+export function Header({ onAdminOpen, onTasksOpen }: Props) {
   const { t, lang, setLang } = useT();
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
+  const { advancedMode, setAdvancedMode } = useAdvancedMode();
 
   useEffect(() => { applyTheme(theme); }, [theme]);
 
-  const toggleTheme = () => setTheme(t => t === "light" ? "dark" : "light");
+  const toggleTheme = () => setTheme(prev => prev === "light" ? "dark" : "light");
 
   return (
     <header className="header">
@@ -46,6 +49,19 @@ export function Header({ onAdminOpen }: Props) {
         {/* Actions */}
         <div className="header-actions">
           <IndexingBadge />
+
+          {/* Tasks button — advanced mode only */}
+          {advancedMode && (
+            <button
+              className="header-tasks-btn"
+              onClick={onTasksOpen}
+              aria-label={t.tasks.title}
+              title={t.tasks.title}
+            >
+              <ListTodo size={15} />
+              <span>{t.tasks.title}</span>
+            </button>
+          )}
 
           {/* Theme toggle */}
           <button
@@ -66,6 +82,16 @@ export function Header({ onAdminOpen }: Props) {
           >
             <Globe size={15} />
             <span>{LANG_NEXT_LABEL[lang]}</span>
+          </button>
+
+          {/* Advanced mode toggle */}
+          <button
+            className={`icon-btn${advancedMode ? " header-advanced-active" : ""}`}
+            onClick={() => setAdvancedMode(!advancedMode)}
+            aria-label={advancedMode ? t.tasks.disableAdvanced : t.tasks.enableAdvanced}
+            title={advancedMode ? t.tasks.disableAdvanced : t.tasks.enableAdvanced}
+          >
+            <Zap size={16} />
           </button>
 
           {/* Admin */}

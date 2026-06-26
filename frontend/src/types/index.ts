@@ -219,6 +219,40 @@ export type ViewMode = "list" | "grid";
 export type GridSize = "sm" | "md" | "lg" | "xl";
 export type SearchMode = "search" | "ask";
 
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+export type TaskStatus = "idle" | "running" | "done" | "error" | "stopped";
+export type TaskType =
+  | "index_unindexed"
+  | "sync_library"
+  | "reclassify_unclassified"
+  | "reclassify_all"
+  | "batch_ocr_mistral";
+
+export interface Task {
+  id: number;
+  task_type: TaskType;
+  title: string;
+  status: TaskStatus;
+  config?: Record<string, unknown>;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  progress_current: number;
+  progress_total: number;
+  result_summary?: Record<string, unknown>;
+}
+
+export interface TaskLog {
+  id: number;
+  task_id: number;
+  message: string;
+  level: "info" | "warning" | "error";
+  created_at?: string;
+}
+
 export interface AIAnswerResponse {
   answer: string;
   sources: Document[];

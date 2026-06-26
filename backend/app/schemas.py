@@ -319,3 +319,46 @@ class AIAnswerResponse(BaseModel):
     model_name: Optional[str] = None
     docs_sent: int = 0
     depth: int = 2
+
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
+
+class TaskOut(BaseModel):
+    id: int
+    task_type: str
+    title: str
+    status: str
+    config: Optional[Any] = None
+    sort_order: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    progress_current: int = 0
+    progress_total: int = 0
+    result_summary: Optional[Any] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TaskCreate(BaseModel):
+    task_type: str
+    title: str
+    config: Optional[Any] = None
+    sort_order: int = 0
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    config: Optional[Any] = None
+    sort_order: Optional[int] = None
+
+
+class TaskLogOut(BaseModel):
+    id: int
+    task_id: int
+    message: str
+    level: str
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}

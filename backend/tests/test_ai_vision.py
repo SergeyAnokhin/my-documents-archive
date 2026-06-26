@@ -7,7 +7,7 @@ from app.services.ai_vision import (
     VISION_CAPABLE,
     VISION_DEFAULTS,
     MISTRAL_OCR_PRICE_PER_PAGE,
-    _parse_mistral_ocr,
+    parse_mistral_ocr as _parse_mistral_ocr,
 )
 from app.services.provider_models import _mistral_ocr_models
 
