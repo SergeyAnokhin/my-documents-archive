@@ -82,7 +82,106 @@ After a restore the user reloads the page.
 
 ## Human-only steps
 
-One-time cluster setup (cluster + GitHub-admin access) is the spec's §6 checklist:
-first build → make GHCR packages public → install SMB CSI driver → create the
-`my-documents-archive-smb-creds` secret (keys `username`/`password`) →
-`kubectl apply` the ArgoCD Application → add `my-documents-archive.local` to DNS/hosts.
+Все команды ниже выполняются **один раз** на машине с доступом к кластеру (`kubectl`).
+Общий контракт платформы — [k3s-platform-deployment.md §6](k3s-platform-deployment.md#6-human-only-checklist-cannot-be-done-by-the-agent).
+
+### Шаг 1 — Первый билд и публичность пакетов GHCR
+
+1. Сделай любой коммит в `main` (например, пустой `git commit --allow-empty`) или
+   запусти workflow вручную: GitHub → Actions → **build-and-push** → Run workflow.
+2. Дождись зелёного результата — GitHub Actions создаст ветку `deploy` и
+   запушит образы в GHCR.
+3. Сделай оба образа публичными (иначе кластер не сможет их скачать без pull-secret):
+   - GitHub → репозиторий → **Packages** (правая колонка или вкладка)
+   - Открой `my-documents-archive/backend` → Package settings → **Change visibility → Public**
+   - Повтори для `my-documents-archive/frontend`
+
+### Шаг 2 — Установка SMB CSI driver (если ещё не стоит)
+
+```bash
+# Проверить, не установлен ли уже:
+kubectl -n kube-system get pods | grep csi-smb
+
+# Если нет — установить:
+helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+helm repo update
+helm install csi-driver-smb csi-driver-smb/csi-driver-smb \
+  --namespace kube-system \
+  --set controller.replicas=1
+```
+
+### Шаг 3 — Создание namespace и секрета с NAS-кредами
+
+```bash
+# Namespace создаёт ArgoCD автоматически, но для секрета он нужен заранее:
+kubectl create namespace my-documents-archive
+
+# SMB-кред: пользователь и пароль из Synology (тот, что ты создал для шары my-documents-archive)
+kubectl create secret generic my-documents-archive-smb-creds \
+  -n my-documents-archive \
+  --from-literal=username=my-doc \
+  --from-literal=password=<ПАРОЛЬ_ИЗ_SYNOLOGY>
+```
+
+> Пароль вводи прямо в терминале — никогда не сохраняй в файлах в репозитории.
+
+### Шаг 4 — Регистрация приложения в ArgoCD
+
+```bash
+kubectl apply -f deploy/argocd/application.yaml
+
+# Подождать синхронизации (занимает ~1 минуту):
+kubectl -n argocd get application my-documents-archive
+# Ожидаемый результат: STATUS=Synced  HEALTH=Healthy
+```
+
+Или открой ArgoCD UI (обычно `https://<node-ip>:30443` или `https://argocd.local`)
+и проверь, что приложение `my-documents-archive` появилось и перешло в `Healthy`.
+
+### Шаг 5 — DNS / hosts
+
+На каждой машине, с которой хочешь открывать приложение, добавь строку в `hosts`
+(`C:\Windows\System32\drivers\etc\hosts` на Windows, `/etc/hosts` на Linux/Mac):
+
+```
+192.168.1.X  my-documents-archive.local
+```
+
+где `192.168.1.X` — IP любого узла кластера (Traefik слушает на всех нодах).
+Можно узнать: `kubectl get nodes -o wide`.
+
+После этого открывай: **http://my-documents-archive.local**
+
+### Шаг 6 — Первичная синхронизация существующих документов
+
+Watcher работает в режиме «только новые файлы»; существующие документы на NAS
+**не подберутся автоматически**. Чтобы проиндексировать то, что уже лежит на шаре:
+
+Открой UI → **Администрирование** → вкладка **Индексирование** → кнопка **Синхронизировать**.
+
+### Проверка после деплоя
+
+```bash
+# Поды Running?
+kubectl -n my-documents-archive get pods -o wide
+
+# PVC примонтированы?
+kubectl -n my-documents-archive get pvc
+
+# Ingress зарегистрирован?
+kubectl -n my-documents-archive get ingress
+
+# Логи backend:
+kubectl -n my-documents-archive logs deploy/my-documents-archive-backend
+
+# Логи sidecar-бэкапа:
+kubectl -n my-documents-archive logs deploy/my-documents-archive-backend -c db-backup
+```
+
+| Симптом | Вероятная причина |
+|---|---|
+| `ImagePullBackOff` | Пакет GHCR ещё приватный — сделай публичным (Шаг 1) |
+| PVC `Pending` | SMB CSI driver не установлен, или IP/путь NAS неверный |
+| Нет доступа к NAS | Секрет с кредами не создан, или пароль неверный |
+| 404 на `/api/*` | Ingress не создан или Traefik перезапускается |
+| ArgoCD не синкается | Ветка `deploy` ещё не создана — запусти билд вручную (Шаг 1) |
