@@ -144,6 +144,7 @@ export const ru: Translations = {
       reclassifyUnclassifiedButton: "Классифицировать неизвестные",
       unclassified: "Неклассифицированные",
       syncButton: "Синхронизировать",
+      libraryFolder: "Папка библиотеки",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "URL сервиса",
       workerUrlPlaceholder: "http://localhost:8001",
@@ -217,6 +218,14 @@ export const ru: Translations = {
       message: "Сообщение",
       cost: "Стоимость",
       time: "Время",
+      levelFilter: "Уровень",
+      levels: {
+        trace: "Trace",
+        debug: "Debug",
+        info: "Info",
+        warning: "Warn",
+        error: "Error",
+      },
     },
   },
 

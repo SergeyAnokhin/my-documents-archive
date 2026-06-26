@@ -149,6 +149,7 @@ export const en = {
       reclassifyUnclassifiedButton: "Classify unclassified",
       unclassified: "Unclassified",
       syncButton: "Sync Library",
+      libraryFolder: "Library folder",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "Service URL",
       workerUrlPlaceholder: "http://localhost:8001",
@@ -222,6 +223,14 @@ export const en = {
       message: "Message",
       cost: "Cost",
       time: "Time",
+      levelFilter: "Show",
+      levels: {
+        trace: "Trace",
+        debug: "Debug",
+        info: "Info",
+        warning: "Warn",
+        error: "Error",
+      },
     },
   },
 

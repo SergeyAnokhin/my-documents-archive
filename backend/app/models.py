@@ -83,6 +83,7 @@ class IndexingLog(Base):
     status = Column(String(16))        # "started" | "done" | "error" | "skipped"
     message = Column(Text, nullable=True)
     api_cost = Column(Float, default=0.0)
+    level = Column(String(16), default="info")  # "trace"|"debug"|"info"|"warning"|"error"
     created_at = Column(DateTime, server_default=func.now())
 
 

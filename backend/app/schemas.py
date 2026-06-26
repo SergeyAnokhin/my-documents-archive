@@ -178,6 +178,7 @@ class IndexingStats(BaseModel):
     errors: int
     unclassified: int = 0
     api_cost_total: float
+    library_path: str = ""
 
 
 class LogEntry(BaseModel):
@@ -188,6 +189,7 @@ class LogEntry(BaseModel):
     status: str
     message: Optional[str] = None
     api_cost: float
+    level: str = "info"
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

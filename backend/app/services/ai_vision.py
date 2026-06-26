@@ -1,9 +1,11 @@
 """
 AI Vision — Step 3 of the indexing pipeline.
 
-Sends the document's first page to a vision-capable AI model and returns
-a factual description (or, for Mistral OCR, a verbatim transcription).
-Result stored in Document.vision_description.
+For capable models (Anthropic/OpenAI/Gemini/OpenRouter): sends the first page image
+and asks for a full structured JSON (text + all analysis fields). If successful, the
+indexer skips Step 4 (AI Analysis) entirely.
+
+For Mistral OCR: returns plain text transcription; indexer still runs Analysis.
 
 Only runs when 'enable_ai_vision' = 'true' in AppSettings (admin toggle).
 Provider priority: all enabled DB providers with task_type "vision" or "both"
@@ -14,6 +16,7 @@ Falls back to env-var providers if no DB providers are configured.
 import asyncio
 import base64
 import io
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import AIProvider
+from .pricing import estimate_cost
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +38,37 @@ You are analyzing a scanned document. Provide a concise factual description (3-5
 - What key information is visible: dates, amounts, names, organizations, reference numbers?
 - What language is the document in?
 - Note any stamps, tables, or handwritten elements."""
+
+# Combined vision+analysis prompt for capable (non-Mistral) models.
+# Returns a single JSON with both verbatim text and all structured fields,
+# so the indexer can skip the separate AI Analysis step entirely.
+VISION_FULL_PROMPT = """\
+Analyze this scanned document image. Return a single JSON object with these fields:
+
+"text": verbatim transcription of ALL visible text, preserving line breaks and reading order
+"summary": 2-3 sentence summary in the document's original language
+"document_type": the single most specific type from this list:
+    passport, national_id, driver_license, birth_certificate, death_certificate,
+    marriage_certificate, divorce_certificate, residence_permit, visa,
+    contract, agreement, power_of_attorney, court_document,
+    invoice, bank_statement, receipt, tax_document, payslip,
+    property_deed, title_certificate, insurance_policy,
+    medical_certificate, prescription, medical_record,
+    diploma, certificate, transcript, student_id,
+    permit, license, registration, notarial_deed,
+    letter, notice, announcement, photo, scan, unclassified
+"document_type_confidence": 0.0-1.0 confidence in the type assignment
+"tags": array of 3-7 keyword strings
+"language": ISO 639-1 code ("ru", "fr", "en", "de", "uk", etc.)
+"organization": company or institution name, or null
+"amount": numeric monetary value (no currency symbol), or null
+"amount_currency": ISO 4217 code ("USD", "EUR", "RUB", "GBP"), or null
+"person_first_name": first name of the most important person, or null
+"person_last_name": last name of the most important person, or null
+"document_date": most significant date in YYYY-MM-DD format, or null
+"short_title": 2-5 word filename slug, lowercase_with_underscores, no extension, max 40 chars
+
+Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
 VISION_CAPABLE = {"anthropic", "openai", "gemini", "openrouter", "mistral"}
 
@@ -49,11 +84,20 @@ VISION_DEFAULTS = {
 MISTRAL_OCR_PRICE_PER_PAGE = 0.001
 
 
-async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, float]]:
+async def describe_document(
+    filepath: str, db: Session
+) -> Optional[tuple[str, Optional[dict], float]]:
     """
-    Describe document using a vision model.
-    Tries providers in priority order; returns (description_text, cost_usd) on first success.
-    Returns None if no provider succeeds.
+    Describe/analyze document using a vision model.
+
+    For capable (non-Mistral) providers: uses VISION_FULL_PROMPT to get both the
+    verbatim transcription AND all structured analysis fields in one call.
+    Returns (transcription_text, fields_dict, cost_usd).
+
+    For Mistral OCR: returns (transcription_text, None, cost_usd) — the indexer
+    must still run AI Analysis separately.
+
+    Returns None if no provider is configured or all fail.
     """
     providers = _get_providers(db)
     if not providers:
@@ -67,14 +111,39 @@ async def describe_document(filepath: str, db: Session) -> Optional[tuple[str, f
 
     for provider in providers:
         try:
-            text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_PROMPT)
+            text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_FULL_PROMPT)
             _update_stats(db, provider, tin, tout, cost)
-            return text, cost
+
+            if provider.provider_type == "mistral":
+                # Mistral OCR ignores the prompt and returns plain markdown.
+                return text, None, cost
+
+            data = _parse_vision_full(text)
+            if data and "text" in data:
+                transcription = str(data.pop("text") or "").strip() or text
+                return transcription, data, cost
+
+            # Model returned plain text (unexpected) — treat as description only.
+            return text, None, cost
         except Exception as e:
             log.warning("Vision provider '%s' failed: %s", provider.name, e)
 
     log.error("All %d vision provider(s) failed for %s", len(providers), filepath)
     return None
+
+
+def _parse_vision_full(raw: str) -> Optional[dict]:
+    """Parse VISION_FULL_PROMPT response. Returns the full dict or None on parse error."""
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+        stripped = "\n".join(lines[1:end])
+    try:
+        data = json.loads(stripped)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
 
 
 async def run_vision(provider, img_bytes: bytes, prompt: str) -> tuple[str, int, int, float]:
@@ -200,7 +269,7 @@ async def _call_anthropic(provider, b64: str, prompt: str = VISION_PROMPT) -> tu
     )
     tin  = resp.usage.input_tokens
     tout = resp.usage.output_tokens
-    cost = tin * 0.00000080 / 1000 + tout * 0.00000400 / 1000
+    cost = estimate_cost(model, tin, tout)
     return resp.content[0].text, tin, tout, cost
 
 
@@ -238,7 +307,7 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
     if resp.usage:
         tin  = resp.usage.prompt_tokens
         tout = resp.usage.completion_tokens
-        cost = tin * 0.00000015 + tout * 0.0000006
+        cost = estimate_cost(model, tin, tout)
     return text, tin, tout, cost
 
 
@@ -303,4 +372,8 @@ async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) 
         [prompt, image_part],
         generation_config=gen_cfg,
     )
-    return resp.text, 0, 0, 0.0
+    um = getattr(resp, "usage_metadata", None)
+    tin  = int(getattr(um, "prompt_token_count", 0) or 0)
+    tout = int(getattr(um, "candidates_token_count", 0) or 0)
+    cost = estimate_cost(model_name, tin, tout)
+    return resp.text, tin, tout, cost

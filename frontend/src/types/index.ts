@@ -70,6 +70,7 @@ export interface IndexingStats {
   errors: number;
   unclassified: number;
   api_cost_total: number;
+  library_path?: string;
 }
 
 export interface WatchedFolder {
@@ -121,6 +122,7 @@ export interface LogEntry {
   status: string;
   message?: string;
   api_cost: number;
+  level: string;
   created_at?: string;
 }
 

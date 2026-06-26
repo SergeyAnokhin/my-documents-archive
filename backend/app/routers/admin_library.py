@@ -51,6 +51,7 @@ def get_stats(db: Session = Depends(get_db)):
     except Exception:
         embedded = 0
 
+    from ..config import settings as app_settings
     return IndexingStats(
         total=total,
         indexed=indexed,
@@ -60,6 +61,7 @@ def get_stats(db: Session = Depends(get_db)):
         errors=errors,
         unclassified=unclassified,
         api_cost_total=float(cost_row or 0),
+        library_path=str(Path(app_settings.library_path).resolve()),
     )
 
 
@@ -90,7 +92,7 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
             reason = "phantom (.docintell)" if phantom else "file missing on disk"
             _log(db, step="sync", status="done",
                  message=f"Removed ({reason}): {doc.filename}",
-                 document_id=doc.id)
+                 document_id=doc.id, level="trace")
     if removed:
         db.commit()
 
@@ -103,7 +105,7 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
     for p in new_paths:
         try:
             file_hash = compute_file_hash(p)
-            if db.query(Document).filter(Document.file_hash == file_hash).first():
+            if db.query(Document).filter(Document.file_hash == file_hash, Document.is_deleted == False).first():
                 continue
             mime = guess_mime(p)
             doc = Document(
@@ -161,7 +163,7 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
         parts.append(f"backfilled dates for {backfilled}")
     if thumbs_cleaned:
         parts.append(f"cleaned {thumbs_cleaned} orphan thumbnail(s)")
-    _log(db, step="sync", status="done", message=", ".join(parts))
+    _log(db, step="sync", status="done", message=", ".join(parts), level="info")
     return SyncResponse(found=len(new_paths), new_files=added, removed=removed, message=", ".join(parts))
 
 
@@ -208,10 +210,16 @@ async def _run_reclassify_unclassified_bg(limit: int) -> None:
 
 # ── Log ───────────────────────────────────────────────────────────────────────
 
+_LEVEL_RANK = {"trace": 5, "debug": 10, "info": 20, "warning": 30, "error": 40}
+
+
 @router.get("/log", response_model=list[LogEntry])
-def get_log(limit: int = 100, db: Session = Depends(get_db)):
+def get_log(limit: int = 100, min_level: str = "info", db: Session = Depends(get_db)):
+    rank = _LEVEL_RANK.get(min_level, 20)
+    visible = [lvl for lvl, r in _LEVEL_RANK.items() if r >= rank]
     return (
         db.query(IndexingLog)
+        .filter(IndexingLog.level.in_(visible))
         .order_by(IndexingLog.created_at.desc())
         .limit(limit)
         .all()
@@ -220,7 +228,7 @@ def get_log(limit: int = 100, db: Session = Depends(get_db)):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _log(db: Session, step: str, status: str, message: str = "", document_id: int = None):
-    entry = IndexingLog(step=step, status=status, message=message, document_id=document_id)
+def _log(db: Session, step: str, status: str, message: str = "", document_id: int = None, level: str = "info"):
+    entry = IndexingLog(step=step, status=status, message=message, document_id=document_id, level=level)
     db.add(entry)
     db.commit()

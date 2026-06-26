@@ -62,11 +62,11 @@ async def _run_ocr(doc: Document, db: Session) -> None:
         doc.ocr_text = text
         doc.ocr_model = engine
         doc.ocr_status = "done"
-        _log(db, doc, "ocr", "done")
+        _log(db, doc, "ocr", "done", level="trace")
     except Exception as e:
         doc.ocr_status = "error"
         doc.ocr_error = str(e)
-        _log(db, doc, "ocr", "error", str(e))
+        _log(db, doc, "ocr", "error", str(e), level="error")
         log.warning("OCR failed for doc %s: %s", doc.id, e)
 
     db.commit()
@@ -106,20 +106,56 @@ async def _run_vision(doc: Document, db: Session) -> None:
         result = await describe_document(doc.filepath, db)
         if result is None:
             doc.vision_status = "skipped"
-            _log(db, doc, "vision", "skipped", "No vision provider configured")
+            _log(db, doc, "vision", "skipped", "No vision provider configured", level="debug")
         else:
-            text, cost = result
+            text, fields, cost = result
             doc.vision_description = text
             doc.api_cost_vision = cost
             doc.vision_status = "done"
-            _log(db, doc, "vision", "done")
+            if fields:
+                # Capable model returned full structured analysis — skip Step 4.
+                _apply_vision_fields(doc, fields, db)
+                doc.analysis_status = "done"
+                _log(db, doc, "vision", "done",
+                     f"with analysis: type={doc.document_type}, lang={doc.language}", level="info")
+                _log(db, doc, "analysis", "done",
+                     f"via vision: {doc.document_type}, {doc.language}", level="info")
+            else:
+                # Mistral OCR or unparseable response — Analysis will run separately.
+                _log(db, doc, "vision", "done", level="trace")
     except Exception as e:
         doc.vision_status = "error"
         doc.vision_error = str(e)
-        _log(db, doc, "vision", "error", str(e))
+        _log(db, doc, "vision", "error", str(e), level="error")
         log.warning("Vision failed for doc %s: %s", doc.id, e)
 
     db.commit()
+
+
+def _apply_vision_fields(doc: Document, fields: dict, db: Session) -> None:
+    """Populate document columns from structured vision analysis result."""
+    doc.summary = str(fields.get("summary") or "")
+    doc.document_type = str(fields.get("document_type") or "unclassified")
+    confidence = fields.get("document_type_confidence")
+    doc.classification_confidence = float(confidence) if confidence is not None else 0.0
+    doc.classification_source = "auto"
+    doc.tags = [str(t) for t in (fields.get("tags") or [])]
+    doc.language = str(fields.get("language") or "")
+    doc.organization = fields.get("organization") or None
+    amount = fields.get("amount")
+    doc.amount = float(amount) if amount is not None else None
+    doc.amount_currency = fields.get("amount_currency") or None
+    doc.person_first_name = fields.get("person_first_name") or None
+    doc.person_last_name = fields.get("person_last_name") or None
+    date_str = fields.get("document_date")
+    if date_str:
+        try:
+            doc.document_date = datetime.strptime(str(date_str), "%Y-%m-%d")
+        except ValueError:
+            pass
+    short_title = str(fields.get("short_title") or "")[:40]
+    if doc.source == "upload" and short_title:
+        _rename_uploaded_file(doc, short_title, db)
 
 
 # ── Step 4 — AI Analysis ──────────────────────────────────────────────────────
@@ -143,7 +179,7 @@ async def _run_analysis(doc: Document, db: Session) -> None:
         )
         if result is None:
             doc.analysis_status = "skipped"
-            _log(db, doc, "analysis", "skipped", "No AI provider configured")
+            _log(db, doc, "analysis", "skipped", "No AI provider configured", level="debug")
         else:
             doc.summary                   = result.summary
             doc.document_type             = result.document_type
@@ -164,13 +200,13 @@ async def _run_analysis(doc: Document, db: Session) -> None:
             doc.api_cost_analysis  = result.cost_usd
             doc.analysis_status    = "done"
             _log(db, doc, "analysis", "done",
-                 f"Type: {result.document_type}, lang: {result.language}")
+                 f"Type: {result.document_type}, lang: {result.language}", level="info")
             if doc.source == "upload" and result.short_title:
                 _rename_uploaded_file(doc, result.short_title, db)
     except Exception as e:
         doc.analysis_status = "error"
         doc.analysis_error  = str(e)
-        _log(db, doc, "analysis", "error", str(e))
+        _log(db, doc, "analysis", "error", str(e), level="error")
         log.warning("Analysis failed for doc %s: %s", doc.id, e)
 
     db.commit()
@@ -266,7 +302,7 @@ async def reclassify_document(document_id: int) -> None:
         if not doc:
             return
         if not doc.ocr_text and not doc.vision_description:
-            _log(db, doc, "analysis", "skipped", "No OCR text — run OCR first")
+            _log(db, doc, "analysis", "skipped", "No OCR text — run OCR first", level="warning")
             db.commit()
             return
         doc.analysis_status = "pending"
@@ -341,13 +377,14 @@ def _rename_uploaded_file(doc: Document, short_title: str, db: Session) -> None:
         log.warning("Could not rename %s → %s: %s", old_path.name, new_path.name, e)
 
 
-def _log(db: Session, doc: Document, step: str, status: str, message: str = "") -> None:
+def _log(db: Session, doc: Document, step: str, status: str, message: str = "", level: str = "info") -> None:
     entry = IndexingLog(
         document_id=doc.id,
         filename=doc.filename,
         step=step,
         status=status,
         message=message,
+        level=level,
     )
     db.add(entry)
     db.commit()

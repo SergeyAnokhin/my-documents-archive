@@ -119,6 +119,13 @@ export function IndexingTab() {
     <div className="admin-section">
       <h3 className="admin-section-title">{ix.title}</h3>
 
+      {stats?.library_path && (
+        <div style={{ marginBottom: 12, fontSize: "0.8125rem", color: "var(--color-muted)" }}>
+          <span style={{ fontWeight: 500, color: "var(--color-text)" }}>{ix.libraryFolder}: </span>
+          <span className="text-mono">{stats.library_path}</span>
+        </div>
+      )}
+
       {stats && (
         <>
           <div className="stats-grid">

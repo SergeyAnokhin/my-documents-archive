@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import AIProvider
+from .pricing import estimate_cost
 
 log = logging.getLogger(__name__)
 
@@ -210,8 +211,7 @@ async def _call_anthropic(provider, user_msg: str, system: str = ANALYSIS_SYSTEM
     )
     tin  = resp.usage.input_tokens
     tout = resp.usage.output_tokens
-    # Approximate pricing for Haiku; actual cost depends on model
-    cost = tin * 0.00000080 / 1000 + tout * 0.00000400 / 1000
+    cost = estimate_cost(model, tin, tout)
     return resp.content[0].text, tin, tout, cost
 
 
@@ -253,7 +253,7 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
     if resp.usage:
         tin  = resp.usage.prompt_tokens
         tout = resp.usage.completion_tokens
-        cost = tin * 0.00000015 + tout * 0.0000006
+        cost = estimate_cost(model, tin, tout)
     return text, tin, tout, cost
 
 
@@ -266,7 +266,11 @@ async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -
         gm.generate_content, user_msg,
         generation_config={"max_output_tokens": 1024},
     )
-    return resp.text, 0, 0, 0.0
+    um = getattr(resp, "usage_metadata", None)
+    tin  = int(getattr(um, "prompt_token_count", 0) or 0)
+    tout = int(getattr(um, "candidates_token_count", 0) or 0)
+    cost = estimate_cost(model_name, tin, tout)
+    return resp.text, tin, tout, cost
 
 
 # ── Result parsing ─────────────────────────────────────────────────────────────

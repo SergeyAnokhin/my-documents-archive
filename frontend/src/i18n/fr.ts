@@ -144,6 +144,7 @@ export const fr: Translations = {
       reclassifyUnclassifiedButton: "Classer les non classifiés",
       unclassified: "Non classifiés",
       syncButton: "Synchroniser",
+      libraryFolder: "Dossier de la bibliothèque",
       computeWorker: "Compute Worker (EasyOCR)",
       workerUrl: "URL du service",
       workerUrlPlaceholder: "http://localhost:8001",
@@ -217,6 +218,14 @@ export const fr: Translations = {
       message: "Message",
       cost: "Coût",
       time: "Heure",
+      levelFilter: "Niveau",
+      levels: {
+        trace: "Trace",
+        debug: "Debug",
+        info: "Info",
+        warning: "Warn",
+        error: "Error",
+      },
     },
   },
 
