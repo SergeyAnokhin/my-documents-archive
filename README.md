@@ -18,6 +18,8 @@ conda install -c conda-forge chromadb
 
 `pip` will then skip it and install the rest normally. Skipping this step causes a build error (`chroma-hnswlib` requires C++ build tools).
 
+**Protobuf conflict** — if you see `Descriptors cannot be created directly` in semantic search, your environment has `protobuf>=4`. Fix: `pip install "protobuf>=3.20.0,<4.0.0"`. The pin is already in `requirements.txt`; this only matters for existing envs that pre-date the pin.
+
 ## Quick Start
 
 ```bash
