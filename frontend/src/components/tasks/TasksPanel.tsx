@@ -303,7 +303,7 @@ function TaskCard({
       )}
 
       {/* Batch job ID — useful when polling */}
-      {task.status === "running" && task.result_summary?.batch_job_id && (
+      {task.status === "running" && !!task.result_summary?.batch_job_id && (
         <p className="text-xs text-muted" style={{ fontFamily: "var(--font-mono)" }}>
           job: {String(task.result_summary.batch_job_id)}
         </p>
