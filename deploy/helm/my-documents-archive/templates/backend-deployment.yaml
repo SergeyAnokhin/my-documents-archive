@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}-backend
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  strategy:
+    type: Recreate           # single node-pinned PVC => no rolling overlap
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "app.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "app.image" (dict "root" $ "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: LIBRARY_PATH
+              value: {{ .Values.backend.libraryPath | quote }}
+            - name: HF_HOME       # persist the sentence-transformers model on the state PVC
+              value: {{ printf "%s/.docintell/.hf" .Values.backend.libraryPath | quote }}
+            - name: BACKUP_DIR    # keep list/restore in sync with the backup sidecar
+              value: {{ .Values.backend.libraryPath | quote }}
+            - name: BACKUP_PREFIX
+              value: {{ .Values.backend.backup.prefix | quote }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: nas                                    # source documents (SMB)
+              mountPath: {{ .Values.backend.libraryPath }}
+            - name: state                                  # derived state, overlays .docintell
+              mountPath: {{ printf "%s/.docintell" .Values.backend.libraryPath }}
+        {{- if .Values.backend.backup.enabled }}
+        - name: db-backup                                  # rotating SQLite backup to the NAS root
+          image: {{ include "app.image" (dict "root" $ "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "backup.py"]
+          env:
+            - name: LIBRARY_PATH
+              value: {{ .Values.backend.libraryPath | quote }}
+            - name: BACKUP_DIR
+              value: {{ .Values.backend.libraryPath | quote }}
+            - name: BACKUP_INTERVAL_SECONDS
+              value: {{ .Values.backend.backup.intervalSeconds | quote }}
+            - name: BACKUP_KEEP
+              value: {{ .Values.backend.backup.keep | quote }}
+            - name: BACKUP_PREFIX
+              value: {{ .Values.backend.backup.prefix | quote }}
+          volumeMounts:
+            - name: nas
+              mountPath: {{ .Values.backend.libraryPath }}
+            - name: state
+              mountPath: {{ printf "%s/.docintell" .Values.backend.libraryPath }}
+        {{- end }}
+      volumes:
+        - name: nas
+          persistentVolumeClaim:
+            claimName: {{ include "app.fullname" . }}-nas
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ include "app.fullname" . }}-state

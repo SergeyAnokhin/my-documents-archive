@@ -362,3 +362,13 @@ class TaskLogOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class BackupInfo(BaseModel):
+    name: str
+    size: int
+    modified: str
+
+
+class RestoreRequest(BaseModel):
+    name: str

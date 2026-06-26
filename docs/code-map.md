@@ -9,6 +9,8 @@ backend/          FastAPI Python backend (main app)
 compute/          External OCR microservice (optional, runs on separate machine)
 frontend/         React + Vite + TypeScript UI
 docs/             Architecture docs (you are here)
+deploy/           Helm chart + ArgoCD Application for k3s deployment
+.github/workflows/ CI: build images → GHCR → bump tags → push `deploy` branch
 ```
 
 ## Backend (`backend/app/`)
@@ -24,11 +26,13 @@ docs/             Architecture docs (you are here)
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
 | `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
-| `routers/admin.py` | **Aggregator** — mounts the four `admin_*` sub-routers under prefix `/api/admin`. Start here, then jump to the right sub-router below |
+| `routers/admin.py` | **Aggregator** — mounts the five `admin_*` sub-routers under prefix `/api/admin`. Start here, then jump to the right sub-router below |
 | `routers/admin_library.py` | Stats, sync, batch-index, reclassify-all/unclassified, log (+ `_log` helper) |
 | `routers/admin_folders.py` | Watched-folder CRUD: list / add / remove / toggle |
 | `routers/admin_providers.py` | AI providers CRUD, model listing (`/models`), arena ratings (`/arena-ratings`) |
 | `routers/admin_settings.py` | App settings key-value get/upsert (`/settings`) |
+| `routers/admin_backups.py` | DB backup list + restore (advanced users): `GET /backups`, `POST /backups/restore` |
+| `services/db_backup.py` | List/restore SQLite backups written by the `backup.py` sidecar; restore = atomic swap + `docintell.db.pre-restore` safety snapshot |
 | `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
@@ -87,6 +91,7 @@ docs/             Architecture docs (you are here)
 | `components/admin/tabs/ai/ProviderSettingsPanel.tsx` | Per-provider fine-tuning (Mistral image policy; temperature/max_tokens for chat) |
 | `components/admin/tabs/ai/ProviderSection.tsx` | Section wrapper: provider list + add form for one task type |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
+| `components/admin/tabs/BackupTab.tsx` | DB backups list + restore. **Advanced-mode-only** tab (gated in `AdminPanel.tsx`) |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
@@ -102,6 +107,28 @@ docs/             Architecture docs (you are here)
 | `pages/lab/ResultsList.tsx` | List of OCR/vision results with save/expand/remove |
 | `pages/lab/JudgePanel.tsx` | Premium "judge" section: pick providers, compare, verdicts |
 | `pages/lab/FloatingTextModal.tsx` | Draggable floating modal showing one result's full text |
+
+## Deployment (k3s + ArgoCD + GHCR)
+
+Platform contract lives in [k3s-platform-deployment.md](k3s-platform-deployment.md) (**read-only spec — don't read/edit during normal dev**). GitOps: push to `main` → GitHub Actions builds images → GHCR → bumps Helm tags → force-pushes `deploy` branch → ArgoCD syncs.
+
+| File | Responsibility |
+|------|---------------|
+| `backend/Dockerfile` | Backend image: Python + Tesseract(rus+fra+eng) + poppler + libmagic. Context = repo root |
+| `backend/backup.py` | DB-backup sidecar: every 5 min (if DB changed) writes a consistent `sqlite3.backup()` copy to the NAS root, rotating the 2 newest (`docintell.db.backup.1/.2`) |
+| `frontend/Dockerfile` | Frontend image: Vite build → nginx static. Context = repo root |
+| `frontend/nginx.conf` | nginx SPA history fallback (`/api`,`/thumbnails` routed by ingress, not here) |
+| `.dockerignore` | Excludes node_modules, `library/`, DBs, caches from build contexts |
+| `.github/workflows/build.yml` | CI: build backend+frontend → GHCR (tag=sha) → `yq` bump `values.yaml` → force-push `deploy` |
+| `deploy/argocd/application.yaml` | ArgoCD Application; tracks `deploy` branch, namespace `my-documents-archive` |
+| `deploy/helm/my-documents-archive/values.yaml` | Only file CI mutates (`image.*.tag`). NAS source, storage sizes, `stripApiPrefix: false` |
+| `deploy/helm/.../templates/backend-deployment.yaml` | Backend: `Recreate`, single replica. Nested mounts: SMB NAS at `/data/library`, local-path PVC overlays `/data/library/.docintell` (keeps SQLite/Chroma off CIFS) |
+| `deploy/helm/.../templates/smb-nas.yaml` | SMB CSI PV+PVC for the NAS document library (`//192.168.1.91/Data/my-documents-archive`) |
+| `deploy/helm/.../templates/state-pvc.yaml` | local-path PVC for derived state (DB, Chroma, thumbnails, HF cache) |
+| `deploy/helm/.../templates/ingress.yaml` | Traefik ingress: `/api`+`/thumbnails`→backend (no strip), `/`→frontend |
+| `deploy/helm/.../templates/{frontend-deployment,*-service,_helpers}.yaml` | Frontend Deployment, Services, name/label/image helpers |
+
+**Human-only steps** (cluster access; see spec §6): first build to populate GHCR → make packages public → install SMB CSI driver → create `my-documents-archive-smb-creds` secret (keys `username`/`password`) → `kubectl apply` the ArgoCD Application → add `my-documents-archive.local` to hosts/DNS. Backfill existing NAS docs via **Admin → Sync** (the watcher is non-recursive + new-files-only).
 
 ## Key Data Flow
 
@@ -142,6 +169,7 @@ Admin reclassify
 Enabled via the **Zap** (⚡) button in the header (persisted to localStorage). When active:
 - **OCR Tuning** button appears in DocumentViewer (navigates to `/lab/:id`)
 - **Tasks** button appears in the header → opens `TasksPanel`
+- **Backup** tab appears in the Admin panel → list/restore DB backups (`BackupTab`)
 
 `TasksPanel` shows processing jobs as draggable cards (3-column grid). Task types:
 | Type | Description |

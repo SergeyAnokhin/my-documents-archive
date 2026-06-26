@@ -21,6 +21,7 @@ import type {
   LabApplyResult,
   Task,
   TaskLog,
+  BackupInfo,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -134,6 +135,10 @@ export const updateAppSettings = (body: Record<string, string>) =>
   api.patch<Record<string, string>>("/admin/settings", body);
 
 export const getLog = (limit = 100) => api.get<LogEntry[]>(`/admin/log?limit=${limit}`);
+
+export const listBackups = () => api.get<BackupInfo[]>("/admin/backups");
+export const restoreBackup = (name: string) =>
+  api.post<{ restored: string }>("/admin/backups/restore", { name });
 
 // ── Indexing (per-document) ───────────────────────────────────────────────────
 

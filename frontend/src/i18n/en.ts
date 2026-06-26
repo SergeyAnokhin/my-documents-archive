@@ -105,6 +105,16 @@ export const en = {
       indexing: "Indexing",
       ai: "AI Settings",
       log: "Log",
+      backup: "Backup",
+    },
+    backup: {
+      title: "Database Backups",
+      hint: "Automatic snapshots of the database, kept on the NAS. Restore replaces the current database with the selected snapshot (a pre-restore copy is saved first).",
+      refresh: "Refresh",
+      restore: "Restore",
+      empty: "No backups found yet.",
+      confirm: "Restore the database from \"{{name}}\"? The current database will be replaced.",
+      restored: "Database restored from {{name}}. Reload the page to see the changes.",
     },
     sources: {
       title: "Watched Folders",

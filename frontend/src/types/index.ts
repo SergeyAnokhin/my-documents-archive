@@ -264,3 +264,9 @@ export interface AIAnswerResponse {
   docs_sent?: number;
   depth?: number;
 }
+
+export interface BackupInfo {
+  name: string;
+  size: number;
+  modified: string;
+}

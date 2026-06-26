@@ -101,6 +101,16 @@ export const fr: Translations = {
       indexing: "Indexation",
       ai: "Paramètres IA",
       log: "Journal",
+      backup: "Sauvegarde",
+    },
+    backup: {
+      title: "Sauvegardes de la base",
+      hint: "Instantanés automatiques de la base de données, conservés sur le NAS. La restauration remplace la base actuelle par l'instantané choisi (une copie est sauvegardée au préalable).",
+      refresh: "Actualiser",
+      restore: "Restaurer",
+      empty: "Aucune sauvegarde trouvée pour l'instant.",
+      confirm: "Restaurer la base depuis « {{name}} » ? La base actuelle sera remplacée.",
+      restored: "Base restaurée depuis {{name}}. Rechargez la page pour voir les changements.",
     },
     sources: {
       title: "Dossiers surveillés",

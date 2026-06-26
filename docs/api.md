@@ -81,6 +81,8 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | GET | `/api/admin/settings` | Get all app settings `{key: value}` |
 | PATCH | `/api/admin/settings` | Upsert settings. Body: `{key: value, ...}`. Key: `enable_ai_vision` (`"true"`/`"false"`) |
 | GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100) |
+| GET | `/api/admin/backups` | List DB backup snapshots `[{name, size, modified}]`, newest first. Surfaced in the advanced-mode Backup tab |
+| POST | `/api/admin/backups/restore` | Restore the DB from a snapshot. Body: `{name}`. Replaces the live DB (saves a `docintell.db.pre-restore` copy first); 400 on unknown/invalid name |
 
 `provider_type`: `"anthropic" | "openai" | "gemini" | "deepseek" | "openrouter" | "mistral"`
 
