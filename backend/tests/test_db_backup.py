@@ -1,8 +1,13 @@
-"""Pins DB backup list + restore — see docs/code-map.md (services/db_backup.py).
+"""Pins DB backup list + restore — see docs/code-map.md (services/db_backup.py)
+and docs/api.md §Admin (`/api/admin/backups`, `/api/admin/backups/restore`).
 
 Restore must reject anything outside the backup dir or not matching the prefix
 (path-traversal guard), and must round-trip a real SQLite file while keeping a
 pre-restore safety snapshot.
+
+Each test carries:
+  Doc:  which documented area it protects
+  Rule: the specific behavior it asserts
 """
 import sqlite3
 
@@ -21,6 +26,11 @@ def _make_sqlite(path, value):
 
 
 def test_list_and_restore_roundtrip(tmp_path, monkeypatch):
+    # Doc:  docs/api.md §Admin — GET /api/admin/backups (list) and
+    #       POST /api/admin/backups/restore ("saves a docintell.db.pre-restore copy
+    #       first"); docs/code-map.md → db_backup.py ("restore = atomic swap +
+    #       pre-restore safety snapshot").
+    # Rule: list returns the backup; restore swaps it live and writes a pre-restore snapshot.
     monkeypatch.setattr(settings, "library_path", str(tmp_path))
     monkeypatch.setenv("BACKUP_DIR", str(tmp_path))
 
@@ -42,6 +52,10 @@ def test_list_and_restore_roundtrip(tmp_path, monkeypatch):
 
 
 def test_restore_rejects_path_traversal(tmp_path, monkeypatch):
+    # Doc:  docs/api.md §Admin — restore is "400 on unknown/invalid name". This pins
+    #       the underlying guard (docs/code-map.md → db_backup.py) that the router
+    #       surfaces as a 400.
+    # Rule: a name escaping the backup dir or not matching the backup prefix is rejected.
     monkeypatch.setattr(settings, "library_path", str(tmp_path))
     monkeypatch.setenv("BACKUP_DIR", str(tmp_path))
 

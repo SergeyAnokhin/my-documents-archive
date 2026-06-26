@@ -23,10 +23,14 @@ Output is intentionally terse: pytest runs with `-q --tb=short` (baked into each
 | Suite | File | Pins |
 |-------|------|------|
 | backend | [test_storage.py](../backend/tests/test_storage.py) | MIME fallback by extension, supported-extension check, upload name-collision (`doc.png` → `doc_1.png`) |
-| backend | [test_search.py](../backend/tests/test_search.py) | `_highlight` snippet/ellipsis, hybrid merge order (both → semantic-only → fulltext-only) |
-| compute | [test_ocr_worker.py](../compute/tests/test_ocr_worker.py) | `/health` shape, `/ocr` returns 400 on an unreadable file |
+| backend | [test_search.py](../backend/tests/test_search.py) | `_highlight` snippet/ellipsis, hybrid merge order (both → semantic-only → fulltext-only) + dedupe, `_parse_query` quoted-phrase split, `_transliterate_cyr_to_lat` + `_expand_fulltext_query` cross-script name variants |
+| backend | [test_ai_analysis.py](../backend/tests/test_ai_analysis.py) | `_parse_result`: code-fence stripping, type coercion, empty/absent → None, documented defaults |
+| backend | [test_db_backup.py](../backend/tests/test_db_backup.py) | Backup list + restore round-trip, pre-restore snapshot, path-traversal/prefix guard |
+| compute | [test_ocr_worker.py](../compute/tests/test_ocr_worker.py) | `/health` shape, `/ocr` returns 400 on an unreadable file, `_to_images` junk→`[]` / valid PNG→1 RGB image |
 | frontend | [client.test.ts](../frontend/src/api/client.test.ts) | API client: 204 → `undefined`, error response throws server `detail` |
-| frontend | [i18n.test.ts](../frontend/src/i18n/i18n.test.ts) | EN and RU expose an identical key set |
+| frontend | [i18n.test.ts](../frontend/src/i18n/i18n.test.ts) | EN, RU **and** FR expose an identical key set |
+| frontend | [aiUtils.test.ts](../frontend/src/components/admin/tabs/ai/aiUtils.test.ts) | `fmtTokens` K/M, `blendedPrice` 75/25 blend + sub-cent, `lookupModelRating` 5-tier fallback (exact → prefix → date → preview → Gemini family) |
+| frontend | [labUtils.test.ts](../frontend/src/pages/lab/labUtils.test.ts) | `formatMs` / `formatFileSize` unit boundaries (ms/s/min, B/KB/MB) |
 
 ## Conventions
 
