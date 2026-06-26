@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, extract, func, String
 from typing import Optional
+import logging
 import re
+
+log = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models import Document, AIProvider, IndexingLog
