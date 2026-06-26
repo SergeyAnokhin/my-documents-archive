@@ -1,0 +1,48 @@
+fullnameOverride: "my-documents-archive"
+
+image:
+  registry: ghcr.io/sergeyanokhin/my-documents-archive   # lowercase GHCR path
+  pullPolicy: IfNotPresent
+  backend:  { repository: backend,  tag: "REPLACED_BY_CI" }
+  frontend: { repository: frontend, tag: "REPLACED_BY_CI" }
+imagePullSecrets: []   # packages are public; add [{name: ghcr-creds}] only if made private
+
+backend:
+  replicas: 1
+  service: { port: 8000 }
+  libraryPath: /data/library
+  # Derived state (SQLite + ChromaDB + thumbnails + HF model cache).
+  # local-path PVC => node-pinned; safe for SQLite (unlike SMB/CIFS).
+  state:
+    size: 5Gi
+    storageClass: ""        # "" => cluster default StorageClass (k3s local-path)
+  # Sidecar that backs up the SQLite DB (on the local PVC) to the NAS document
+  # root, rotating the N newest copies. At most once per intervalSeconds, and
+  # only when the DB actually changed.
+  backup:
+    enabled: true
+    intervalSeconds: 300    # max once per 5 min
+    keep: 2                 # docintell.db.backup.1 (newest) + .2 (previous)
+    prefix: docintell.db.backup
+  # Source document library, mounted from the NAS over SMB.
+  # Mounted AT libraryPath; the state PVC overlays libraryPath/.docintell.
+  nas:
+    source: "//192.168.1.91/Data/my-documents-archive"
+    secretName: my-documents-archive-smb-creds   # human-created; keys MUST be username/password
+    size: 100Gi
+    mountOptions:
+      - dir_mode=0777
+      - file_mode=0777
+      - uid=0
+      - gid=0
+
+frontend:
+  replicas: 1
+  service: { port: 80 }
+
+ingress:
+  enabled: true
+  className: traefik
+  host: my-documents-archive.local
+  # DocIntel backend serves routes AT /api/... already, so DO NOT strip the prefix.
+  stripApiPrefix: false

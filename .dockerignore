@@ -1,0 +1,25 @@
+# Keep build contexts small and free of local state.
+.git
+.github
+deploy
+docs
+
+# Node
+**/node_modules
+frontend/dist
+
+# Python
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+backend/.venv
+
+# Local document library + DBs (never ship into an image)
+library
+**/*.db
+**/.docintell
+
+# Misc
+**/.env
+*.log

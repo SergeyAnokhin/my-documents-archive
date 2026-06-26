@@ -1,0 +1,105 @@
+.fdd {
+  position: relative;
+}
+
+/* Trigger button */
+.fdd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+.fdd-btn:hover,
+.fdd-btn--open {
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border-color: var(--color-ink-faint);
+}
+.fdd-btn--active {
+  background: var(--color-ink);
+  color: var(--color-bg);
+  border-color: var(--color-ink);
+}
+.fdd-btn--active:hover,
+.fdd-btn--active.fdd-btn--open {
+  background: color-mix(in srgb, var(--color-ink) 85%, transparent);
+  color: var(--color-bg);
+}
+
+.fdd-chevron {
+  opacity: 0.6;
+  transition: transform var(--transition);
+}
+.fdd-btn--open .fdd-chevron {
+  transform: rotate(180deg);
+}
+
+/* Dropdown panel */
+.fdd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  min-width: 140px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,.12));
+  overflow: hidden;
+  animation: fdd-open .12s ease;
+}
+
+@keyframes fdd-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fdd-divider {
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* Scrollable section */
+.fdd-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fdd-scroll::-webkit-scrollbar { width: 4px; }
+.fdd-scroll::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+
+/* Option row */
+.fdd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px var(--sp-4);
+  font-size: 0.8125rem;
+  background: transparent;
+  border: none;
+  color: var(--color-ink-muted);
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
+.fdd-item:hover {
+  background: var(--color-tag);
+  color: var(--color-ink);
+}
+.fdd-item--selected {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.fdd-item--clear {
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+}

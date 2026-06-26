@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-documents-archive
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/SergeyAnokhin/my-documents-archive.git
+    targetRevision: deploy            # ArgoCD tracks the CI-updated branch, not main
+    path: deploy/helm/my-documents-archive
+    helm:
+      releaseName: my-documents-archive
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: my-documents-archive
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ CreateNamespace=true ]

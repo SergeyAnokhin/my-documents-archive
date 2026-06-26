@@ -1,0 +1,224 @@
+.search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+/* ── Input row ── */
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: var(--sp-4);
+  color: var(--color-ink-faint);
+  pointer-events: none;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.search-input {
+  width: 100%;
+  height: 52px;
+  padding: 0 var(--sp-10) 0 48px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  font-size: 1rem;
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  -webkit-appearance: none;
+}
+/* Extra padding when mic button is shown */
+.search-input--has-mic { padding-right: 76px; }
+
+.search-input::placeholder { color: var(--color-ink-faint); }
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+/* Hide browser's native clear button */
+.search-input::-webkit-search-cancel-button { display: none; }
+
+/* Listening state: red glow */
+.search-input-wrap--listening .search-input {
+  border-color: #e53e3e;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #e53e3e 12%, transparent);
+}
+
+/* Right-side button cluster */
+.search-right-btns {
+  position: absolute;
+  right: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-tag);
+  color: var(--color-ink-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.search-clear:hover { background: var(--color-border); color: var(--color-ink); }
+
+/* Mic button */
+.search-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.search-mic:hover { background: var(--color-tag); color: var(--color-ink); }
+.search-mic--active {
+  color: #e53e3e;
+  animation: mic-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.65; transform: scale(1.2); }
+}
+
+/* ── Bottom row: mode pills + filters ── */
+
+.search-bottom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* Mode pills */
+.search-modes {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.search-mode-pill {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-size: .8125rem;
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.search-mode-pill:hover {
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border-color: var(--color-ink-faint);
+}
+.search-mode-pill.active {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-color: var(--color-accent);
+}
+
+/* AI pill — distinct style when active */
+.search-mode-pill--ai.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* ── Filter dropdowns row ── */
+.search-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.search-submit-btn {
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  white-space: nowrap;
+}
+.search-submit-btn:hover { opacity: 0.85; }
+
+/* ── Depth pills (AI mode only) ── */
+.search-depth {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.search-depth-pill {
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: .75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.search-depth-pill:hover {
+  background: var(--color-tag);
+  color: var(--color-ink);
+}
+.search-depth-pill.active {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, transparent);
+}
+
+/* ── Dev mode toggle (gear icon button) ── */
+.search-devmode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-ink-faint);
+  font-size: .875rem;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+.search-devmode-btn:hover {
+  color: var(--color-ink-muted);
+  background: var(--color-tag);
+}
+.search-devmode-btn.active {
+  color: #6366f1;
+  border-color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, transparent);
+}

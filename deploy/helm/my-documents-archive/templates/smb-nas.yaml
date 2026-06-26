@@ -1,0 +1,40 @@
+# Source document library on the NAS, via the SMB CSI driver (smb.csi.k8s.io).
+# volumeHandle / PV name are prefixed with the release fullname to stay globally
+# unique across the cluster (a clash silently mounts the wrong volume).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "app.fullname" . }}-nas
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.backend.nas.size }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    {{- toYaml .Values.backend.nas.mountOptions | nindent 4 }}
+  csi:
+    driver: smb.csi.k8s.io
+    readOnly: false
+    volumeHandle: {{ include "app.fullname" . }}-nas
+    volumeAttributes:
+      source: {{ .Values.backend.nas.source | quote }}
+    nodeStageSecretRef:
+      name: {{ .Values.backend.nas.secretName }}
+      namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "app.fullname" . }}-nas
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: {{ include "app.fullname" . }}-nas
+  resources:
+    requests:
+      storage: {{ .Values.backend.nas.size }}
