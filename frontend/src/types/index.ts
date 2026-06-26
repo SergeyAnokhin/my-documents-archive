@@ -224,4 +224,9 @@ export interface AIAnswerResponse {
   sources: Document[];
   cost: number;
   no_provider?: boolean;
+  tokens_in?: number;
+  tokens_out?: number;
+  model_name?: string | null;
+  docs_sent?: number;
+  depth?: number;
 }

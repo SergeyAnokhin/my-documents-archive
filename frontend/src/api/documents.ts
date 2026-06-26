@@ -70,10 +70,12 @@ export const askDocuments = (
   language: string,
   year?: string | null,
   filterLanguage?: string | null,
+  depth?: number,
 ) => {
   const params: Record<string, string> = { query, language };
   if (year) params.year = year;
   if (filterLanguage) params.filter_language = filterLanguage;
+  if (depth) params.depth = String(depth);
   return api.get<AIAnswerResponse>(`/search/ask?${new URLSearchParams(params).toString()}`);
 };
 

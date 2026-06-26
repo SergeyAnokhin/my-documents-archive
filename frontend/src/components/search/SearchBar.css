@@ -166,3 +166,59 @@
   white-space: nowrap;
 }
 .search-submit-btn:hover { opacity: 0.85; }
+
+/* ── Depth pills (AI mode only) ── */
+.search-depth {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.search-depth-pill {
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: .75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.search-depth-pill:hover {
+  background: var(--color-tag);
+  color: var(--color-ink);
+}
+.search-depth-pill.active {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, transparent);
+}
+
+/* ── Dev mode toggle (gear icon button) ── */
+.search-devmode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-ink-faint);
+  font-size: .875rem;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+.search-devmode-btn:hover {
+  color: var(--color-ink-muted);
+  background: var(--color-tag);
+}
+.search-devmode-btn.active {
+  color: #6366f1;
+  border-color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, transparent);
+}

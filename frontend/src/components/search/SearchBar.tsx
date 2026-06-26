@@ -33,11 +33,16 @@ interface Props {
   onFilterLang: (lang: string | null) => void;
   filterYear: string | null;
   onFilterYear: (year: string | null) => void;
+  depth: number;
+  onDepthChange: (d: number) => void;
+  devMode: boolean;
+  onDevModeChange: (v: boolean) => void;
 }
 
 export function SearchBar({
   value, mode, onChange, onModeChange, onSubmit,
   filterLang, onFilterLang, filterYear, onFilterYear,
+  depth, onDepthChange, devMode, onDevModeChange,
 }: Props) {
   const { t, lang } = useT();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -126,7 +131,7 @@ export function SearchBar({
         </div>
       </div>
 
-      {/* Bottom row: mode pills + filter dropdowns */}
+      {/* Bottom row: mode pills + depth (AI only) + filter dropdowns */}
       <div className="search-bottom-row">
         {/* Mode pills */}
         <div className="search-modes" role="radiogroup" aria-label="Search mode">
@@ -144,7 +149,27 @@ export function SearchBar({
           ))}
         </div>
 
-        {/* Filter dropdowns — always shown */}
+        {/* Depth pills — AI mode only */}
+        {isAsk && (
+          <div className="search-depth" role="group" aria-label="Search depth">
+            {([1, 2, 3] as const).map((d) => {
+              const label = [t.aiSearch.depthFast, t.aiSearch.depthNormal, t.aiSearch.depthDeep][d - 1];
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  className={`search-depth-pill${depth === d ? " active" : ""}`}
+                  onClick={() => onDepthChange(d)}
+                  title={label}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Filter dropdowns + submit */}
         <div className="search-filters">
           <FilterDropdown
             label={t.filters.year}
@@ -160,6 +185,17 @@ export function SearchBar({
             value={filterLang}
             onSelect={onFilterLang}
           />
+          {isAsk && (
+            <button
+              type="button"
+              className={`search-devmode-btn${devMode ? " active" : ""}`}
+              onClick={() => onDevModeChange(!devMode)}
+              title={t.aiSearch.devMode}
+              aria-label={t.aiSearch.devMode}
+            >
+              ⚙
+            </button>
+          )}
           <button type="submit" className="search-submit-btn">
             {isAsk ? t.aiSearch.submit : t.searchMode.search}
           </button>

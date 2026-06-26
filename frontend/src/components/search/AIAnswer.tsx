@@ -10,9 +10,15 @@ interface Props {
   cost: number;
   noProvider?: boolean;
   onDocClick: (idx: number) => void;
+  tokensIn?: number;
+  tokensOut?: number;
+  modelName?: string | null;
+  docsSent?: number;
+  devMode?: boolean;
 }
 
-export function AIAnswer({ answer, sources, cost, noProvider, onDocClick }: Props) {
+export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
+  tokensIn, tokensOut, modelName, docsSent, devMode }: Props) {
   const { t } = useT();
 
   if (noProvider) {
@@ -45,6 +51,21 @@ export function AIAnswer({ answer, sources, cost, noProvider, onDocClick }: Prop
           </span>
         )}
       </div>
+
+      {/* Dev info row — visible when devMode */}
+      {devMode && (modelName || (tokensIn != null) || (docsSent != null)) && (
+        <div className="ai-answer-dev-row">
+          {modelName && <span className="ai-dev-chip">{modelName}</span>}
+          {(tokensIn != null || tokensOut != null) && (
+            <span className="ai-dev-chip">
+              {tokensIn ?? 0} {t.aiSearch.tokensIn} / {tokensOut ?? 0} {t.aiSearch.tokensOut}
+            </span>
+          )}
+          {docsSent != null && (
+            <span className="ai-dev-chip">{docsSent} {t.aiSearch.docsSent}</span>
+          )}
+        </div>
+      )}
 
       {/* Answer body */}
       <div className="ai-answer-body">

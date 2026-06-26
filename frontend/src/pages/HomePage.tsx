@@ -33,6 +33,8 @@ export function HomePage() {
   const [aiAnswer, setAiAnswer] = useState<AIAnswerResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiViewerIdx, setAiViewerIdx] = useState<number | null>(null);
+  const [depth, setDepth] = useState(2);
+  const [devMode, setDevMode] = useState(false);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -91,14 +93,14 @@ export function HomePage() {
     setAiLoading(true);
     setAiAnswer(null);
     try {
-      const res = await askDocuments(query, lang, filterYear, filterLang);
+      const res = await askDocuments(query, lang, filterYear, filterLang, depth);
       setAiAnswer(res);
     } catch {
       /* ignore */
     } finally {
       setAiLoading(false);
     }
-  }, [query, lang, filterYear, filterLang]);
+  }, [query, lang, filterYear, filterLang, depth]);
 
   // ── Mode change ─────────────────────────────────────────────────────────────
 
@@ -191,6 +193,10 @@ export function HomePage() {
             onFilterLang={setFilterLang}
             filterYear={filterYear}
             onFilterYear={(y) => setFilterYear(y)}
+            depth={depth}
+            onDepthChange={setDepth}
+            devMode={devMode}
+            onDevModeChange={setDevMode}
           />
         </section>
 
@@ -269,6 +275,11 @@ export function HomePage() {
                 cost={aiAnswer.cost}
                 noProvider={aiAnswer.no_provider}
                 onDocClick={(i) => setAiViewerIdx(i)}
+                tokensIn={aiAnswer.tokens_in}
+                tokensOut={aiAnswer.tokens_out}
+                modelName={aiAnswer.model_name}
+                docsSent={aiAnswer.docs_sent}
+                devMode={devMode}
               />
             )}
             {!aiLoading && !aiAnswer && (

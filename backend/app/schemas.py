@@ -314,3 +314,8 @@ class AIAnswerResponse(BaseModel):
     sources: List[DocumentOut]
     cost: float = 0.0
     no_provider: bool = False
+    tokens_in: int = 0
+    tokens_out: int = 0
+    model_name: Optional[str] = None
+    docs_sent: int = 0
+    depth: int = 2

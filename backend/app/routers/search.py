@@ -5,7 +5,7 @@ from typing import Optional
 import re
 
 from ..database import get_db
-from ..models import Document, AIProvider
+from ..models import Document, AIProvider, IndexingLog
 from ..schemas import SearchResponse, SearchResult, DocumentOut, AIAnswerResponse
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -192,6 +192,65 @@ def _build_response(
     )
 
 
+# ── Transliteration helpers ────────────────────────────────────────────────────
+
+_CYR_TO_LAT: dict[str, str] = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+}
+
+# Common first-name Latin→Cyrillic map for cross-script name matching
+_LAT_NAME_TO_CYR: dict[str, str] = {
+    'sergey': 'сергей', 'sergei': 'сергей', 'serge': 'сергей',
+    'alexey': 'алексей', 'aleksey': 'алексей', 'alexei': 'алексей',
+    'ivan': 'иван', 'anna': 'анна', 'igor': 'игорь', 'olga': 'ольга',
+    'andrey': 'андрей', 'andrei': 'андрей',
+    'natasha': 'наташа', 'natalia': 'наталья', 'natalya': 'наталья',
+    'mikhail': 'михаил', 'michael': 'михаил',
+    'nikolay': 'николай', 'nikolai': 'николай', 'nicolas': 'николай',
+    'vladimir': 'владимир',
+    'dmitry': 'дмитрий', 'dmitri': 'дмитрий', 'dmitriy': 'дмитрий',
+    'maxim': 'максим', 'artem': 'артем', 'denis': 'денис',
+    'alexander': 'александр', 'alexandre': 'александр',
+}
+
+
+def _transliterate_cyr_to_lat(word: str) -> str:
+    return ''.join(_CYR_TO_LAT.get(c, c) for c in word.lower())
+
+
+def _expand_fulltext_query(query: str) -> list[str]:
+    """Return [original, transliterated-variant] for cross-script name matching."""
+    variants = [query]
+    words = query.split()
+    translated: list[str] = []
+    for word in words:
+        w = word.lower()
+        if any(c in _CYR_TO_LAT for c in w):
+            translated.append(_transliterate_cyr_to_lat(w))
+        elif w in _LAT_NAME_TO_CYR:
+            translated.append(_LAT_NAME_TO_CYR[w])
+        else:
+            translated.append(w)
+    translit_query = ' '.join(translated)
+    if translit_query.lower() != query.lower():
+        variants.append(translit_query)
+    return variants
+
+
+# ── Depth configuration ────────────────────────────────────────────────────────
+# Controls how many docs are retrieved, sent to LLM, and how much OCR text per doc.
+
+_DEPTH_CFG = {
+    1: {"n_retrieve": 6,  "n_send": 4,  "ocr_chars": 0},     # Fast: summary only
+    2: {"n_retrieve": 12, "n_send": 6,  "ocr_chars": 600},    # Normal: default
+    3: {"n_retrieve": 20, "n_send": 12, "ocr_chars": 1500},   # Deep: full OCR
+}
+
+
 # ── AI Q&A endpoint ───────────────────────────────────────────────────────────
 
 @router.get("/ask", response_model=AIAnswerResponse)
@@ -200,11 +259,15 @@ async def ask_documents(
     language: str = Query("en"),
     year: Optional[int] = None,
     filter_language: Optional[str] = None,
+    depth: int = Query(2, ge=1, le=3),
     db: Session = Depends(get_db),
 ):
     """Answer a free-form question about the user's documents using AI."""
     if not query.strip():
         return AIAnswerResponse(answer="", sources=[], cost=0.0)
+
+    cfg = _DEPTH_CFG.get(depth, _DEPTH_CFG[2])
+    log.debug("[ask] query=%r  depth=%d  cfg=%s", query, depth, cfg)
 
     base = db.query(Document).filter(Document.is_deleted == False)
     if year:
@@ -213,22 +276,34 @@ async def ask_documents(
     if filter_language:
         base = base.filter(Document.language == filter_language)
 
-    # Find relevant docs: semantic first, fallback to fulltext
-    doc_ids = _semantic_ids(query, 12)
+    # ── Hybrid retrieval: semantic + fulltext always merged ────────────────
+    sem_ids = _semantic_ids(query, cfg["n_retrieve"] * 2)
+    log.debug("[ask] semantic_ids count=%d  top5=%s", len(sem_ids), sem_ids[:5])
 
-    if doc_ids:
-        docs_all = base.filter(Document.id.in_(doc_ids)).all()
-        rank = {did: i for i, did in enumerate(doc_ids)}
+    query_variants = _expand_fulltext_query(query)
+    log.debug("[ask] fulltext variants: %s", query_variants)
+    ft_ids: set[int] = set()
+    for variant in query_variants:
+        ft_ids |= _fulltext_ids(base, variant)
+    log.debug("[ask] fulltext_ids count=%d", len(ft_ids))
+
+    merged = _merge_hybrid(sem_ids, ft_ids)
+    log.debug("[ask] merged count=%d  top5=%s", len(merged), merged[:5])
+
+    if merged:
+        docs_all = base.filter(Document.id.in_(merged[:cfg["n_retrieve"]])).all()
+        rank = {did: i for i, did in enumerate(merged)}
         docs_all.sort(key=lambda d: rank.get(d.id, 9999))
-        docs = docs_all[:10]
     else:
-        phrases, words = _parse_query(query)
-        q = _apply_text_filter(base, phrases, words)
-        docs = q.order_by(Document.added_at.desc()).limit(10).all()
+        docs_all = base.order_by(Document.added_at.desc()).limit(cfg["n_retrieve"]).all()
+
+    docs = docs_all[:cfg["n_send"]]
+    log.debug("[ask] selected docs (%d): %s", len(docs),
+              [(d.id, d.filename[:40]) for d in docs])
 
     source_docs = [DocumentOut.model_validate(d) for d in docs]
 
-    # Pick first enabled analysis provider
+    # ── Provider ───────────────────────────────────────────────────────────
     provider = (
         db.query(AIProvider)
         .filter(AIProvider.enabled == True, AIProvider.task_type.in_(["analysis", "both"]))
@@ -236,9 +311,10 @@ async def ask_documents(
         .first()
     )
     if not provider:
-        return AIAnswerResponse(answer="", sources=source_docs, cost=0.0, no_provider=True)
+        return AIAnswerResponse(answer="", sources=source_docs, cost=0.0, no_provider=True,
+                                docs_sent=len(docs), depth=depth)
 
-    # Build context from retrieved documents
+    # ── Context assembly ───────────────────────────────────────────────────
     context_parts = []
     for i, doc in enumerate(docs, 1):
         parts = [f"[{i}] {doc.filename}"]
@@ -257,11 +333,17 @@ async def ask_documents(
             parts.append(f"Tags: {', '.join(doc.tags)}")
         if doc.summary:
             parts.append(f"Summary: {doc.summary[:600]}")
-        if doc.ocr_text:
-            parts.append(f"Text: {doc.ocr_text[:1000]}")
+        ocr_sent = 0
+        if cfg["ocr_chars"] > 0 and doc.ocr_text:
+            ocr_sent = min(len(doc.ocr_text), cfg["ocr_chars"])
+            parts.append(f"Text: {doc.ocr_text[:cfg['ocr_chars']]}")
         context_parts.append("\n".join(parts))
+        log.debug("[ask] ctx doc[%d] id=%d filename=%r summary=%s ocr_sent=%d",
+                  i, doc.id, doc.filename[:40], bool(doc.summary), ocr_sent)
 
     context = "\n\n---\n\n".join(context_parts)
+    log.debug("[ask] total_context_chars=%d  provider=%r  model=%r",
+              len(context), provider.name, provider.model)
 
     lang_names = {"en": "English", "ru": "Russian", "fr": "French"}
     resp_lang = lang_names.get(language, "English")
@@ -278,9 +360,43 @@ async def ask_documents(
 
     try:
         from ..services.ai_analysis import run_text
-        answer, _, _, cost = await run_text(provider, system, user_msg)
+        answer, tokens_in, tokens_out, cost = await run_text(provider, system, user_msg)
+        log.debug("[ask] llm done tokens=%d/%d cost=%.5f answer=%r",
+                  tokens_in, tokens_out, cost, (answer or "")[:200])
     except Exception as exc:
         answer = str(exc)
+        tokens_in = tokens_out = 0
         cost = 0.0
+        log.warning("[ask] LLM call failed: %s", exc)
 
-    return AIAnswerResponse(answer=answer, sources=source_docs, cost=cost)
+    model_name = provider.model or provider.name
+    _log_ask(db, query, len(docs), depth, cost, tokens_in, tokens_out, model_name)
+
+    return AIAnswerResponse(
+        answer=answer,
+        sources=source_docs,
+        cost=cost,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        model_name=model_name,
+        docs_sent=len(docs),
+        depth=depth,
+    )
+
+
+def _log_ask(
+    db, query: str, n_docs: int, depth: int,
+    cost: float, tokens_in: int, tokens_out: int, model_name: str,
+) -> None:
+    """Write an ask-pipeline summary to the admin log."""
+    try:
+        msg = (
+            f"query={query[:80]!r}  depth={depth}  docs={n_docs}  "
+            f"model={model_name}  tokens={tokens_in}in/{tokens_out}out  "
+            f"cost=${cost:.5f}"
+        )
+        entry = IndexingLog(step="ask", status="done", message=msg, api_cost=cost)
+        db.add(entry)
+        db.commit()
+    except Exception:
+        pass
