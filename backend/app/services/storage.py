@@ -124,6 +124,19 @@ def infer_document_date(path: Path) -> Optional[datetime]:
     return None
 
 
+def check_library_accessible(library: Path) -> bool:
+    """True when the library disk is mounted and the .docintell sentinel dir exists.
+
+    .docintell is created at first backend startup on the same disk as user
+    documents. If it is absent the disk is either offline or the library was
+    never initialised — both cases should block a destructive sync operation.
+    """
+    try:
+        return (library / ".docintell").is_dir()
+    except OSError:
+        return False
+
+
 def scan_library_for_new_files(known_paths: set[str]) -> list[Path]:
     """Walk the library directory and return supported file paths not in known_paths.
 

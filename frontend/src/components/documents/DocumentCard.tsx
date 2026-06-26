@@ -85,7 +85,8 @@ function TypeIcon({ type, size, className }: { type: string; size: number; class
 function Thumbnail({ doc }: { doc: Document }) {
   if (doc.thumbnail_path) {
     const v = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
-    const url = `/thumbnails/${doc.id}.jpg${v}`;
+    const filename = doc.thumbnail_path.split(/[/\\]/).pop();
+    const url = `/thumbnails/${filename}${v}`;
     return <img src={url} alt="" className="doc-thumb-img" loading="lazy" />;
   }
   return (

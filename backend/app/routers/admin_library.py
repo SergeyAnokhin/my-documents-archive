@@ -1,14 +1,14 @@
 """Library/indexing admin endpoints: stats, sync, batch jobs, log."""
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from ..database import get_db
 from ..models import Document, IndexingLog
 from ..schemas import IndexingStats, LogEntry, SyncResponse
-from ..services.storage import scan_library_for_new_files, compute_file_hash, guess_mime, infer_document_date
+from ..services.storage import scan_library_for_new_files, check_library_accessible, compute_file_hash, guess_mime, infer_document_date
 from ..services.thumbnails import generate_thumbnail, cleanup_orphan_thumbnails
 from ..services.indexer import (
     index_document,
@@ -69,30 +69,47 @@ def get_stats(db: Session = Depends(get_db)):
 
 @router.post("/sync", response_model=SyncResponse)
 def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    # Step 1 — remove docs whose files are gone or located inside .docintell
-    # (.docintell contains thumbnails/DB/Chroma — never user documents; they got
-    # added by a previous bug in scan_library_for_new_files)
     from ..services.storage import get_library_path
-    docintell_dir = get_library_path() / ".docintell"
+    library = get_library_path()
+    docintell_dir = library / ".docintell"
 
+    # Safety guard: refuse to sync if the library disk is unreachable.
+    # .docintell is always present when the disk is mounted — its absence
+    # almost certainly means the disk is offline, not that files were deleted.
+    if not check_library_accessible(library):
+        raise HTTPException(
+            status_code=503,
+            detail="Library folder is not accessible — disk may be offline. Sync aborted to prevent data loss.",
+        )
+
+    # Step 0 — hard-delete any leftover soft-deleted records from old behaviour
+    for doc in db.query(Document).filter(Document.is_deleted == True).all():
+        if doc.thumbnail_path:
+            try:
+                Path(doc.thumbnail_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+        db.delete(doc)
+    db.commit()
+
+    # Step 1 — hard-delete docs whose files are gone or located inside .docintell
     removed = 0
     for doc in db.query(Document).filter(Document.is_deleted == False).all():
         fp = Path(doc.filepath)
         missing = not fp.exists()
         phantom = fp.is_relative_to(docintell_dir)
         if missing or phantom:
-            # Delete the thumbnail file immediately so it doesn't linger
             if doc.thumbnail_path:
                 try:
                     Path(doc.thumbnail_path).unlink(missing_ok=True)
                 except OSError:
                     pass
-            doc.is_deleted = True
-            removed += 1
             reason = "phantom (.docintell)" if phantom else "file missing on disk"
             _log(db, step="sync", status="done",
                  message=f"Removed ({reason}): {doc.filename}",
-                 document_id=doc.id, level="trace")
+                 level="trace")
+            db.delete(doc)
+            removed += 1
     if removed:
         db.commit()
 
@@ -105,7 +122,7 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
     for p in new_paths:
         try:
             file_hash = compute_file_hash(p)
-            if db.query(Document).filter(Document.file_hash == file_hash, Document.is_deleted == False).first():
+            if db.query(Document).filter(Document.file_hash == file_hash).first():
                 continue
             mime = guess_mime(p)
             doc = Document(

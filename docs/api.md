@@ -65,8 +65,8 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/admin/stats` | `{total, indexed, analyzed, embedded, pending, errors, unclassified, api_cost_total}` — `unclassified` counts analysis-done docs with type `unclassified`/`other`/null |
-| POST | `/api/admin/sync` | Scan library for new files, queue OCR+analysis for each. Returns `{found, new_files, message}` |
+| GET | `/api/admin/stats` | `{total, indexed, analyzed, embedded, pending, errors, unclassified, api_cost_total, library_path}` — `unclassified` counts analysis-done docs with type `unclassified`/`other`/null; `library_path` is the resolved library folder (shown in the Admin panel) |
+| POST | `/api/admin/sync` | Scan library for new files, queue OCR+analysis for each. **Hard-deletes** docs whose file is missing or sits inside `.docintell`. Returns `{found, new_files, removed, message}`. **Returns 503** (aborts before any delete) when the library disk is unreachable — guarded by `storage.check_library_accessible()` (`.docintell` sentinel), so an offline NAS never wipes the DB |
 | POST | `/api/admin/batch-index` | Queue OCR+analysis for all pending docs. Param: `limit` (default 50) |
 | POST | `/api/admin/reclassify-all` | Re-run AI Analysis on all OCR-done but not-analyzed docs. Param: `limit` (default 200) |
 | POST | `/api/admin/reclassify-unclassified` | Re-run AI Analysis on all `unclassified`/`other` docs where `manually_classified=false`. Param: `limit` (default 200) |
@@ -80,7 +80,7 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | DELETE | `/api/admin/providers/{id}` | Remove provider |
 | GET | `/api/admin/settings` | Get all app settings `{key: value}` |
 | PATCH | `/api/admin/settings` | Upsert settings. Body: `{key: value, ...}`. Key: `enable_ai_vision` (`"true"`/`"false"`) |
-| GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100) |
+| GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100). Each entry has a `level` (`trace|debug|info|warning|error`); the Log tab filters client-side by minimum severity |
 | GET | `/api/admin/backups` | List DB backup snapshots `[{name, size, modified}]`, newest first. Surfaced in the advanced-mode Backup tab |
 | POST | `/api/admin/backups/restore` | Restore the DB from a snapshot. Body: `{name}`. Replaces the live DB (saves a `docintell.db.pre-restore` copy first); 400 on unknown/invalid name |
 

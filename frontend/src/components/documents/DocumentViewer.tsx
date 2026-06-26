@@ -184,7 +184,9 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
   const vParam = doc.updated_at ? new Date(doc.updated_at).getTime() : "";
   const docUrl = `/api/documents/${doc.id}/download?inline=1${vParam ? `&v=${vParam}` : ""}`;
-  const thumbUrl = doc.thumbnail_path ? `/thumbnails/${doc.id}.jpg${vParam ? `?v=${vParam}` : ""}` : null;
+  const thumbUrl = doc.thumbnail_path
+    ? `/thumbnails/${doc.thumbnail_path.split(/[/\\]/).pop()}${vParam ? `?v=${vParam}` : ""}`
+    : null;
   // Original for images, thumbnail as fallback for other types (e.g. Word docs)
   const imgSrc = isImageMime ? docUrl : thumbUrl;
 

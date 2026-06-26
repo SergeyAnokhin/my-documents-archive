@@ -38,11 +38,15 @@ Both run on the local home network; all access is via browser.
 ```
 Step 1 — OCR         extract text (local Tesseract or external compute worker)
 Step 2 — Thumbnail   generate JPEG preview (Pillow / pdf2image)
-Step 3 — AI Vision   describe image with vision model (optional, toggle in Admin)
+Step 3 — AI Vision   send first page to vision model (optional, toggle in Admin)
            └─ picks first vision-capable provider; skips if disabled or none
+           └─ capable models (Anthropic/OpenAI/Gemini/OpenRouter) use VISION_FULL_PROMPT
+              and return text + ALL analysis fields as one JSON → Step 4 is skipped
+           └─ Mistral OCR returns plain transcription only → Step 4 still runs
 Step 4 — AI Analysis summary + tags + type + language + org + amount
            └─ uses OCR text + vision description (if available)
            └─ picks first enabled AIProvider from DB; skips if none configured
+           └─ skipped entirely when Step 3 already produced structured fields
 Step 5 — Embedding   generate multilingual vector → ChromaDB (sentence-transformers)
            └─ enables semantic and hybrid search modes
 ```
@@ -50,6 +54,9 @@ Step 5 — Embedding   generate multilingual vector → ChromaDB (sentence-trans
 Each step stores its status (`pending/done/skipped/error`) in `Document`.
 Steps 1, 3, 4 can be re-run independently via `/api/indexing/` endpoints.
 Cost tracked in `api_cost_vision` and `api_cost_analysis` (USD).
+Each log row carries a `level` (`trace|debug|info|warning|error`); the Admin Log tab
+filters by minimum severity. Step boundaries are `trace`, skips are `debug`, the
+combined vision-analysis result is `info`, failures are `error`.
 Embeddings model: `paraphrase-multilingual-MiniLM-L12-v2` (local, ~420 MB).
 
 ## Storage Layout

@@ -21,7 +21,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `main.py` | FastAPI app factory, CORS, startup hooks, thumbnail static mount |
 | `config.py` | All settings (pydantic-settings); `settings` singleton |
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
-| `models.py` | ORM models: `Document`, `WatchedFolder`, `IndexingLog`, `AIProvider`, `AppSettings` |
+| `models.py` | ORM models: `Document` (incl. `source` = `"upload"`/`"sync"`), `WatchedFolder`, `IndexingLog` (incl. `level` = `trace`/`debug`/`info`/`warning`/`error`), `AIProvider`, `AppSettings` |
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
@@ -33,7 +33,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `routers/admin_settings.py` | App settings key-value get/upsert (`/settings`) |
 | `routers/admin_backups.py` | DB backup list + restore (advanced users): `GET /backups`, `POST /backups/restore` |
 | `services/db_backup.py` | List/restore SQLite backups written by the `backup.py` sidecar; restore = atomic swap + `docintell.db.pre-restore` safety snapshot |
-| `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
+| `services/storage.py` | File hashing, MIME detection, library scanning (skips `.docintell`/hidden dirs), saving uploads to `YYYY/MM/`. `infer_document_date()`/`extract_folder_date()` guess a doc date from path (`[YYYY-MM]`, `YYYY/MM/`, `YYYY-MM/`) or file ctime. `check_library_accessible()` — sentinel check (`.docintell` dir) used to abort sync when the disk is offline |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain). `extract_text()` returns `(text, engine)`; the indexer stores `engine` (`tesseract`/`easyocr`) in `documents.ocr_model` for per-doc engine attribution |
 | `services/ai_analysis.py` | AI Analysis: produces summary, document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy: 30+ slugs (`passport`, `birth_certificate`, `contract`, `invoice`, `diploma`, … `unclassified`). Also exposes `suggest_document_types(summary, ocr_text, existing_types, db)` → top-3 suggestions for the UI picker. |
@@ -82,7 +82,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Type badge renders `TypePicker` |
 | `components/documents/TypePicker.tsx` | Inline type picker on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type (+ `formatTypeName`) |
 | `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
-| `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify / "Classify unclassified" buttons (incl. `StatCard`). Shows `unclassified` count as a danger card. |
+| `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify / "Classify unclassified" buttons (incl. `StatCard`). Shows `unclassified` count as a danger card, the resolved `library_path`, and the last sync's added/removed counts. |
 | `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
 | `components/admin/tabs/AITab.tsx` | **Shell** for the AI tab: Vision toggle, Update Ratings, three `ProviderSection`s (Analysis / Vision / Premium-Judge). Sub-components live in `tabs/ai/` |
 | `components/admin/tabs/ai/aiUtils.ts` | Constants + formatters (`fmtTokens`, `blendedPrice`, …) + `lookupModelRating` + add-form name helpers |
@@ -92,7 +92,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/admin/tabs/ai/ProviderRow.tsx` | One provider row: reorder, inline model edit, settings, toggle, delete |
 | `components/admin/tabs/ai/ProviderSettingsPanel.tsx` | Per-provider fine-tuning (Mistral image policy; temperature/max_tokens for chat) |
 | `components/admin/tabs/ai/ProviderSection.tsx` | Section wrapper: provider list + add form for one task type |
-| `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
+| `components/admin/tabs/LogTab.tsx` | Recent indexing log entries with a minimum-severity filter (`trace`→`error`) over each row's `level` |
 | `components/admin/tabs/BackupTab.tsx` | DB backups list + restore. **Advanced-mode-only** tab (gated in `AdminPanel.tsx`) |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
@@ -142,7 +142,10 @@ User uploads file
   → thumbnails.generate_thumbnail() [synchronous, before response]
   → BackgroundTasks: indexer.index_document(doc_id)
       → services/ocr.py: Tesseract or external worker
+      → services/ai_vision.py (if enabled): capable model returns text + all analysis
+        fields in one JSON → indexer applies them and SKIPS analysis below
       → services/ai_analysis.py: Anthropic/OpenAI/Gemini/... → summary, tags, type, lang, org, amount
+        (skipped when vision already produced structured fields)
       → Document updated (analysis_status=done or skipped if no provider)
 
 User searches
@@ -152,9 +155,12 @@ User searches
 
 Admin sync
   → POST /api/admin/sync
-  → storage.scan_library_for_new_files()
-  → new Document rows inserted
+  → storage.check_library_accessible()  ── 503 abort if disk offline (no deletes)
+  → hard-delete docs whose file is missing or inside .docintell (+ their thumbnails)
+  → storage.scan_library_for_new_files()  (skips .docintell + hidden dirs)
+  → new Document rows inserted (source="sync", date via infer_document_date())
   → BackgroundTasks: index_document() for each new file
+  → SyncResponse {found, new_files, removed}
 
 Admin reclassify
   → POST /api/admin/reclassify-all
@@ -197,3 +203,6 @@ Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and sup
 - **Compute worker native crash (Windows+conda)**: On miniforge/miniconda, `import easyocr` → `from skimage import io` triggers an OpenBLAS vs MKL DLL conflict when torch (MKL-linked) is already loaded. Exit code `3228369023` (STATUS_ACCESS_VIOLATION), NOT catchable by `except Exception`. Fix: `pip install numpy scipy scikit-image --force-reinstall`. The worker uses `_probe()` (subprocess) at startup to survive this crash in the probe itself. See [compute-worker.md](compute-worker.md).
 - **Classification fields**: `Document` has three classification-tracking columns added in Phase 9: `classification_confidence` (float, LLM self-reported), `classification_source` (`"auto"`/`"manual"`), `manually_classified` (bool). Docs with `manually_classified=True` are skipped by `reclassify_unclassified_batch()` but are re-classified if the user explicitly clicks "Re-classify" in dev mode (`reclassify_document()` resets the flag).
 - **`unclassified` vs `other`**: the LLM prompt no longer outputs `"other"` — it outputs `"unclassified"`. Old documents may still have `"other"`; all batch jobs and stats queries treat them identically.
+- **Vision can replace Analysis**: for capable providers (Anthropic/OpenAI/Gemini/OpenRouter) Step 3 uses `VISION_FULL_PROMPT` and returns the transcription **plus** every analysis field as one JSON. `indexer._apply_vision_fields()` writes them and sets `analysis_status="done"`, so Step 4 never runs — one API call instead of two. Only **Mistral OCR** (plain transcription) still triggers a separate Analysis step.
+- **Sync is now hard-delete**: `/api/admin/sync` `db.delete()`s missing/phantom docs (the old `is_deleted` soft-delete is migrated away — sync also purges any leftover `is_deleted=True` rows). It refuses to run (HTTP 503) if `check_library_accessible()` fails, so an unmounted NAS can't empty the library.
+- **Log levels**: every `IndexingLog` row has `level` (`trace|debug|info|warning|error`). The `_log()` helpers default to `info`; pass `level=` to override. The Admin Log tab filters by minimum severity client-side.
