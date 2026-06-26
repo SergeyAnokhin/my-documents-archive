@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ZoomIn, ZoomOut, Maximize, Maximize2, Play, X, Scale, Trophy,
-  Terminal, Save, Scissors, Eye, Check,
+  ArrowLeft, ZoomIn, ZoomOut, Maximize, Play, Scale,
+  Terminal, Scissors, Eye, Check,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
@@ -12,61 +12,16 @@ import {
   getLabImageInfo, previewLabTransform, applyLabTransform,
 } from "../api/documents";
 import type {
-  Document, AIProvider, LabMethods, LabResult, LabJudgeResult, ExtractedFields,
+  Document, AIProvider, LabMethods, LabResult, LabJudgeResult,
   LabImageInfo, LabPreviewResult, LabTransformParams,
 } from "../types";
+import { formatMs, formatFileSize, VISION_CAPABLE, uid } from "./lab/labUtils";
+import { useLogs } from "./lab/useLogs";
+import { usePanelResize } from "./lab/usePanelResize";
+import { ResultsList } from "./lab/ResultsList";
+import { JudgePanel } from "./lab/JudgePanel";
+import { FloatingTextModal } from "./lab/FloatingTextModal";
 import "./LabPage.css";
-
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${ms} ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
-  const min = Math.floor(ms / 60000);
-  const sec = Math.round((ms % 60000) / 1000);
-  return `${min} min ${sec} s`;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function FieldChips({ fields }: { fields: ExtractedFields }) {
-  const chips: { key: string; value: string }[] = [];
-  if (fields.document_type) chips.push({ key: "type", value: fields.document_type.replace(/_/g, " ") });
-  if (fields.document_date) chips.push({ key: "date", value: fields.document_date });
-  const name = [fields.person_first_name, fields.person_last_name].filter(Boolean).join(" ");
-  if (name) chips.push({ key: "person", value: name });
-  if (fields.organization) chips.push({ key: "org", value: fields.organization });
-  if (fields.amount != null) {
-    const amt = fields.amount_currency ? `${fields.amount} ${fields.amount_currency}` : String(fields.amount);
-    chips.push({ key: "amount", value: amt });
-  }
-  if (fields.language) chips.push({ key: "lang", value: fields.language });
-  if (chips.length === 0) return null;
-  return (
-    <div className="lab-field-chips">
-      {chips.map(c => (
-        <span key={c.key} className={`lab-field-chip lab-field-chip--${c.key}`} title={c.key}>
-          {c.value}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter", "mistral"];
-
-function uid() {
-  return Math.random().toString(36).slice(2);
-}
-
-interface LogLine {
-  id: string;
-  ts: string;
-  msg: string;
-  kind: "info" | "ok" | "err";
-}
 
 export function LabPage() {
   const { t, lang } = useT();
@@ -121,26 +76,7 @@ export function LabPage() {
   const cropStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // ── Panel resize ─────────────────────────────────────────────────────────────
-  const [panelWidth, setPanelWidth] = useState(() => {
-    try {
-      const v = localStorage.getItem("lab-panel-width");
-      if (v) return Math.max(300, Math.min(900, Number(v)));
-    } catch {}
-    return 440;
-  });
-  const panelWidthRef = useRef(panelWidth);
-  const isResizing = useRef(false);
-  const resizeStartX = useRef(0);
-  const resizeStartWidth = useRef(panelWidth);
-
-  useEffect(() => { panelWidthRef.current = panelWidth; }, [panelWidth]);
-
-  const onResizerDown = (e: React.MouseEvent) => {
-    isResizing.current = true;
-    resizeStartX.current = e.clientX;
-    resizeStartWidth.current = panelWidth;
-    e.preventDefault();
-  };
+  const { panelWidth, onResizerDown } = usePanelResize();
 
   // ── Floating text modal ──────────────────────────────────────────────────────
   const [expandedResult, setExpandedResult] = useState<LabResult | null>(null);
@@ -152,13 +88,9 @@ export function LabPage() {
     e.preventDefault();
   };
 
-  // ── Global mouse handlers ────────────────────────────────────────────────────
+  // ── Global mouse handlers (modal drag, canvas pan, crop) ─────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (isResizing.current) {
-        const dx = resizeStartX.current - e.clientX;
-        setPanelWidth(Math.max(300, Math.min(900, resizeStartWidth.current + dx)));
-      }
       if (modalDragStart.current) {
         const dx = e.clientX - modalDragStart.current.mx;
         const dy = e.clientY - modalDragStart.current.my;
@@ -192,10 +124,6 @@ export function LabPage() {
       }
     };
     const onUp = () => {
-      if (isResizing.current) {
-        try { localStorage.setItem("lab-panel-width", String(panelWidthRef.current)); } catch {}
-      }
-      isResizing.current = false;
       modalDragStart.current = null;
       if (canvasPanStartRef.current && canvasRef.current) {
         delete canvasRef.current.dataset.panning;
@@ -240,18 +168,7 @@ export function LabPage() {
   }, []);
 
   // ── Logs ─────────────────────────────────────────────────────────────────────
-  const [logs, setLogs] = useState<LogLine[]>([]);
-  const [showLogs, setShowLogs] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-
-  const addLog = (msg: string, kind: LogLine["kind"] = "info") => {
-    const ts = new Date().toLocaleTimeString("ru-RU", { hour12: false });
-    setLogs(prev => [...prev, { id: uid(), ts, msg, kind }]);
-  };
-
-  useEffect(() => {
-    if (showLogs) logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs, showLogs]);
+  const { logs, showLogs, setShowLogs, addLog, clearLogs, logsEndRef } = useLogs();
 
   // ── Data loading ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -707,7 +624,7 @@ export function LabPage() {
             <div className="lab-logs-panel">
               <div className="lab-logs-header">
                 <span>{lab.logs}</span>
-                <button className="lab-logs-clear" onClick={() => setLogs([])}>{lab.clearLogs}</button>
+                <button className="lab-logs-clear" onClick={clearLogs}>{lab.clearLogs}</button>
               </div>
               <div className="lab-logs-body">
                 {logs.length === 0 ? (
@@ -781,213 +698,48 @@ export function LabPage() {
           {/* Results */}
           <section className="lab-section">
             <h3 className="lab-section-title">{t.recognizedText}</h3>
-            {results.length === 0 ? (
-              <p className="text-xs text-muted">{lab.emptyResults}</p>
-            ) : (
-              <div className="lab-results">
-                {results.map(r => {
-                  const isBest = bestLabels.has(r.label);
-                  const isSaving = savingId === r.id;
-                  const isSaved = savedId === r.id;
-                  return (
-                    <div key={r.id} className={`lab-card${isBest ? " best" : ""}`}>
-                      <div className="lab-card-head">
-                        <span className={`lab-kind ${r.kind}`}>{r.kind === "ocr" ? "OCR" : "AI"}</span>
-                        <span className="lab-card-label">{r.label}</span>
-                        {isBest && <Trophy size={13} className="lab-best-icon" />}
-                        <span className="lab-card-meta">
-                          {r.text.length} {lab.chars} · {formatMs(r.ms)}
-                          {(r.tokens_in != null && r.tokens_in > 0) ? ` · ${r.tokens_in}↑${r.tokens_out}↓ tok` : ""}
-                          {r.cost != null && r.cost > 0 ? ` · $${r.cost.toFixed(5)}` : ""}
-                        </span>
-                        <button
-                          className={`icon-btn lab-save-btn${isSaved ? " saved" : ""}`}
-                          title={isSaved ? lab.saved : lab.saveResult}
-                          disabled={isSaving}
-                          onClick={() => handleSave(r)}
-                        >
-                          <Save size={13} />
-                        </button>
-                        <button className="icon-btn" title={lab.expand}
-                          onClick={() => { setExpandedResult(r); setModalPos({ x: 24, y: 80 }); }}>
-                          <Maximize2 size={13} />
-                        </button>
-                        <button className="icon-btn" title={lab.remove}
-                          onClick={() => setResults(prev => prev.filter(x => x.id !== r.id))}>
-                          <X size={13} />
-                        </button>
-                      </div>
-                      {r.fields && Object.keys(r.fields).length > 0 && (
-                        <FieldChips fields={r.fields} />
-                      )}
-                      <pre className="lab-card-text">{r.text || "—"}</pre>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <ResultsList
+              results={results}
+              bestLabels={bestLabels}
+              savingId={savingId}
+              savedId={savedId}
+              onSave={handleSave}
+              onExpand={r => { setExpandedResult(r); setModalPos({ x: 24, y: 80 }); }}
+              onRemove={id => setResults(prev => prev.filter(x => x.id !== id))}
+            />
           </section>
 
           {/* Judge */}
           <section className="lab-section">
             <h3 className="lab-section-title"><Scale size={14} /> {lab.judge}</h3>
-            {premiumProviders.length === 0 ? (
-              <p className="text-xs text-muted">{lab.noPremium}</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted" style={{ marginBottom: 8 }}>{lab.judgeHint}</p>
-                <div className="lab-judge-list">
-                  {premiumProviders.map(p => {
-                    const hasVision = VISION_CAPABLE.includes(p.provider_type);
-                    const isChecked = judgeProviders.includes(p.id);
-                    const isRunning = judgingIds.includes(p.id);
-                    return (
-                      <label key={p.id} className="lab-judge-item">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={e => setJudgeProviders(prev =>
-                            e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id),
-                          )}
-                        />
-                        <span className={`lab-capability-badge ${hasVision ? "vision" : "text"}`}>
-                          {hasVision ? t.admin.ai.visionBadge : lab.textBadge}
-                        </span>
-                        <span className="lab-judge-name">{p.name}</span>
-                        {isRunning && <span className="lab-judge-running">…</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <Button
-                  variant="primary" size="sm"
-                  icon={<Scale size={14} />}
-                  loading={judgingIds.length > 0}
-                  disabled={results.length < 2 || judgeProviders.length === 0}
-                  onClick={handleJudge}
-                  style={{ marginTop: 8 }}
-                >
-                  {judgingIds.length > 0 ? lab.comparing : lab.compare}
-                </Button>
-                {results.length < 2 && <p className="text-xs text-muted" style={{ marginTop: 6 }}>{lab.needTwo}</p>}
-
-                {premiumProviders
-                  .filter(p => judgeResults[p.id] || judgeErrors[p.id])
-                  .map(p => {
-                    const result = judgeResults[p.id];
-                    const error = judgeErrors[p.id];
-                    const hasVision = VISION_CAPABLE.includes(p.provider_type);
-                    return (
-                      <div key={p.id}>
-                        <div className="lab-verdict-judge-header">
-                          <span className={`lab-capability-badge ${hasVision ? "vision" : "text"}`}>
-                            {hasVision ? t.admin.ai.visionBadge : lab.textBadge}
-                          </span>
-                          <span>{p.name}</span>
-                        </div>
-                        {error && (
-                          <p className="text-xs" style={{ color: "var(--color-error)", marginTop: 4 }}>{error}</p>
-                        )}
-                        {result && (
-                          <div className="lab-verdict">
-                            <div className="lab-verdict-best">
-                              <Trophy size={15} /> {lab.best}: <strong>{result.best}</strong>
-                            </div>
-                            {result.summary && <p className="lab-verdict-summary">{result.summary}</p>}
-                            <ul className="lab-verdict-list">
-                              {result.rankings.map((rk, i) => (
-                                <li key={i} className="lab-verdict-item">
-                                  <span className="lab-verdict-score">{rk.score}</span>
-                                  <span className="lab-verdict-label">{rk.label}</span>
-                                  <span className="lab-verdict-comment text-muted">{rk.comment}</span>
-                                </li>
-                              ))}
-                            </ul>
-                            {result.fields && Object.keys(result.fields).length > 0 && (
-                              <div style={{ marginTop: 8 }}>
-                                <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.judgeFields}</p>
-                                <FieldChips fields={result.fields} />
-                              </div>
-                            )}
-                            {(result.corrected || result.fields) && (
-                              <div style={{ marginTop: 10 }}>
-                                {result.corrected && (
-                                  <>
-                                    <p className="text-xs text-muted" style={{ marginBottom: 4 }}>{lab.corrected}</p>
-                                    <pre className="lab-card-text" style={{ height: 120 }}>{result.corrected}</pre>
-                                  </>
-                                )}
-                                <div style={{ marginTop: 6 }}>
-                                  {(() => {
-                                    const fakeId = `judge-${p.id}`;
-                                    const isSaving = savingId === fakeId;
-                                    const isSaved = savedId === fakeId;
-                                    return (
-                                      <button
-                                        className={`lab-save-btn-inline${isSaved ? " saved" : ""}`}
-                                        title={isSaved ? lab.saved : lab.saveResult}
-                                        disabled={isSaving || (!result.corrected && !result.fields)}
-                                        onClick={() => handleSaveJudge(p.id, p.name, result)}
-                                      >
-                                        <Save size={12} />
-                                        {isSaved ? lab.saved : isSaving ? lab.saving : lab.saveResult}
-                                      </button>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            )}
-                            <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                              {formatMs(result.ms)}
-                              {result.tokens_in ? ` · ${result.tokens_in}↑${result.tokens_out}↓ tok` : ""}
-                              {result.cost > 0 ? ` · $${result.cost.toFixed(5)}` : ""}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </>
-            )}
+            <JudgePanel
+              premiumProviders={premiumProviders}
+              judgeProviders={judgeProviders}
+              setJudgeProviders={setJudgeProviders}
+              judgingIds={judgingIds}
+              judgeResults={judgeResults}
+              judgeErrors={judgeErrors}
+              resultsCount={results.length}
+              savingId={savingId}
+              savedId={savedId}
+              onJudge={handleJudge}
+              onSaveJudge={handleSaveJudge}
+            />
           </section>
         </aside>
       </div>
 
       {/* Floating text modal */}
       {expandedResult && (
-        <div className="lab-float-modal" style={{ left: modalPos.x, top: modalPos.y }}>
-          <div className="lab-float-header" onMouseDown={e => onModalDragStart(e, modalPos)}>
-            <span className={`lab-kind ${expandedResult.kind}`}>
-              {expandedResult.kind === "ocr" ? "OCR" : "AI"}
-            </span>
-            <span className="lab-float-label">{expandedResult.label}</span>
-            <span className="lab-float-time text-muted">{formatMs(expandedResult.ms)}</span>
-            {(() => {
-              const isSaving = savingId === expandedResult.id;
-              const isSaved = savedId === expandedResult.id;
-              return (
-                <button
-                  className={`icon-btn lab-save-btn${isSaved ? " saved" : ""}`}
-                  title={isSaved ? lab.saved : lab.saveResult}
-                  disabled={isSaving}
-                  onClick={() => handleSave(expandedResult)}
-                >
-                  <Save size={13} />
-                </button>
-              );
-            })()}
-            <button className="icon-btn" onClick={() => setExpandedResult(null)} title={lab.remove}>
-              <X size={13} />
-            </button>
-          </div>
-          {expandedResult.fields && Object.keys(expandedResult.fields).length > 0 && (
-            <div className="lab-float-fields">
-              <FieldChips fields={expandedResult.fields} />
-            </div>
-          )}
-          <pre className="lab-float-text">{expandedResult.text || "—"}</pre>
-        </div>
+        <FloatingTextModal
+          result={expandedResult}
+          pos={modalPos}
+          savingId={savingId}
+          savedId={savedId}
+          onDragStart={onModalDragStart}
+          onSave={handleSave}
+          onClose={() => setExpandedResult(null)}
+        />
       )}
     </div>
   );

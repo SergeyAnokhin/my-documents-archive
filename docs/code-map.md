@@ -24,7 +24,11 @@ docs/             Architecture docs (you are here)
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
 | `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
-| `routers/admin.py` | Stats, sync, watched folders, AI providers, log — prefix `/api/admin` |
+| `routers/admin.py` | **Aggregator** — mounts the four `admin_*` sub-routers under prefix `/api/admin`. Start here, then jump to the right sub-router below |
+| `routers/admin_library.py` | Stats, sync, batch-index, reclassify-all/unclassified, log (+ `_log` helper) |
+| `routers/admin_folders.py` | Watched-folder CRUD: list / add / remove / toggle |
+| `routers/admin_providers.py` | AI providers CRUD, model listing (`/models`), arena ratings (`/arena-ratings`) |
+| `routers/admin_settings.py` | App settings key-value get/upsert (`/settings`) |
 | `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
@@ -32,6 +36,8 @@ docs/             Architecture docs (you are here)
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini/OpenRouter + **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing, returns verbatim transcription). Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. Mistral also supports text models (OpenAI-compat) for analysis. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
+| `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
+| `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
 | `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
@@ -62,20 +68,36 @@ docs/             Architecture docs (you are here)
 | `components/ui/Button.tsx` | Button component (primary/secondary/ghost/danger, sizes) |
 | `components/ui/Modal.tsx` | Accessible modal overlay |
 | `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid/ask) + voice input (Web Speech API, language follows UI lang) + year/language quick-filter chips |
+| `components/search/FilterDropdown.tsx` | Reusable filter dropdown used by the search toolbar |
 | `components/search/AIAnswer.tsx` | AI Q&A result card: answer text + source document list |
 | `components/documents/DocumentCard.tsx` | List row and grid tile rendering |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |
-| `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Inline `TypePicker` component on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type. |
+| `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Type badge renders `TypePicker` |
+| `components/documents/TypePicker.tsx` | Inline type picker on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type (+ `formatTypeName`) |
 | `components/admin/AdminPanel.tsx` | Admin modal **shell**: sidebar tabs, renders one tab component |
 | `components/admin/tabs/IndexingTab.tsx` | Stats grid + Sync / Batch / Re-classify / "Classify unclassified" buttons (incl. `StatCard`). Shows `unclassified` count as a danger card. |
 | `components/admin/tabs/SourcesTab.tsx` | Watched-folder list: add / remove / toggle |
-| `components/admin/tabs/AITab.tsx` | AI providers CRUD + Vision toggle. Three sections: Analysis, Vision, Premium (Judge). Providers support inline model editing (pencil icon fetches models via stored API key). Mistral supports OCR + text models. |
+| `components/admin/tabs/AITab.tsx` | **Shell** for the AI tab: Vision toggle, Update Ratings, three `ProviderSection`s (Analysis / Vision / Premium-Judge). Sub-components live in `tabs/ai/` |
+| `components/admin/tabs/ai/aiUtils.ts` | Constants + formatters (`fmtTokens`, `blendedPrice`, …) + `lookupModelRating` + add-form name helpers |
+| `components/admin/tabs/ai/ModelPicker.tsx` | Searchable/sortable model list with ratings & pricing |
+| `components/admin/tabs/ai/RatingStars.tsx` | Star display for a model's arena rating |
+| `components/admin/tabs/ai/AddProviderForm.tsx` | Add-provider form: pick type/key, fetch models, save |
+| `components/admin/tabs/ai/ProviderRow.tsx` | One provider row: reorder, inline model edit, settings, toggle, delete |
+| `components/admin/tabs/ai/ProviderSettingsPanel.tsx` | Per-provider fine-tuning (Mistral image policy; temperature/max_tokens for chat) |
+| `components/admin/tabs/ai/ProviderSection.tsx` | Section wrapper: provider list + add form for one task type |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
 | `pages/HomePage.tsx` | Main page: hero search, toolbar, document grid/list |
-| `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`): document on left, OCR/vision/judge experiments on right. See [lab-mode.md](lab-mode.md) |
+| `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`) **orchestrator**: document viewer (zoom/pan/crop/transform) + OCR/vision/judge handlers. Presentational pieces live in `pages/lab/`. See [lab-mode.md](lab-mode.md) |
+| `pages/lab/labUtils.ts` | `formatMs`, `formatFileSize`, `uid`, `VISION_CAPABLE` |
+| `pages/lab/useLogs.ts` | Activity-log hook (append + auto-scroll) for the panel |
+| `pages/lab/usePanelResize.ts` | Draggable right-panel width hook (persists to localStorage) |
+| `pages/lab/FieldChips.tsx` | Chips summarising extracted structured fields |
+| `pages/lab/ResultsList.tsx` | List of OCR/vision results with save/expand/remove |
+| `pages/lab/JudgePanel.tsx` | Premium "judge" section: pick providers, compare, verdicts |
+| `pages/lab/FloatingTextModal.tsx` | Draggable floating modal showing one result's full text |
 
 ## Key Data Flow
 

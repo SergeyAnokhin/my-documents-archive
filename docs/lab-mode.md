@@ -66,7 +66,8 @@ transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summa
 |------|---------------|
 | [`backend/app/services/lab.py`](../backend/app/services/lab.py) | OCR/vision/judge logic; prompts `OCR_VISION_PROMPT`, `JUDGE_SYSTEM`; `_parse_json` |
 | [`backend/app/routers/lab.py`](../backend/app/routers/lab.py) | `/api/lab/*` endpoints |
-| [`frontend/src/pages/LabPage.tsx`](../frontend/src/pages/LabPage.tsx) | The screen; route `/lab/:id` |
+| [`frontend/src/pages/LabPage.tsx`](../frontend/src/pages/LabPage.tsx) | The screen orchestrator; route `/lab/:id` (zoom/pan/crop/transform + OCR/vision/judge handlers) |
+| [`frontend/src/pages/lab/`](../frontend/src/pages/lab/) | Extracted pieces: `labUtils.ts`, `useLogs.ts`, `usePanelResize.ts`, `FieldChips.tsx`, `ResultsList.tsx`, `JudgePanel.tsx`, `FloatingTextModal.tsx` |
 
 The lab reuses provider-call plumbing via two public helpers added to the pipeline
 services (prompt/system are now parameters):
