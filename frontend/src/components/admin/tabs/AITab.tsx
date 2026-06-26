@@ -87,10 +87,15 @@ export function AITab() {
           <span className="provider-name">{ai.enableVision}</span>
           <p className="text-xs text-muted" style={{ marginTop: 2 }}>{ai.visionHint}</p>
         </div>
-        <button className="icon-btn" onClick={handleVisionToggle} disabled={togglingVision}
-          title={visionEnabled ? t.enabled : t.disabled}>
-          <span className={`status-dot ${visionEnabled ? "done" : "pending"}`} />
-        </button>
+        <label className="toggle-switch" title={visionEnabled ? t.enabled : t.disabled}>
+          <input
+            type="checkbox"
+            checked={visionEnabled}
+            onChange={handleVisionToggle}
+            disabled={togglingVision}
+          />
+          <span className="toggle-slider" />
+        </label>
       </div>
 
       {/* Analysis providers */}

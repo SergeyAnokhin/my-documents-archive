@@ -1,4 +1,6 @@
 """Library/indexing admin endpoints: stats, sync, batch jobs, log."""
+from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -6,8 +8,8 @@ from sqlalchemy import func, or_
 from ..database import get_db
 from ..models import Document, IndexingLog
 from ..schemas import IndexingStats, LogEntry, SyncResponse
-from ..services.storage import scan_library_for_new_files, compute_file_hash, guess_mime
-from ..services.thumbnails import generate_thumbnail
+from ..services.storage import scan_library_for_new_files, compute_file_hash, guess_mime, infer_document_date
+from ..services.thumbnails import generate_thumbnail, cleanup_orphan_thumbnails
 from ..services.indexer import (
     index_document,
     index_pending_batch,
@@ -65,6 +67,34 @@ def get_stats(db: Session = Depends(get_db)):
 
 @router.post("/sync", response_model=SyncResponse)
 def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Step 1 — remove docs whose files are gone or located inside .docintell
+    # (.docintell contains thumbnails/DB/Chroma — never user documents; they got
+    # added by a previous bug in scan_library_for_new_files)
+    from ..services.storage import get_library_path
+    docintell_dir = get_library_path() / ".docintell"
+
+    removed = 0
+    for doc in db.query(Document).filter(Document.is_deleted == False).all():
+        fp = Path(doc.filepath)
+        missing = not fp.exists()
+        phantom = fp.is_relative_to(docintell_dir)
+        if missing or phantom:
+            # Delete the thumbnail file immediately so it doesn't linger
+            if doc.thumbnail_path:
+                try:
+                    Path(doc.thumbnail_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            doc.is_deleted = True
+            removed += 1
+            reason = "phantom (.docintell)" if phantom else "file missing on disk"
+            _log(db, step="sync", status="done",
+                 message=f"Removed ({reason}): {doc.filename}",
+                 document_id=doc.id)
+    if removed:
+        db.commit()
+
+    # Step 2 — discover new files on disk
     known = {d.filepath for d in db.query(Document.filepath).filter(Document.is_deleted == False)}
     new_paths = scan_library_for_new_files(known)
 
@@ -82,6 +112,7 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
                 file_hash=file_hash,
                 file_size=p.stat().st_size,
                 mime_type=mime,
+                document_date=infer_document_date(p),
             )
             db.add(doc)
             db.flush()
@@ -95,12 +126,43 @@ def sync_library(background_tasks: BackgroundTasks, db: Session = Depends(get_db
 
     db.commit()
 
-    # Queue OCR for every newly discovered document
+    # Step 3 — backfill document_date for existing docs that still have none
+    backfilled = 0
+    for doc in db.query(Document).filter(
+        Document.is_deleted == False,
+        Document.document_date.is_(None),
+    ).all():
+        inferred = infer_document_date(Path(doc.filepath))
+        if inferred:
+            doc.document_date = inferred
+            backfilled += 1
+    if backfilled:
+        db.commit()
+
+    # Step 4 — queue OCR for every newly discovered document
     for doc_id in new_ids:
         background_tasks.add_task(index_document, doc_id)
 
-    _log(db, step="sync", status="done", message=f"Found {len(new_paths)} new files, added {added}")
-    return SyncResponse(found=len(new_paths), new_files=added, message=f"Added {added} new documents")
+    # Step 5 — remove thumbnail files that no active document references
+    active_thumbs = {
+        doc.thumbnail_path
+        for doc in db.query(Document).filter(
+            Document.is_deleted == False,
+            Document.thumbnail_path.isnot(None),
+        ).all()
+        if doc.thumbnail_path
+    }
+    thumbs_cleaned = cleanup_orphan_thumbnails(active_thumbs)
+
+    parts = [f"Found {len(new_paths)} new files, added {added}"]
+    if removed:
+        parts.append(f"removed {removed} missing")
+    if backfilled:
+        parts.append(f"backfilled dates for {backfilled}")
+    if thumbs_cleaned:
+        parts.append(f"cleaned {thumbs_cleaned} orphan thumbnail(s)")
+    _log(db, step="sync", status="done", message=", ".join(parts))
+    return SyncResponse(found=len(new_paths), new_files=added, removed=removed, message=", ".join(parts))
 
 
 # ── Batch indexing ───────────────────────────────────────────────────────────

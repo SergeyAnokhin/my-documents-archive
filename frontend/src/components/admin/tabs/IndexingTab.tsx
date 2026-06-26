@@ -14,6 +14,7 @@ export function IndexingTab() {
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyingUnclassified, setReclassifyingUnclassified] = useState(false);
   const [msg, setMsg] = useState("");
+  const [syncResult, setSyncResult] = useState<{ added: number; removed: number } | null>(null);
 
   // Compute worker settings
   const [workerUrl, setWorkerUrl] = useState("");
@@ -34,10 +35,12 @@ export function IndexingTab() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncResult(null);
     try {
       const res = await syncLibrary();
-      flash(t.syncSuccess.replace("{{new}}", String(res.new_files)));
+      setSyncResult({ added: res.new_files, removed: res.removed ?? 0 });
       await loadStats();
+      window.dispatchEvent(new CustomEvent("docintell:library-changed"));
     } catch (e: unknown) {
       flash(e instanceof Error ? e.message : t.error);
     } finally {
@@ -136,6 +139,22 @@ export function IndexingTab() {
       )}
 
       {msg && <p className="admin-msg">{msg}</p>}
+
+      {syncResult && (
+        <div className="sync-result">
+          <span className="sync-result-item sync-result-added">
+            +{syncResult.added} {t.syncAdded}
+          </span>
+          {syncResult.removed > 0 && (
+            <span className="sync-result-item sync-result-removed">
+              −{syncResult.removed} {t.syncRemoved}
+            </span>
+          )}
+          {syncResult.added === 0 && syncResult.removed === 0 && (
+            <span className="sync-result-item">{t.syncNoChanges}</span>
+          )}
+        </div>
+      )}
 
       <div className="admin-actions">
         <Button variant="primary" icon={<RefreshCw size={15} />} loading={syncing} onClick={handleSync}>

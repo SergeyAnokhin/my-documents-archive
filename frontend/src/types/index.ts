@@ -227,7 +227,9 @@ export type TaskType =
   | "sync_library"
   | "reclassify_unclassified"
   | "reclassify_all"
-  | "batch_ocr_mistral";
+  | "batch_ocr_mistral"
+  | "batch_ocr_gemini"
+  | "cleanup_missing";
 
 export interface Task {
   id: number;

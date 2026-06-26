@@ -1,11 +1,19 @@
 import hashlib
 import mimetypes
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ..config import settings
+
+# Matches [2024-03] style
+_BRACKET_DATE = re.compile(r"\[(\d{4})-(\d{2})\]")
+# Matches 2024/03/ or 2024\03\ (slash-separated sub-dirs)
+_SLASH_DATE   = re.compile(r"[/\\](\d{4})[/\\](\d{2})(?:[/\\]|$)")
+# Matches 2024-03 as a standalone path component (dir named YYYY-MM)
+_DASH_DIR     = re.compile(r"[/\\](\d{4})-(\d{2})(?:[/\\]|$)")
 
 SUPPORTED_MIME_TYPES = {
     "application/pdf",
@@ -80,11 +88,55 @@ def is_supported(path: Path) -> bool:
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
+def extract_folder_date(path: Path) -> Optional[datetime]:
+    """Return the 1st of the month encoded in the path.
+
+    Recognises: [YYYY-MM], YYYY/MM/, YYYY\\MM\\, and YYYY-MM/ (bare dir name).
+    """
+    s = str(path)
+    for pattern in (_BRACKET_DATE, _SLASH_DATE, _DASH_DIR):
+        m = pattern.search(s)
+        if m:
+            try:
+                return datetime(int(m.group(1)), int(m.group(2)), 1)
+            except ValueError:
+                pass
+    return None
+
+
+def infer_document_date(path: Path) -> Optional[datetime]:
+    """Best-guess document date from path and file metadata.
+
+    Priority (highest to lowest):
+      1. Folder date encoded in path (YYYY-MM, [YYYY-MM], YYYY/MM)
+      2. File creation time — only when it differs from today (copy artefacts ignored)
+    Returns None when nothing meaningful is found; UI then falls back to added_at.
+    """
+    folder_date = extract_folder_date(path)
+    if folder_date:
+        return folder_date
+    try:
+        ctime = datetime.fromtimestamp(path.stat().st_ctime)
+        if ctime.date() < datetime.now().date():
+            return ctime
+    except OSError:
+        pass
+    return None
+
+
 def scan_library_for_new_files(known_paths: set[str]) -> list[Path]:
-    """Walk the library directory and return paths not in known_paths."""
+    """Walk the library directory and return supported file paths not in known_paths.
+
+    Skips the .docintell sub-directory (thumbnails, DB, Chroma) and any other
+    dot-prefixed hidden directory so they are never mistaken for user documents.
+    """
     library = get_library_path()
+    docintell_dir = library / ".docintell"
     new_files: list[Path] = []
     for p in library.rglob("*"):
+        # Skip anything inside .docintell or other hidden dirs
+        if any(part.startswith(".") for part in p.parts[len(library.parts):]):
+            continue
         if p.is_file() and is_supported(p) and str(p) not in known_paths:
             new_files.append(p)
     return new_files

@@ -63,6 +63,14 @@
   white-space: nowrap;
 }
 
+/* Document-type (class) icon, far right of the list meta row */
+.doc-type-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-ink-faint);
+  flex-shrink: 0;
+}
+
 .doc-snippet {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -115,7 +123,64 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 8px; height: 8px;
+}
+/* Back the AI-recognition icon so it stays legible over a thumbnail */
+.doc-grid-status.proc-ai-ocr {
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Processing-tier indicator ─────────────────────────────────────────────── */
+.proc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.proc-dot { width: 7px; height: 7px; border-radius: 50%; }
+.proc-dot.pending   { background: var(--color-ink-faint); }
+.proc-dot.error     { background: var(--color-error); }
+.proc-dot.local,
+.proc-dot.tesseract { background: var(--color-success); }
+.proc-dot.easyocr   { background: var(--color-ocr-alt); }
+
+/* EasyOCR compute worker — teal CPU icon */
+.proc-easyocr { color: var(--color-ocr-alt); }
+/* Back the EasyOCR icon on the grid thumbnail */
+.doc-grid-status.proc-easyocr {
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* AI text recognition — violet glyph, no fill */
+.proc-ai-ocr { color: var(--color-ai); }
+
+/* Full AI analysis — filled gradient sparkle badge (the top tier) */
+.proc-analyzed {
+  width: 18px; height: 18px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-ai), var(--color-ai-edge));
+  box-shadow: var(--shadow-sm);
+}
+
+/* Document-type (class) icon badge, top-left of the grid thumbnail */
+.doc-grid-type-icon {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
 }
 
 .doc-grid-footer {

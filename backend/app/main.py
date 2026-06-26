@@ -44,17 +44,6 @@ def mount_thumbnails():
     app.mount("/thumbnails", StaticFiles(directory=str(thumb_dir)), name="thumbnails")
 
 
-@app.on_event("startup")
-def start_folder_watcher():
-    from .services.watcher import watcher
-    watcher.start()
-
-
-@app.on_event("shutdown")
-def stop_folder_watcher():
-    from .services.watcher import watcher
-    watcher.stop()
-
 
 @app.get("/api/health")
 def health():

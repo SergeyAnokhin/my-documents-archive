@@ -57,6 +57,9 @@ class Document(Base):
     # Which model produced the stored ocr_text (set from the OCR Lab "save" action)
     ocr_model = Column(String(256), nullable=True)
 
+    # How the document entered the library: "upload" (via UI) | "sync" (folder scan)
+    source = Column(String(16), default="sync")
+
     is_deleted = Column(Boolean, default=False)
 
 

@@ -169,6 +169,10 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await _reclassify_all(task_id, config)
         elif task_type == "batch_ocr_mistral":
             await _batch_ocr_mistral(task_id, config)
+        elif task_type == "batch_ocr_gemini":
+            await _batch_ocr_gemini(task_id, config)
+        elif task_type == "cleanup_missing":
+            await _cleanup_missing(task_id, config)
         else:
             _log(task_id, f"Unknown task type: {task_type}", "error")
             _finish(task_id, "error")
@@ -544,3 +548,347 @@ async def _batch_ocr_mistral(task_id: int, config: dict) -> None:
         f"Done — {processed} saved, {failed_count} failed, "
         f"cost ${total_cost:.5f} (batch discount applied)"
     ))
+
+
+# Transcribe-verbatim prompt — Gemini has no dedicated OCR endpoint, so we ask
+# the vision model to act like one and return only the raw text.
+GEMINI_OCR_PROMPT = (
+    "Transcribe ALL text from this document image verbatim. "
+    "Preserve the reading order, line breaks and tables as plain text / markdown. "
+    "Do not summarize, translate or add any commentary — output only the transcribed text."
+)
+
+GEMINI_BATCH_BASE = "https://generativelanguage.googleapis.com"
+
+
+async def _batch_ocr_gemini(task_id: int, config: dict) -> None:
+    """
+    Gemini Batch OCR — uses Google Gemini's Batch Mode (50 % cheaper, async).
+
+    Gemini has no dedicated OCR endpoint, so we send each document's first page
+    to a vision model with a verbatim-transcription prompt and store the result
+    in Document.ocr_text — the same target the Mistral batch writes to.
+
+    Flow (REST, mirrors `_batch_ocr_mistral`):
+      1. Load first page of each pending document as JPEG.
+      2. Build a JSONL file with inline-base64 generateContent requests.
+      3. Upload JSONL via the Files API (resumable upload).
+      4. Create a batch job (models/{model}:batchGenerateContent).
+      5. Poll every `poll_interval` seconds until JOB_STATE_SUCCEEDED.
+      6. Download the responses file and save OCR text back to each document.
+    """
+    import asyncio
+    import base64
+    import json
+
+    import httpx
+
+    from ..models import AIProvider
+    from ..services.ai_vision import load_first_page
+
+    limit = int(config.get("limit", 50))
+    provider_id = config.get("provider_id")
+    poll_interval = int(config.get("poll_interval", 300))
+
+    # ── 1. Resolve Gemini provider ───────────────────────────────────────────
+    db = SessionLocal()
+    try:
+        if provider_id:
+            provider = db.query(AIProvider).filter(
+                AIProvider.id == int(provider_id),
+                AIProvider.provider_type == "gemini",
+            ).first()
+        else:
+            provider = None
+
+        if not provider:
+            provider = db.query(AIProvider).filter(
+                AIProvider.provider_type == "gemini",
+                AIProvider.enabled == True,
+            ).order_by(AIProvider.sort_order).first()
+
+        if not provider:
+            _log(task_id, "No Gemini provider configured — add one in AI Settings", "error")
+            _finish(task_id, "error")
+            return
+
+        api_key = provider.api_key
+        model = provider.model or "gemini-2.5-flash"
+
+        # ── 2. Collect pending documents ─────────────────────────────────────
+        docs = (
+            db.query(Document)
+            .filter(Document.ocr_status == "pending", Document.is_deleted == False)
+            .limit(limit)
+            .all()
+        )
+        total = len(docs)
+    finally:
+        db.close()
+
+    if total == 0:
+        _log(task_id, "No pending documents found")
+        _finish(task_id, "done", {"processed": 0})
+        return
+
+    _log(task_id, f"Found {total} document(s) — model: {model}")
+    _set_progress(task_id, 0, total)
+
+    # ── 3. Build JSONL (inline base64) ───────────────────────────────────────
+    _log(task_id, "Loading document images…")
+    jsonl_lines: list[str] = []
+    doc_id_map: dict[str, int] = {}   # key (str doc.id) → doc.id
+
+    for i, doc in enumerate(docs):
+        if _is_stopped(task_id):
+            _log(task_id, f"Stopped during image loading after {i} document(s)")
+            return
+        try:
+            img_bytes = load_first_page(doc.filepath)
+            b64 = base64.b64encode(img_bytes).decode()
+            key = str(doc.id)
+            doc_id_map[key] = doc.id
+            jsonl_lines.append(json.dumps({
+                "key": key,
+                "request": {
+                    "contents": [{
+                        "parts": [
+                            {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+                            {"text": GEMINI_OCR_PROMPT},
+                        ],
+                    }],
+                    "generation_config": {"max_output_tokens": 8192},
+                },
+            }))
+            _log(task_id, f"✓ Loaded: {doc.filename}")
+        except Exception as exc:
+            _log(task_id, f"✗ {doc.filename}: cannot load image — {exc}", "error")
+        _set_progress(task_id, i + 1, total)
+
+    if not jsonl_lines:
+        _log(task_id, "No document images could be loaded", "error")
+        _finish(task_id, "error")
+        return
+
+    jsonl_bytes = ("\n".join(jsonl_lines)).encode()
+    key_header = {"x-goog-api-key": api_key}
+
+    # ── 4. Upload JSONL via Files API (resumable upload) ──────────────────────
+    _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+    async with httpx.AsyncClient(timeout=180) as client:
+        start_resp = await client.post(
+            f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
+            headers={
+                **key_header,
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
+                "X-Goog-Upload-Header-Content-Type": "application/jsonl",
+                "Content-Type": "application/json",
+            },
+            json={"file": {"display_name": f"docintel_ocr_{task_id}"}},
+        )
+        start_resp.raise_for_status()
+        upload_url = start_resp.headers.get("x-goog-upload-url")
+        if not upload_url:
+            _log(task_id, "Gemini did not return an upload URL", "error")
+            _finish(task_id, "error")
+            return
+
+        upload_resp = await client.post(
+            upload_url,
+            headers={
+                "Content-Length": str(len(jsonl_bytes)),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            },
+            content=jsonl_bytes,
+        )
+        upload_resp.raise_for_status()
+        input_file_name = upload_resp.json()["file"]["name"]   # files/xxxx
+
+    _log(task_id, f"Uploaded input file: {input_file_name}")
+
+    # ── 5. Create batch job ──────────────────────────────────────────────────
+    async with httpx.AsyncClient(timeout=60) as client:
+        batch_resp = await client.post(
+            f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
+            headers={**key_header, "Content-Type": "application/json"},
+            json={
+                "batch": {
+                    "display_name": f"docintel-ocr-{task_id}",
+                    "input_config": {"file_name": input_file_name},
+                },
+            },
+        )
+        batch_resp.raise_for_status()
+        batch_data = batch_resp.json()
+
+    batch_job_name = batch_data["name"]   # e.g. batches/xxxx
+    _log(task_id, f"Batch job created: {batch_job_name}")
+
+    # Save job name so it's visible in result_summary during polling
+    db = SessionLocal()
+    try:
+        task_row = db.query(Task).filter(Task.id == task_id).first()
+        if task_row:
+            task_row.result_summary = {
+                "phase": "polling",
+                "batch_job_id": batch_job_name,
+                "doc_count": len(jsonl_lines),
+            }
+            db.commit()
+    finally:
+        db.close()
+
+    # ── 6. Poll until complete ────────────────────────────────────────────────
+    _log(task_id, f"Job submitted. Polling every {poll_interval}s… (up to 48 h)")
+
+    job_data: dict = {}
+    while True:
+        await asyncio.sleep(poll_interval)
+
+        if _is_stopped(task_id):
+            _log(task_id, f"Stopped by user. Batch job {batch_job_name} is still running on Gemini.")
+            return
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            status_resp = await client.get(
+                f"{GEMINI_BATCH_BASE}/v1beta/{batch_job_name}",
+                headers=key_header,
+            )
+            status_resp.raise_for_status()
+            job_data = status_resp.json()
+
+        meta = job_data.get("metadata") or {}
+        job_status = meta.get("state") or job_data.get("state") or "JOB_STATE_UNSPECIFIED"
+        _log(task_id, f"Status: {job_status}")
+
+        if job_status == "JOB_STATE_SUCCEEDED" or job_data.get("done"):
+            break
+        if job_status in ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
+            err = (job_data.get("error") or {}).get("message", job_status)
+            _log(task_id, f"Batch job ended with status: {job_status} — {err}", "error")
+            _finish(task_id, "error", {"batch_job_id": batch_job_name, "status": job_status})
+            return
+        # Still pending (JOB_STATE_PENDING / JOB_STATE_RUNNING) — keep polling
+
+    # ── 7. Download and parse results ────────────────────────────────────────
+    response_obj = job_data.get("response") or {}
+    output_file_name = (
+        response_obj.get("responsesFile")
+        or (response_obj.get("dest") or {}).get("fileName")
+        or (job_data.get("dest") or {}).get("fileName")
+    )
+    if not output_file_name:
+        _log(task_id, "Batch completed but no responses file in response", "error")
+        _finish(task_id, "error")
+        return
+
+    _log(task_id, f"Downloading results from {output_file_name}…")
+    async with httpx.AsyncClient(timeout=180) as client:
+        results_resp = await client.get(
+            f"{GEMINI_BATCH_BASE}/download/v1beta/{output_file_name}:download",
+            headers=key_header,
+            params={"alt": "media"},
+        )
+        results_resp.raise_for_status()
+        results_text = results_resp.text
+
+    # ── 8. Save OCR text to documents ────────────────────────────────────────
+    _log(task_id, "Saving OCR results to documents…")
+    processed = 0
+    failed_count = 0
+    tokens_in = 0
+    tokens_out = 0
+
+    db = SessionLocal()
+    try:
+        for line in results_text.strip().splitlines():
+            if not line.strip():
+                continue
+            try:
+                result_obj = json.loads(line)
+                key = result_obj.get("key", "")
+                doc_id = doc_id_map.get(key)
+                if not doc_id:
+                    continue
+
+                if result_obj.get("error"):
+                    err_msg = result_obj["error"].get("message", "Unknown Gemini error")
+                    _log(task_id, f"✗ Doc {doc_id}: {err_msg}", "error")
+                    doc = db.query(Document).filter(Document.id == doc_id).first()
+                    if doc:
+                        doc.ocr_status = "error"
+                        doc.ocr_error = err_msg
+                        db.commit()
+                    failed_count += 1
+                    continue
+
+                resp_body = result_obj.get("response") or {}
+                candidates = resp_body.get("candidates") or []
+                parts = (candidates[0].get("content", {}).get("parts", [])) if candidates else []
+                text = "".join(p.get("text", "") for p in parts).strip()
+
+                usage = resp_body.get("usageMetadata") or {}
+                tokens_in += usage.get("promptTokenCount", 0)
+                tokens_out += usage.get("candidatesTokenCount", 0)
+
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if doc:
+                    doc.ocr_text = text
+                    doc.ocr_status = "done"
+                    doc.ocr_model = f"{model} (batch)"
+                    db.commit()
+                    _log(task_id, f"✓ Saved OCR for doc {doc_id}")
+                    processed += 1
+
+            except Exception as exc:
+                _log(task_id, f"✗ Result parse error: {exc}", "error")
+                failed_count += 1
+    finally:
+        db.close()
+
+    summary = {
+        "processed": processed,
+        "failed": failed_count,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "batch_job_id": batch_job_name,
+    }
+    _finish(task_id, "done", summary)
+    _log(task_id, (
+        f"Done — {processed} saved, {failed_count} failed, "
+        f"{tokens_in}+{tokens_out} tokens (batch discount applied)"
+    ))
+
+
+async def _cleanup_missing(task_id: int, config: dict) -> None:
+    """Soft-delete DB entries whose files no longer exist on disk."""
+    from pathlib import Path
+
+    _log(task_id, "Scanning for missing files…")
+
+    db = SessionLocal()
+    try:
+        docs = db.query(Document).filter(Document.is_deleted == False).all()
+        total = len(docs)
+        _set_progress(task_id, 0, total)
+        _log(task_id, f"Checking {total} document(s)")
+
+        removed = 0
+        for i, doc in enumerate(docs):
+            if _is_stopped(task_id):
+                _log(task_id, f"Stopped after checking {i} document(s)")
+                return
+            if not Path(doc.filepath).exists():
+                doc.is_deleted = True
+                db.commit()
+                removed += 1
+                _log(task_id, f"✗ Missing — removed from DB: {doc.filename}")
+            _set_progress(task_id, i + 1, total)
+    finally:
+        db.close()
+
+    _finish(task_id, "done", {"checked": total, "removed": removed})
+    _log(task_id, f"Done — checked {total}, removed {removed} missing file(s)")

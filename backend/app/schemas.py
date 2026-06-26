@@ -87,8 +87,9 @@ class UploadResponse(BaseModel):
 
 
 class SyncResponse(BaseModel):
-    found: int
-    new_files: int
+    found: int       # new files discovered on disk
+    new_files: int   # documents added to the library
+    removed: int = 0 # documents removed because the file is gone from disk
     message: str
 
 

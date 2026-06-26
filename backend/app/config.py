@@ -33,7 +33,6 @@ class Settings(BaseSettings):
 
     # AI providers (populated via admin UI — stored in DB, not env)
     # These are fallback env overrides
-    anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
     deepseek_api_key: str = ""

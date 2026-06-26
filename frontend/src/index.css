@@ -23,6 +23,11 @@
   --color-error:       #b52b2b;
   --color-error-bg:    #fff5f5;
 
+  /* Processing-tier indicators (see DocumentCard ProcessingBadge) */
+  --color-ocr-alt:     #0d9488;      /* EasyOCR — local, distinct from Tesseract green */
+  --color-ai:          #6d5ae6;      /* AI recognition / analysis (violet) */
+  --color-ai-edge:     #4f46e5;      /* gradient edge of the "analyzed" badge */
+
   /* Spacing scale */
   --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
   --sp-5: 20px;  --sp-6: 24px;  --sp-8: 32px;  --sp-10: 40px;
@@ -67,6 +72,10 @@
   --color-warning:     #f59e0b;
   --color-error:       #ef4444;
   --color-error-bg:    #2a1515;
+
+  --color-ocr-alt:     #2dd4bf;
+  --color-ai:          #8b7cf0;
+  --color-ai-edge:     #6366f1;
 }
 
 html { font-size: 16px; }
@@ -149,6 +158,44 @@ img { max-width: 100%; }
   50%       { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
 }
 .status-dot.pulse { animation: pulse-worker 1.8s ease-in-out infinite; }
+
+/* ── Toggle switch ──────────────────────────────────────────────────────── */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--color-border);
+  border-radius: 20px;
+  transition: background .18s;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .18s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle-switch input:checked ~ .toggle-slider { background: var(--color-ink); }
+.toggle-switch input:checked ~ .toggle-slider::before { transform: translateX(16px); }
+.toggle-switch input:disabled ~ .toggle-slider { opacity: .5; cursor: not-allowed; }
 
 /* ── Divider ────────────────────────────────────────────────────────────── */
 .divider {

@@ -87,7 +87,7 @@ export const askDocuments = (
 export const getStats = () => api.get<IndexingStats>("/admin/stats");
 
 export const syncLibrary = () =>
-  api.post<{ found: number; new_files: number; message: string }>("/admin/sync");
+  api.post<{ found: number; new_files: number; removed: number; message: string }>("/admin/sync");
 
 export const listFolders = () => api.get<WatchedFolder[]>("/admin/folders");
 export const addFolder = (path: string) => api.post<WatchedFolder>("/admin/folders", { path });

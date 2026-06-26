@@ -35,7 +35,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/db_backup.py` | List/restore SQLite backups written by the `backup.py` sidecar; restore = atomic swap + `docintell.db.pre-restore` safety snapshot |
 | `services/storage.py` | File hashing, MIME detection, library scanning, saving uploads to `YYYY/MM/` |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
-| `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain) |
+| `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain). `extract_text()` returns `(text, engine)`; the indexer stores `engine` (`tesseract`/`easyocr`) in `documents.ocr_model` for per-doc engine attribution |
 | `services/ai_analysis.py` | AI Analysis: produces summary, document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy: 30+ slugs (`passport`, `birth_certificate`, `contract`, `invoice`, `diploma`, … `unclassified`). Also exposes `suggest_document_types(summary, ocr_text, existing_types, db)` → top-3 suggestions for the UI picker. |
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model; returns description text; supports Anthropic/OpenAI/Gemini/OpenRouter + **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing, returns verbatim transcription). Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. Mistral also supports text models (OpenAI-compat) for analysis. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
@@ -75,7 +75,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid/ask) + voice input (Web Speech API, language follows UI lang) + year/language quick-filter chips |
 | `components/search/FilterDropdown.tsx` | Reusable filter dropdown used by the search toolbar |
 | `components/search/AIAnswer.tsx` | AI Q&A result card: answer text + source document list |
-| `components/documents/DocumentCard.tsx` | List row and grid tile rendering |
+| `components/documents/DocumentCard.tsx` | List row and grid tile rendering. Renders a per-class type icon (`typeIcons.ts`) at the far right of the list meta row and as a badge on the grid thumbnail. `ProcessingBadge` shows the highest processing tier reached: gray dot (pending) → green/teal dot (local OCR Tesseract/EasyOCR, from `ocr_model`) → violet `ScanText` icon (AI text recognition) → gradient `Sparkles` badge (full AI analysis, `analysis_status==="done"`) |
+| `components/documents/typeIcons.ts` | Maps each `document_type` slug (AI taxonomy) → a lucide icon; `iconForType()` with keyword + `FileText` fallbacks for free-form types |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |
 | `components/documents/DocumentViewer.tsx` | Document detail modal (tabs: preview/text/details/dev). Type badge renders `TypePicker` |
 | `components/documents/TypePicker.tsx` | Inline type picker on the type badge: fetches LLM suggestions on click, lets user pick from top-3 or enter a free-form type (+ `formatTypeName`) |
@@ -178,9 +179,10 @@ Enabled via the **Zap** (⚡) button in the header (persisted to localStorage). 
 | `sync_library` | Scan library + index new files |
 | `reclassify_unclassified` | AI classification for unclassified docs |
 | `reclassify_all` | Re-run AI analysis on all docs |
-| `batch_ocr_mistral` | Placeholder — Mistral batch OCR (coming) |
+| `batch_ocr_mistral` | Async batch OCR via Mistral Batch API (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
+| `batch_ocr_gemini` | Async batch OCR via Gemini Batch Mode (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
 
-Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag.
+Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag. The two `batch_ocr_*` tasks are long-running pollers: they submit a remote batch job, then poll every `poll_interval` seconds until the provider finishes (up to 24–48 h).
 
 ## Planned (not yet implemented)
 

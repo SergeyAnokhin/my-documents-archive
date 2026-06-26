@@ -18,6 +18,8 @@ const TASK_LABELS: Record<TaskType, string> = {
   reclassify_unclassified: "CLASSIFY",
   reclassify_all:          "RECLASSIFY",
   batch_ocr_mistral:       "BATCH OCR",
+  batch_ocr_gemini:        "BATCH OCR",
+  cleanup_missing:         "CLEANUP",
 };
 
 const ALL_TYPES: TaskType[] = [
@@ -26,6 +28,8 @@ const ALL_TYPES: TaskType[] = [
   "reclassify_unclassified",
   "reclassify_all",
   "batch_ocr_mistral",
+  "batch_ocr_gemini",
+  "cleanup_missing",
 ];
 
 const TYPES_WITH_LIMIT: TaskType[] = [
@@ -33,7 +37,15 @@ const TYPES_WITH_LIMIT: TaskType[] = [
   "reclassify_unclassified",
   "reclassify_all",
   "batch_ocr_mistral",
+  "batch_ocr_gemini",
 ];
+
+// Batch tasks that pick an async provider + poll interval, mapped to the
+// provider_type they require.
+const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
+  batch_ocr_mistral: "mistral",
+  batch_ocr_gemini:  "gemini",
+};
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -353,14 +365,22 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Load Mistral providers when batch type is selected
+  const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
+  const isBatch = !!batchProviderType;
+  const providerLabel = batchProviderType
+    ? batchProviderType[0].toUpperCase() + batchProviderType.slice(1)
+    : "";
+
+  // Load matching providers when a batch type is selected
   useEffect(() => {
-    if (selectedType !== "batch_ocr_mistral") return;
+    if (!selectedType) return;
+    const wanted = BATCH_PROVIDER_TYPE[selectedType];
+    if (!wanted) return;
     listProviders()
       .then(all => {
-        const mistral = all.filter(p => p.provider_type === "mistral" && p.enabled);
-        setProviders(mistral);
-        if (mistral.length > 0) setProviderId(String(mistral[0].id));
+        const matching = all.filter(p => p.provider_type === wanted && p.enabled);
+        setProviders(matching);
+        if (matching.length > 0) setProviderId(String(matching[0].id));
       })
       .catch(() => {});
   }, [selectedType]);
@@ -368,7 +388,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const handleSelectType = (type: TaskType) => {
     setSelectedType(type);
     setTitle(t.tasks.types[type as keyof typeof t.tasks.types] ?? type);
-    if (type === "batch_ocr_mistral") {
+    if (BATCH_PROVIDER_TYPE[type]) {
       setLimit("50");
     }
   };
@@ -381,7 +401,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       if (TYPES_WITH_LIMIT.includes(selectedType)) {
         config.limit = parseInt(limit, 10) || 50;
       }
-      if (selectedType === "batch_ocr_mistral") {
+      if (isBatch) {
         if (providerId) config.provider_id = parseInt(providerId, 10);
         config.poll_interval = parseInt(pollInterval, 10) || 300;
       }
@@ -440,12 +460,16 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
             </div>
           )}
 
-          {selectedType === "batch_ocr_mistral" && (
+          {isBatch && (
             <>
               <div className="create-form-field">
-                <label className="create-form-label">{t.tasks.configProvider}</label>
+                <label className="create-form-label">
+                  {t.tasks.configProvider.replace("{{provider}}", providerLabel)}
+                </label>
                 {providers.length === 0 ? (
-                  <p className="text-sm text-muted">{t.tasks.noMistralProvider}</p>
+                  <p className="text-sm text-muted">
+                    {t.tasks.noBatchProvider.replace("{{provider}}", providerLabel)}
+                  </p>
                 ) : (
                   <select
                     className="create-form-input"
@@ -481,7 +505,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
               size="sm"
               loading={saving}
               onClick={handleCreate}
-              disabled={!title.trim() || (selectedType === "batch_ocr_mistral" && providers.length === 0)}
+              disabled={!title.trim() || (isBatch && providers.length === 0)}
             >
               {t.tasks.createTask}
             </Button>

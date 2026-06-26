@@ -8,7 +8,9 @@ Embedding runs after analysis; falls back silently if chromadb/ST unavailable.
 
 import asyncio
 import logging
+import re
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -56,8 +58,9 @@ async def _run_ocr(doc: Document, db: Session) -> None:
     db.commit()
 
     try:
-        text = await extract_text(doc.filepath)
+        text, engine = await extract_text(doc.filepath)
         doc.ocr_text = text
+        doc.ocr_model = engine
         doc.ocr_status = "done"
         _log(db, doc, "ocr", "done")
     except Exception as e:
@@ -162,6 +165,8 @@ async def _run_analysis(doc: Document, db: Session) -> None:
             doc.analysis_status    = "done"
             _log(db, doc, "analysis", "done",
                  f"Type: {result.document_type}, lang: {result.language}")
+            if doc.source == "upload" and result.short_title:
+                _rename_uploaded_file(doc, result.short_title, db)
     except Exception as e:
         doc.analysis_status = "error"
         doc.analysis_error  = str(e)
@@ -311,6 +316,30 @@ async def reclassify_unclassified_batch(limit: int = 200) -> dict:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _rename_uploaded_file(doc: Document, short_title: str, db: Session) -> None:
+    """Rename an uploaded file to its AI-generated short title, preserving extension."""
+    old_path = Path(doc.filepath)
+    safe = re.sub(r"[^a-z0-9_]", "_", short_title.lower().strip())
+    safe = re.sub(r"_+", "_", safe).strip("_")[:40]
+    if not safe:
+        return
+    new_name = f"{safe}{old_path.suffix.lower()}"
+    new_path = old_path.parent / new_name
+    counter = 1
+    while new_path.exists() and new_path != old_path:
+        new_path = old_path.parent / f"{safe}_{counter}{old_path.suffix.lower()}"
+        counter += 1
+    if new_path == old_path:
+        return
+    try:
+        old_path.rename(new_path)
+        doc.filepath = str(new_path)
+        doc.filename = new_path.name
+        db.commit()
+    except OSError as e:
+        log.warning("Could not rename %s → %s: %s", old_path.name, new_path.name, e)
+
 
 def _log(db: Session, doc: Document, step: str, status: str, message: str = "") -> None:
     entry = IndexingLog(

@@ -80,6 +80,13 @@ export function HomePage() {
     return () => clearTimeout(id);
   }, [doSearch, query]);
 
+  // Re-fetch when sync happens from AdminPanel or any other source
+  useEffect(() => {
+    const handler = () => { if (mode !== "ask") doSearch(); };
+    window.addEventListener("docintell:library-changed", handler);
+    return () => window.removeEventListener("docintell:library-changed", handler);
+  }, [doSearch, mode]);
+
   // Also re-search immediately when filters change (no debounce needed)
   useEffect(() => {
     if (mode !== "ask") doSearch();
@@ -134,7 +141,7 @@ export function HomePage() {
     setSyncing(true);
     try {
       await syncLibrary();
-      await doSearch();
+      window.dispatchEvent(new CustomEvent("docintell:library-changed"));
     } finally {
       setSyncing(false);
     }

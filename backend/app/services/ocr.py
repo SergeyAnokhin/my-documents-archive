@@ -21,8 +21,10 @@ log = logging.getLogger(__name__)
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-async def extract_text(filepath: str) -> str:
-    """Return OCR text for the given file. Raises on unrecoverable error."""
+async def extract_text(filepath: str) -> tuple[str, str]:
+    """Return (text, engine) for the file. engine is the local OCR engine that
+    produced the text — "easyocr" (external compute worker) or "tesseract"
+    (local fallback). Raises on unrecoverable error."""
     path = Path(filepath)
 
     if settings.ocr_engine == "external":
@@ -31,7 +33,7 @@ async def extract_text(filepath: str) -> str:
         except Exception as e:
             log.warning("External OCR failed (%s), falling back to Tesseract", e)
 
-    return _local_tesseract(path)
+    return _local_tesseract(path), "tesseract"
 
 
 # ── Local Tesseract ───────────────────────────────────────────────────────────
@@ -79,7 +81,7 @@ def _pdf_to_images(path: Path) -> list[Image.Image]:
 
 # ── External OCR Worker ───────────────────────────────────────────────────────
 
-async def _external_ocr(path: Path) -> str:
+async def _external_ocr(path: Path) -> tuple[str, str]:
     url = f"{settings.external_ocr_url.rstrip('/')}/ocr"
     async with httpx.AsyncClient(timeout=120) as client:
         with open(path, "rb") as fh:
@@ -90,7 +92,7 @@ async def _external_ocr(path: Path) -> str:
             )
         resp.raise_for_status()
         data = resp.json()
-        return data.get("text", "")
+        return data.get("text", ""), (data.get("engine") or "easyocr")
 
 
 def _mime_for(path: Path) -> str:

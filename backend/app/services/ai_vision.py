@@ -148,7 +148,6 @@ def _get_providers(db: Session) -> list:
 
     result = []
     for ptype, key, url in [
-        ("anthropic",  settings.anthropic_api_key,  None),
         ("openai",     settings.openai_api_key,      None),
         ("gemini",     settings.gemini_api_key,      None),
         ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),

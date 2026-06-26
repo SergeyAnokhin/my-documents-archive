@@ -49,6 +49,19 @@
   color: var(--color-success);
 }
 
+.sync-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-tag);
+  border-radius: var(--radius-md);
+  font-size: .875rem;
+}
+.sync-result-item { color: var(--color-ink-muted); }
+.sync-result-added  { color: var(--color-success); font-weight: 500; }
+.sync-result-removed { color: var(--color-error);   font-weight: 500; }
+
 /* Stats */
 .stats-grid {
   display: grid;

@@ -58,6 +58,7 @@ npm test
 | [docs/architecture.md](docs/architecture.md) | System overview, components, data flow, phases |
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
 | [docs/lab-mode.md](docs/lab-mode.md) | OCR Lab (`/lab/:id`): compare OCR engines & vision models, premium "judge" |
+| [docs/batch-ocr.md](docs/batch-ocr.md) | Async batch OCR tasks via Mistral Batch API & Gemini Batch Mode (50% cheaper) |
 | [docs/compute-worker.md](docs/compute-worker.md) | External OCR worker: install (incl. Windows+conda MKL fix), endpoints, engine detection |
 | [docs/deployment.md](docs/deployment.md) | Ship to k3s: GitOps (GHCR→ArgoCD), NAS nested-mount storage, DB backup & restore |
 | [docs/k3s-platform-deployment.md](docs/k3s-platform-deployment.md) | Generic k3s+ArgoCD+GHCR platform contract — **read-only spec; don't edit during normal dev** |

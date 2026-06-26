@@ -65,6 +65,7 @@ async def upload_document(
             ocr_status="pending",
             vision_status="pending",
             analysis_status="pending",
+            source="upload",
         )
         db.add(doc)
         db.commit()

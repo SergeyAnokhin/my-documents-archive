@@ -48,6 +48,7 @@ You are a document analysis assistant. Analyze the document text and return a JS
 - "person_first_name": first name of the most important person in the document, or null if absent
 - "person_last_name": last name of the most important person in the document, or null if absent
 - "document_date": the most significant date found in the document in YYYY-MM-DD format, or null if absent
+- "short_title": 2-5 word filename slug, lowercase_with_underscores, no extension, max 40 chars (e.g. "passport_ivanov_2024", "lease_agreement_paris", "tax_return_2023")
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
@@ -83,6 +84,7 @@ class AnalysisResult:
     person_first_name: Optional[str] = None
     person_last_name: Optional[str] = None
     document_date: Optional[str] = None  # YYYY-MM-DD string
+    short_title: str = ""
     cost_usd: float = 0.0
 
 
@@ -151,7 +153,6 @@ def _get_providers(db: Session) -> list:
     # Env-var fallbacks (tried in order, stop at first available key)
     result = []
     for ptype, key, url in [
-        ("anthropic",  settings.anthropic_api_key,  None),
         ("openai",     settings.openai_api_key,      None),
         ("gemini",     settings.gemini_api_key,      None),
         ("deepseek",   settings.deepseek_api_key,    "https://api.deepseek.com/v1"),
@@ -293,6 +294,7 @@ def _parse_result(raw: str) -> AnalysisResult:
         person_first_name=data.get("person_first_name") or None,
         person_last_name=data.get("person_last_name") or None,
         document_date=data.get("document_date") or None,
+        short_title=str(data.get("short_title", ""))[:40],
     )
 
 
