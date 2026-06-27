@@ -78,6 +78,12 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | POST | `/api/admin/providers` | Add provider `{name, provider_type, api_key, base_url?, model?}` |
 | PATCH | `/api/admin/providers/{id}/toggle` | Enable/disable provider |
 | DELETE | `/api/admin/providers/{id}` | Remove provider |
+| GET | `/api/admin/providers/export` | Full provider config incl. **API keys**: `{version, providers:[…]}` (backup/migrate) |
+| POST | `/api/admin/providers/import` | Restore providers. Body: `{providers, replace}` — `replace:true` wipes existing first, else appends |
+| GET | `/api/admin/usage` | Recent usage-ledger rows. Params: `usage_type?`, `provider_type?`, `since?`, `until?`, `limit` (default 200). See [ai-usage.md](ai-usage.md) |
+| GET | `/api/admin/usage/summary` | Totals + breakdowns by type/provider/model/day (super-user usage screen) |
+| GET | `/api/admin/usage/pivot` | 2-D pivot. Params: `row`, `col`, `metric` (`count\|cost\|tokens_in\|tokens_out\|tokens`), `since?`, `until?` |
+| DELETE | `/api/admin/usage` | Clear the usage ledger |
 | GET | `/api/admin/settings` | Get all app settings `{key: value}` |
 | PATCH | `/api/admin/settings` | Upsert settings. Body: `{key: value, ...}`. Key: `enable_ai_vision` (`"true"`/`"false"`) |
 | GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100). Each entry has a `level` (`trace|debug|info|warning|error`); the Log tab filters client-side by minimum severity |

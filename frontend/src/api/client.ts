@@ -24,7 +24,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
-  delete: (path: string) => req<void>(path, { method: "DELETE" }),
+  delete: <T = void>(path: string) => req<T>(path, { method: "DELETE" }),
   upload: <T>(path: string, file: File) => {
     const form = new FormData();
     form.append("file", file);

@@ -66,7 +66,7 @@ export function Header({ onAdminOpen, onTasksOpen }: Props) {
       <div className="container header-inner">
         {/* Logo */}
         <div className="header-logo">
-          <span className="header-logo-mark">D</span>
+          <img src="/icon.svg" className="header-logo-mark" alt={t.appName} width={28} height={28} />
           <span className="header-logo-name">{t.appName}</span>
         </div>
 

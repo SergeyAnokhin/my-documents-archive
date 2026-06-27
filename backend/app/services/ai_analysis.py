@@ -26,8 +26,24 @@ from .ai_common import (
     strip_code_fences,
     update_provider_stats,
 )
+from .usage import record_usage
 
 log = logging.getLogger(__name__)
+
+
+def _record(provider, usage_type: str, tokens_in: int, tokens_out: int,
+            cost: float, document_id=None) -> None:
+    """Log one provider call to the AI usage ledger."""
+    record_usage(
+        usage_type=usage_type,
+        provider_type=getattr(provider, "provider_type", "unknown"),
+        provider_name=getattr(provider, "name", None),
+        model=getattr(provider, "model", None),
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost,
+        document_id=document_id,
+    )
 
 ANALYSIS_SYSTEM = f"""\
 You are a document analysis assistant. Analyze the document text and return a JSON object with:
@@ -111,6 +127,7 @@ async def analyze_document(
             result = _parse_result(raw)
             result.cost_usd = cost
             update_provider_stats(db, provider, tokens_in, tokens_out, cost)
+            _record(provider, "analysis", tokens_in, tokens_out, cost)
             return result
         except Exception as e:
             log.warning("Analysis provider '%s' failed: %s", provider.name, e)
@@ -290,7 +307,8 @@ async def suggest_document_types(
 
     for provider in providers:
         try:
-            raw, _, _, _ = await _call_provider(provider, user_msg, SUGGEST_TYPES_SYSTEM)
+            raw, tin, tout, cost = await _call_provider(provider, user_msg, SUGGEST_TYPES_SYSTEM)
+            _record(provider, "suggest_types", tin, tout, cost)
             data = json.loads(strip_code_fences(raw))
             if isinstance(data, list):
                 return data[:3]

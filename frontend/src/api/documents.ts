@@ -22,6 +22,11 @@ import type {
   Task,
   TaskLog,
   BackupInfo,
+  ProvidersExport,
+  ProvidersImport,
+  UsageSummary,
+  UsagePivot,
+  UsageRow,
 } from "../types";
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -120,6 +125,40 @@ export const fetchProviderModels = (body: {
 }) => api.post<ProviderModel[]>("/admin/providers/models", body);
 export const fetchProviderModelsById = (id: number) =>
   api.post<ProviderModel[]>(`/admin/providers/${id}/models`);
+
+export const exportProviders = () =>
+  api.get<ProvidersExport>("/admin/providers/export");
+export const importProviders = (body: ProvidersImport) =>
+  api.post<{ imported: number; replaced: boolean }>("/admin/providers/import", body);
+
+// ── AI usage ledger (super-user screen) ─────────────────────────────────────────
+
+export const getUsageSummary = (params: { since?: string; until?: string } = {}) => {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)])
+  ).toString();
+  return api.get<UsageSummary>(`/admin/usage/summary${qs ? `?${qs}` : ""}`);
+};
+
+export const getUsagePivot = (params: {
+  row: string; col: string; metric: string; since?: string; until?: string;
+}) => {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)])
+  ).toString();
+  return api.get<UsagePivot>(`/admin/usage/pivot?${qs}`);
+};
+
+export const listUsage = (params: {
+  usage_type?: string; provider_type?: string; limit?: number;
+} = {}) => {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])
+  ).toString();
+  return api.get<UsageRow[]>(`/admin/usage${qs ? `?${qs}` : ""}`);
+};
+
+export const clearUsage = () => api.delete<{ deleted: number }>("/admin/usage");
 
 export const getArenaRatings = () =>
   api.get<Record<string, ArenaRating>>("/admin/arena-ratings");

@@ -275,3 +275,75 @@ export interface BackupInfo {
   size: number;
   modified: string;
 }
+
+// ── AI provider config export/import ────────────────────────────────────────────
+
+export interface ProviderFull {
+  name: string;
+  provider_type: string;
+  api_key: string;
+  base_url?: string | null;
+  model?: string | null;
+  task_type: string;
+  sort_order: number;
+  key_name?: string | null;
+  enabled: boolean;
+  extra_params?: unknown;
+}
+
+export interface ProvidersExport {
+  version: number;
+  providers: ProviderFull[];
+}
+
+export interface ProvidersImport {
+  providers: ProviderFull[];
+  replace: boolean;
+}
+
+// ── AI usage ledger ─────────────────────────────────────────────────────────────
+
+export interface UsageRow {
+  id: number;
+  created_at: string | null;
+  usage_type: string;
+  provider_type: string;
+  provider_name?: string | null;
+  model?: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd?: number | null;
+  document_id?: number | null;
+  status: string;
+  detail?: string | null;
+}
+
+export interface UsageBreakdown {
+  key: string;
+  count: number;
+  cost: number;
+  tokens: number;
+}
+
+export interface UsageSummary {
+  total_calls: number;
+  total_cost: number;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  by_type: UsageBreakdown[];
+  by_provider: UsageBreakdown[];
+  by_model: UsageBreakdown[];
+  by_day: UsageBreakdown[];
+}
+
+export interface UsagePivot {
+  row: string;
+  col: string;
+  metric: string;
+  row_keys: string[];
+  col_keys: string[];
+  matrix: number[][];
+  row_totals: number[];
+  col_totals: number[];
+  grand_total: number;
+}

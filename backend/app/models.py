@@ -144,3 +144,27 @@ class TaskLog(Base):
     message = Column(Text, nullable=False)
     level = Column(String(16), default="info")  # info|warning|error
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AIUsage(Base):
+    """One row per call to an AI provider / OCR engine — the paid (and free) usage ledger.
+
+    Powers the super-user usage screen (stats, charts, pivot). Written by
+    services/usage.py:record_usage() from every model call site.
+    """
+    __tablename__ = "ai_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    # What the call was for: analysis|vision|ocr|qa|suggest_types|icon_suggest|
+    #                        batch_analysis|batch_ocr|embedding|judge
+    usage_type = Column(String(32), index=True)
+    provider_type = Column(String(32), index=True)  # anthropic|openai|gemini|...|local|worker
+    provider_name = Column(String(64), nullable=True)  # AIProvider.name when known
+    model = Column(String(128), nullable=True)
+    tokens_in = Column(Integer, default=0)
+    tokens_out = Column(Integer, default=0)
+    cost_usd = Column(Float, nullable=True)  # optional — null when price unknown
+    document_id = Column(Integer, nullable=True)
+    status = Column(String(16), default="ok")  # ok|error
+    detail = Column(String(256), nullable=True)

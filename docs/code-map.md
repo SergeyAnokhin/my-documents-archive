@@ -21,7 +21,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `main.py` | FastAPI app factory, CORS, startup hooks, thumbnail static mount |
 | `config.py` | All settings (pydantic-settings); `settings` singleton |
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
-| `models.py` | ORM models: `Document` (incl. `source` = `"upload"`/`"sync"`), `WatchedFolder`, `IndexingLog` (incl. `level` = `trace`/`debug`/`info`/`warning`/`error`), `AIProvider`, `AppSettings` |
+| `models.py` | ORM models: `Document` (incl. `source` = `"upload"`/`"sync"`), `WatchedFolder`, `IndexingLog` (incl. `level` = `trace`/`debug`/`info`/`warning`/`error`), `AIProvider`, `AppSettings`, `Task`/`TaskLog`, `AIUsage` (per-call AI/OCR usage ledger — powers the super-user usage screen) |
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
@@ -32,6 +32,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `routers/admin_providers.py` | AI providers CRUD, model listing (`/models`), arena ratings (`/arena-ratings`) |
 | `routers/admin_settings.py` | App settings key-value get/upsert (`/settings`) |
 | `routers/admin_backups.py` | DB backup list + restore (advanced users): `GET /backups`, `POST /backups/restore` |
+| `routers/admin_usage.py` | AI usage ledger (super-user screen): `GET /usage` (rows), `GET /usage/summary` (cards+charts), `GET /usage/pivot` (row×col×metric matrix), `DELETE /usage`. See [ai-usage.md](ai-usage.md) |
+| `routers/admin_providers.py` (export/import) | `GET /providers/export` + `POST /providers/import` — full provider config **including API keys** (backup/migrate). See [ai-usage.md](ai-usage.md) |
 | `services/db_backup.py` | List/restore SQLite backups written by the `backup.py` sidecar; restore = atomic swap + `docintell.db.pre-restore` safety snapshot |
 | `services/storage.py` | File hashing, MIME detection, library scanning (skips `.docintell`/hidden dirs), saving uploads to `YYYY/MM/`. `infer_document_date()`/`extract_folder_date()` guess a doc date from path (`[YYYY-MM]`, `YYYY/MM/`, `YYYY-MM/`) or file ctime. `check_library_accessible()` — sentinel check (`.docintell` dir) used to abort sync when the disk is offline |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
@@ -53,6 +55,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `routers/tasks.py` | Task queue CRUD + run/stop/logs + the `_run_task_bg` dispatcher and the short in-process runners (index/sync/reclassify/cleanup) — prefix `/api/tasks`. Used by the Tasks panel (advanced mode only). |
 | `services/task_runtime.py` | Shared helpers for background task runners (`log_task`, `is_stopped`, `set_progress`, `finish`) — each opens its own short-lived session. Imported by `tasks.py` and `batch_ocr.py`. |
 | `services/batch_ocr.py` | Long-running batch-OCR task runners `run_batch_ocr_mistral()` / `run_batch_ocr_gemini()` (submit remote batch job → poll → write OCR back). Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
+| `services/batch_analysis.py` | `run_batch_analysis_gemini()` — text-only analysis via Gemini Batch API. Selects docs needing analysis **OR** still unclassified/other (skips `manually_classified`); use this for cheap async classification of the unclassified backlog. |
+| `services/usage.py` | `record_usage(...)` — appends one row to the `ai_usage` ledger. Called by every model call site (analysis, vision, qa, suggest_types, icon_suggest, batch_*, ocr, embedding). Opens its own session; never raises. See [ai-usage.md](ai-usage.md) |
 
 ## Compute (`compute/app/`)
 
@@ -98,6 +102,9 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/admin/tabs/ai/ProviderSection.tsx` | Section wrapper: provider list + add form for one task type |
 | `components/admin/tabs/LogTab.tsx` | Recent indexing log entries with a minimum-severity filter (`trace`→`error`) over each row's `level` |
 | `components/admin/tabs/BackupTab.tsx` | DB backups list + restore. **Advanced-mode-only** tab (gated in `AdminPanel.tsx`) |
+| `components/admin/tabs/UsageTab.tsx` (+`.css`) | Super-user AI usage screen (**advanced-mode-only** tab): summary cards, CSS bar charts (by type/provider/model/day), configurable row×col×metric pivot table, recent-calls list, clear. Reads `/api/admin/usage*`. See [ai-usage.md](ai-usage.md) |
+| `components/admin/tabs/AITab.tsx` (export/import) | Header has Export/Import buttons → download/upload full provider config JSON (incl. API keys) via `/admin/providers/export\|import` |
+| `public/icon.svg` | App icon — used as the browser favicon (`index.html`) and the header logo mark (`Header.tsx`) |
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
@@ -183,6 +190,9 @@ Enabled via the **Zap** (⚡) button in the header (persisted to localStorage). 
 - **OCR Tuning** button appears in DocumentViewer (navigates to `/lab/:id`)
 - **Tasks** button appears in the header → opens `TasksPanel`
 - **Backup** tab appears in the Admin panel → list/restore DB backups (`BackupTab`)
+- **AI Usage** tab appears in the Admin panel → super-user stats/charts/pivot over the `ai_usage` ledger (`UsageTab`)
+
+The super-user screen is gated by Advanced Mode (no separate auth) — same trust model as Backup.
 
 `TasksPanel` shows processing jobs as draggable cards (3-column grid). Task types:
 | Type | Description |

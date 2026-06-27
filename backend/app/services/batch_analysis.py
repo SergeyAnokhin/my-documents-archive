@@ -83,7 +83,11 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         finally:
             db.close()
     else:
-        # ── 2. Collect documents with text but no analysis ────────────────────
+        # ── 2. Collect documents needing analysis ─────────────────────────────
+        # Covers two cases (skipping anything the user classified by hand):
+        #   a) never analyzed       (analysis_status != "done")
+        #   b) analyzed but unclassified / "other" / null type
+        from sqlalchemy import or_
         db = SessionLocal()
         try:
             docs = (
@@ -92,7 +96,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     Document.is_deleted == False,
                     Document.ocr_text.isnot(None),
                     Document.ocr_text != "",
-                    Document.analysis_status != "done",
+                    Document.manually_classified != True,
+                    or_(
+                        Document.analysis_status != "done",
+                        Document.document_type == "unclassified",
+                        Document.document_type == "other",
+                        Document.document_type.is_(None),
+                    ),
                 )
                 .limit(limit)
                 .all()
@@ -295,10 +305,10 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     continue
 
                 doc.summary = parsed.get("summary", "")
-                doc.document_type = parsed.get("document_type", "unclassified")
-                doc.document_type_confidence = float(parsed.get("document_type_confidence", 0.0))
-                tags = parsed.get("tags") or []
-                doc.tags = json.dumps(tags, ensure_ascii=False)
+                doc.document_type = parsed.get("document_type") or "unclassified"
+                doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                doc.classification_source = "auto"
+                doc.tags = parsed.get("tags") or []
                 doc.language = parsed.get("language", "")
                 doc.organization = parsed.get("organization")
                 amount = parsed.get("amount")
@@ -314,9 +324,6 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                         doc.document_date = None
                 else:
                     doc.document_date = None
-                short_title = parsed.get("short_title", "")
-                if short_title:
-                    doc.short_title = short_title
                 doc.analysis_status = "done"
                 db.commit()
                 processed += 1
@@ -334,5 +341,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         summary["tokens_in"] = tokens_in
         summary["tokens_out"] = tokens_out
 
+    from .usage import record_usage
+    from .pricing import estimate_cost
+    record_usage(
+        usage_type="batch_analysis", provider_type="gemini", model=model,
+        tokens_in=tokens_in, tokens_out=tokens_out,
+        cost_usd=estimate_cost(model, tokens_in, tokens_out),
+        detail=f"{processed} docs, {failed_count} failed",
+    )
     _finish(task_id, "done", summary)
     _log(task_id, f"Done — {processed} analyzed, {failed_count} failed")

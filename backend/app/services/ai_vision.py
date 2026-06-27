@@ -110,6 +110,14 @@ async def describe_document(
         try:
             text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_FULL_PROMPT)
             update_provider_stats(db, provider, tin, tout, cost)
+            from .usage import record_usage
+            record_usage(
+                usage_type="vision",
+                provider_type=provider.provider_type,
+                provider_name=getattr(provider, "name", None),
+                model=getattr(provider, "model", None),
+                tokens_in=tin, tokens_out=tout, cost_usd=cost,
+            )
 
             if provider.provider_type == "mistral":
                 # Mistral OCR ignores the prompt and returns plain markdown.

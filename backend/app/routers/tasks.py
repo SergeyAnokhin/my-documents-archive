@@ -331,8 +331,21 @@ async def _reclassify_unclassified(task_id: int, config: dict) -> None:
     limit = int(config.get("limit", 200))
     _log(task_id, f"Starting: re-classify up to {limit} unclassified document(s)")
     result = await reclassify_unclassified_batch(limit)
-    _finish(task_id, "done", result if isinstance(result, dict) else {"result": str(result)})
-    _log(task_id, f"Done — {result}")
+
+    if result.get("no_provider"):
+        _log(task_id, "No analysis provider configured (need a provider with task "
+                      "'analysis' or 'both'). Nothing was classified.", "error")
+        _finish(task_id, "error", result)
+        return
+
+    _finish(task_id, "done", result)
+    _log(task_id, (
+        f"Done — {result.get('candidates', 0)} candidate(s): "
+        f"{result.get('classified', 0)} classified, "
+        f"{result.get('still_unclassified', 0)} still unclassified, "
+        f"{result.get('skipped', 0)} skipped (no text), "
+        f"{result.get('errors', 0)} error(s)"
+    ))
 
 
 async def _reclassify_all(task_id: int, config: dict) -> None:

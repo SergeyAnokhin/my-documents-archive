@@ -326,6 +326,11 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         "cost_usd": round(total_cost, 5),
         "batch_job_id": batch_job_id,
     }
+    from .usage import record_usage
+    record_usage(
+        usage_type="batch_ocr", provider_type="mistral", model=model,
+        cost_usd=round(total_cost, 5), detail=f"{processed} docs, {failed_count} failed",
+    )
     _finish(task_id, "done", summary)
     _log(task_id, (
         f"Done — {processed} saved, {failed_count} failed, "
@@ -680,6 +685,14 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         "tokens_out": tokens_out,
         "batch_job_id": batch_job_name,
     }
+    from .usage import record_usage
+    from .pricing import estimate_cost
+    record_usage(
+        usage_type="batch_ocr", provider_type="gemini", model=model,
+        tokens_in=tokens_in, tokens_out=tokens_out,
+        cost_usd=estimate_cost(model, tokens_in, tokens_out),
+        detail=f"{processed} docs, {failed_count} failed",
+    )
     _finish(task_id, "done", summary)
     _log(task_id, (
         f"Done — {processed} OCR+analyzed, {failed_count} failed, "

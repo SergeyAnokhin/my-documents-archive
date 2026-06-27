@@ -31,8 +31,13 @@ def get_stats(db: Session = Depends(get_db)):
     pending  = base.filter(Document.ocr_status == "pending").count()
     errors   = base.filter(Document.ocr_status == "error").count()
 
+    # Count docs that are OCR'd but still lack a real type (and weren't set by
+    # hand) — i.e. exactly the set the "classify unclassified" job would retry.
+    # Keyed on document_type, NOT analysis_status, so docs whose analysis was
+    # skipped/errored still show up here instead of silently disappearing.
     unclassified = base.filter(
-        Document.analysis_status == "done",
+        Document.ocr_status == "done",
+        Document.manually_classified != True,
         or_(
             Document.document_type == "unclassified",
             Document.document_type == "other",

@@ -149,6 +149,32 @@ class AIProviderCreate(BaseModel):
     extra_params: Optional[Any] = None
 
 
+class AIProviderFull(BaseModel):
+    """Full provider snapshot for export/import — includes the API key."""
+    name: str
+    provider_type: str
+    api_key: str
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    task_type: str = "both"
+    sort_order: int = 0
+    key_name: Optional[str] = None
+    enabled: bool = True
+    extra_params: Optional[Any] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProvidersExport(BaseModel):
+    version: int = 1
+    providers: List[AIProviderFull]
+
+
+class ProvidersImport(BaseModel):
+    providers: List[AIProviderFull]
+    replace: bool = False  # True = wipe existing providers first; False = append
+
+
 class ProviderModelInfo(BaseModel):
     id: str
     name: str

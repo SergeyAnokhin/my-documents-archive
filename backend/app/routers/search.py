@@ -395,6 +395,14 @@ async def ask_documents(
     log.info("✅ [ask] done  total_ms=%.0f  answer_chars=%d",
              (time.perf_counter() - t0) * 1000, len(answer or ""))
     _log_ask(db, query, len(docs), depth, cost, tokens_in, tokens_out, model_name)
+    from ..services.usage import record_usage
+    record_usage(
+        usage_type="qa",
+        provider_type=provider.provider_type,
+        provider_name=provider.name,
+        model=model_name,
+        tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost,
+    )
 
     return AIAnswerResponse(
         answer=answer,

@@ -10,9 +10,47 @@ from ..schemas import (
     ProviderModelInfo,
     AIProviderCreate,
     AIProviderOut,
+    AIProviderFull,
+    ProvidersExport,
+    ProvidersImport,
 )
 
 router = APIRouter()
+
+
+# ── Export / Import (full config incl. API keys) ──────────────────────────────
+
+@router.get("/providers/export", response_model=ProvidersExport)
+def export_providers(db: Session = Depends(get_db)):
+    """Download all AI providers, API keys included, for backup or migration."""
+    providers = db.query(AIProvider).order_by(AIProvider.sort_order).all()
+    return ProvidersExport(
+        version=1,
+        providers=[AIProviderFull.model_validate(p) for p in providers],
+    )
+
+
+@router.post("/providers/import")
+def import_providers(body: ProvidersImport, db: Session = Depends(get_db)):
+    """Restore AI providers from an exported config.
+
+    replace=True wipes the current provider list first; otherwise the imported
+    providers are appended after the existing ones.
+    """
+    if body.replace:
+        db.query(AIProvider).delete()
+        db.commit()
+
+    base_order = db.query(func.max(AIProvider.sort_order)).scalar() or 0
+    imported = 0
+    for i, p in enumerate(body.providers):
+        data = p.model_dump()
+        if not body.replace:
+            data["sort_order"] = base_order + (i + 1) * 10
+        db.add(AIProvider(**data))
+        imported += 1
+    db.commit()
+    return {"imported": imported, "replaced": body.replace}
 
 
 # ── AI Providers ──────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.models import Document
 from app.services.ai_analysis import AnalysisResult
-from app.services.indexer import _apply_analysis_result
+from app.services.indexer import _apply_analysis_result, _is_unclassified
 
 
 def test_apply_analysis_result_writes_all_metadata_columns():
@@ -47,3 +47,14 @@ def test_apply_analysis_result_ignores_invalid_date():
 
     assert doc.document_type == "letter"
     assert doc.document_date is None
+
+
+def test_is_unclassified_predicate():
+    # Rule (bug fix): reclassify_unclassified_batch only counts a doc as
+    # "classified" when its type is a real category. None / "unclassified" /
+    # "other" all mean still-unclassified — these are the three values the
+    # "classify unclassified" job retries and the stats counter keys on.
+    assert _is_unclassified(Document(filename="a", filepath="/a", document_type=None))
+    assert _is_unclassified(Document(filename="a", filepath="/a", document_type="unclassified"))
+    assert _is_unclassified(Document(filename="a", filepath="/a", document_type="other"))
+    assert not _is_unclassified(Document(filename="a", filepath="/a", document_type="invoice"))

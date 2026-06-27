@@ -86,6 +86,14 @@ async def _run_ocr(doc: Document, db: Session) -> None:
         doc.ocr_model = engine
         doc.ocr_status = "done"
         _log(db, doc, "ocr", "done", level="trace")
+        from .usage import record_usage
+        record_usage(
+            usage_type="ocr",
+            provider_type="worker" if engine == "easyocr" else "local",
+            model=engine,
+            cost_usd=0.0,
+            document_id=doc.id,
+        )
     except Exception as e:
         doc.ocr_status = "error"
         doc.ocr_error = str(e)
@@ -205,6 +213,14 @@ async def _run_embedding(doc: Document, db: Session) -> None:
     try:
         from .embeddings import embed_document
         await asyncio.to_thread(embed_document, doc.id, text)
+        from .usage import record_usage
+        record_usage(
+            usage_type="embedding",
+            provider_type="local",
+            model="sentence-transformers",
+            cost_usd=0.0,
+            document_id=doc.id,
+        )
     except Exception as e:
         log.warning("Embedding failed for doc %s: %s", doc.id, e)
 
@@ -296,10 +312,26 @@ async def reclassify_document(document_id: int) -> None:
         db.close()
 
 
+def _is_unclassified(doc: Document) -> bool:
+    return doc.document_type in (None, "unclassified", "other")
+
+
 async def reclassify_unclassified_batch(limit: int = 200) -> dict:
-    """Re-run AI Analysis on unclassified / 'other' docs that were not manually classified."""
+    """Re-run AI Analysis on unclassified / 'other' docs that were not manually classified.
+
+    Reports *real* outcomes so the caller can tell whether anything actually
+    changed — a doc can stay unclassified because the LLM returns "unclassified"
+    again, because it has no OCR text, or because no analysis provider is set up.
+    """
     db = SessionLocal()
     try:
+        # If no analysis provider is configured, every doc would silently be
+        # "skipped" — surface that as an explicit, actionable result instead.
+        from .ai_analysis import _get_providers
+        if not _get_providers(db):
+            return {"candidates": 0, "classified": 0, "still_unclassified": 0,
+                    "skipped": 0, "errors": 0, "no_provider": True}
+
         docs = (
             db.query(Document)
             .filter(
@@ -315,18 +347,30 @@ async def reclassify_unclassified_batch(limit: int = 200) -> dict:
             .limit(limit)
             .all()
         )
-        processed = errors = 0
+        candidates = len(docs)
+        classified = still_unclassified = skipped = errors = 0
         for doc in docs:
             try:
                 doc.analysis_status = "pending"
                 db.commit()
                 await _run_analysis(doc, db)
                 await _run_embedding(doc, db)
-                processed += 1
+                if doc.analysis_status == "skipped":
+                    skipped += 1
+                elif _is_unclassified(doc):
+                    still_unclassified += 1
+                else:
+                    classified += 1
             except Exception as e:
                 errors += 1
                 log.error("Reclassify unclassified: doc %s failed: %s", doc.id, e)
-        return {"processed": processed, "errors": errors}
+        return {
+            "candidates": candidates,
+            "classified": classified,
+            "still_unclassified": still_unclassified,
+            "skipped": skipped,
+            "errors": errors,
+        }
     finally:
         db.close()
 

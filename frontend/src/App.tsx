@@ -23,8 +23,23 @@ function HomeRoute() {
   );
 }
 
+const LANG_KEY = "lang";
+
+function getInitialLang(): Lang {
+  try {
+    const stored = localStorage.getItem(LANG_KEY);
+    if (stored === "en" || stored === "ru" || stored === "fr") return stored;
+  } catch {}
+  return "en"; // English is the default on a fresh install
+}
+
 export default function App() {
-  const [lang, setLang] = useState<Lang>("ru");
+  const [lang, setLangState] = useState<Lang>(getInitialLang);
+
+  const setLang = (l: Lang) => {
+    setLangState(l);
+    try { localStorage.setItem(LANG_KEY, l); } catch {}
+  };
 
   useEffect(() => {
     getCustomTypeIcons().then(setCustomTypeIcons).catch(() => {});

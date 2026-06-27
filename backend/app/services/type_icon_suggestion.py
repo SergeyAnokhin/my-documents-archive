@@ -138,7 +138,15 @@ async def _suggest_one(
 
         for provider in providers:
             try:
-                raw, _, _, _ = await run_text(provider, _SUGGEST_SYSTEM, user_msg)
+                raw, tin, tout, cost = await run_text(provider, _SUGGEST_SYSTEM, user_msg)
+                from .usage import record_usage
+                record_usage(
+                    usage_type="icon_suggest",
+                    provider_type=getattr(provider, "provider_type", "unknown"),
+                    provider_name=getattr(provider, "name", None),
+                    model=getattr(provider, "model", None),
+                    tokens_in=tin, tokens_out=tout, cost_usd=cost,
+                )
                 data = json.loads(strip_code_fences(raw))
                 icon = str(data.get("icon", "")).strip()
 
