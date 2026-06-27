@@ -51,6 +51,13 @@ const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
   batch_analysis_gemini: "gemini",
 };
 
+// Default poll interval (seconds) per provider type.
+// Edit here to change the pre-filled value in the create form per provider.
+const BATCH_POLL_DEFAULTS: Record<string, number> = {
+  mistral: 30,
+  gemini:  30,
+};
+
 // Tasks that have a scope selector (cumulative level filter).
 const TYPES_WITH_SCOPE: TaskType[] = ["batch_ocr_mistral", "batch_ocr_gemini"];
 
@@ -59,6 +66,11 @@ const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
   batch_ocr_mistral:     "https://docs.mistral.ai/capabilities/batch/",
   batch_ocr_gemini:      "https://ai.google.dev/gemini-api/docs/batch-mode",
   batch_analysis_gemini: "https://ai.google.dev/gemini-api/docs/batch-mode",
+};
+
+// Links to provider batch consoles — shown while the task is running.
+const BATCH_CONSOLE_URLS: Partial<Record<TaskType, string>> = {
+  batch_ocr_mistral: "https://console.mistral.ai/build/batches",
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -328,11 +340,23 @@ function TaskCard({
         </div>
       )}
 
-      {/* Batch job ID — useful when polling */}
+      {/* Batch job ID + console link — shown while running */}
       {task.status === "running" && !!task.result_summary?.batch_job_id && (
-        <p className="text-xs text-muted" style={{ fontFamily: "var(--font-mono)" }}>
-          job: {String(task.result_summary.batch_job_id)}
-        </p>
+        <div className="task-batch-meta">
+          <span className="text-xs text-muted" style={{ fontFamily: "var(--font-mono)" }}>
+            job: {String(task.result_summary.batch_job_id)}
+          </span>
+          {BATCH_CONSOLE_URLS[taskType] && (
+            <a
+              className="task-console-link"
+              href={BATCH_CONSOLE_URLS[taskType]}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Batches ↗
+            </a>
+          )}
+        </div>
       )}
 
       {/* Footer */}
@@ -374,7 +398,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [selectedType, setSelectedType] = useState<TaskType | null>(null);
   const [title, setTitle] = useState("");
   const [limit, setLimit] = useState("50");
-  const [pollInterval, setPollInterval] = useState("300");
+  const [pollInterval, setPollInterval] = useState("30");
   const [providerId, setProviderId] = useState<string>("");
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [saving, setSaving] = useState(false);
@@ -425,8 +449,10 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
     setTitle(t.tasks.types[type as keyof typeof t.tasks.types] ?? type);
     setScope(1);
     setScopeCount(null);
-    if (BATCH_PROVIDER_TYPE[type]) {
+    const providerType = BATCH_PROVIDER_TYPE[type];
+    if (providerType) {
       setLimit("50");
+      setPollInterval(String(BATCH_POLL_DEFAULTS[providerType] ?? 30));
     }
   };
 
@@ -443,7 +469,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       }
       if (isBatch) {
         if (providerId) config.provider_id = parseInt(providerId, 10);
-        config.poll_interval = parseInt(pollInterval, 10) || 300;
+        config.poll_interval = parseInt(pollInterval, 10) || (batchProviderType ? BATCH_POLL_DEFAULTS[batchProviderType] : 30) || 30;
       }
       const task = await createTask({ task_type: selectedType, title: title.trim(), config });
       onCreated(task);

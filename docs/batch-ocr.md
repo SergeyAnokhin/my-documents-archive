@@ -24,7 +24,7 @@ seconds), and finally write the transcribed text into `Document.ocr_text`.
 |-----|---------|---------|
 | `limit` | 50 | Max pending documents to include in one batch |
 | `provider_id` | (first enabled) | Which `AIProvider` row to use; must match the provider type |
-| `poll_interval` | 300 | Seconds between status checks while the job runs |
+| `poll_interval` | 30 | Seconds between status checks while the job runs |
 
 The Tasks panel loads only enabled providers whose `provider_type` matches the
 task (`mistral` for `batch_ocr_mistral`, `gemini` for `batch_ocr_gemini`). If no

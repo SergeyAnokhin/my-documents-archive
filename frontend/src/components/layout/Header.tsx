@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Settings, Globe, Moon, Sun, Zap, ListTodo } from "lucide-react";
 import { useT, type Lang } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { IndexingBadge } from "../ui/IndexingBadge";
+import { listTasks } from "../../api/documents";
 import "./Header.css";
 
 const LANG_CYCLE: Lang[] = ["en", "ru", "fr"];
@@ -32,6 +33,29 @@ export function Header({ onAdminOpen, onTasksOpen }: Props) {
   const { t, lang, setLang } = useT();
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
   const { advancedMode, setAdvancedMode } = useAdvancedMode();
+  const [taskCounts, setTaskCounts] = useState({ running: 0, idle: 0 });
+  const taskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!advancedMode) {
+      setTaskCounts({ running: 0, idle: 0 });
+      return;
+    }
+    const poll = async () => {
+      try {
+        const tasks = await listTasks();
+        setTaskCounts({
+          running: tasks.filter(t => t.status === "running").length,
+          idle: tasks.filter(t => t.status === "idle").length,
+        });
+      } catch { /* ignore */ }
+    };
+    poll();
+    taskPollRef.current = setInterval(poll, 5000);
+    return () => {
+      if (taskPollRef.current) clearInterval(taskPollRef.current);
+    };
+  }, [advancedMode]);
 
   useEffect(() => { applyTheme(theme); }, [theme]);
 
@@ -60,6 +84,12 @@ export function Header({ onAdminOpen, onTasksOpen }: Props) {
             >
               <ListTodo size={15} />
               <span>{t.tasks.title}</span>
+              {(taskCounts.running > 0 || taskCounts.idle > 0) && (
+                <span className={`tasks-btn-badge${taskCounts.running > 0 ? " tasks-btn-badge--running" : ""}`}>
+                  {taskCounts.running > 0 && <span className="tasks-btn-spinner" aria-hidden="true" />}
+                  <span>{taskCounts.running > 0 ? taskCounts.running : taskCounts.idle}</span>
+                </span>
+              )}
             </button>
           )}
 

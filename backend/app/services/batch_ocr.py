@@ -75,7 +75,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
-    poll_interval = int(config.get("poll_interval", 300))
+    poll_interval = int(config.get("poll_interval", 30))
 
     # ── 1. Resolve Mistral provider ──────────────────────────────────────────
     db = SessionLocal()
@@ -335,7 +335,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
-    poll_interval = int(config.get("poll_interval", 300))
+    poll_interval = int(config.get("poll_interval", 30))
 
     # ── 1. Resolve Gemini provider ───────────────────────────────────────────
     db = SessionLocal()

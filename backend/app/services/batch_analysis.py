@@ -34,11 +34,11 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
     Config keys:
       limit         — max documents to include (default 50)
       provider_id   — AIProvider id to use; falls back to first enabled Gemini
-      poll_interval — seconds between status polls (default 300)
+      poll_interval — seconds between status polls (default 30)
     """
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
-    poll_interval = int(config.get("poll_interval", 300))
+    poll_interval = int(config.get("poll_interval", 30))
 
     # ── 1. Resolve provider ───────────────────────────────────────────────────
     db = SessionLocal()
