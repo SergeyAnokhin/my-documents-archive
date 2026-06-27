@@ -443,7 +443,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
           </button>
 
           <div className="create-form-desc">
-            <p>{t.tasks.descriptions[selectedType as keyof typeof t.tasks.descriptions]}</p>
+            <p>{t.tasks.detailedDescriptions[selectedType as keyof typeof t.tasks.detailedDescriptions]}</p>
             {TASK_DOC_URLS[selectedType] && (
               <a
                 className="create-form-doc-link"

@@ -348,6 +348,15 @@ export const en = {
       cleanup_missing: "Clean Up Missing",
     },
     descriptions: {
+      index_unindexed: "Run OCR + AI analysis on all pending documents",
+      sync_library: "Scan library for new files and index them",
+      reclassify_unclassified: "AI classification for unclassified documents",
+      reclassify_all: "Re-run AI analysis on all documents",
+      batch_ocr_mistral: "Batch OCR via Mistral API (2× cheaper, async)",
+      batch_ocr_gemini: "Batch OCR via Gemini API (2× cheaper, async)",
+      cleanup_missing: "Remove DB entries for files that no longer exist on disk",
+    },
+    detailedDescriptions: {
       index_unindexed: "Runs OCR text extraction and AI analysis on every document that hasn't been processed yet. Each document goes through the full pipeline: local Tesseract or EasyOCR worker for OCR, optional vision-model transcription, then AI classification producing a summary, tags, document type, language, and key entities. Use this after bulk-importing new files.",
       sync_library: "Scans the library folder for files not yet in the database and queues them for indexing. It also hard-deletes database records whose source files have been removed from disk — the operation is aborted entirely if the library is unreachable to prevent accidental mass deletion. Safe to run repeatedly.",
       reclassify_unclassified: "Re-runs AI analysis on documents that completed OCR but were never classified (type is 'unclassified' or 'other'). Documents that were manually classified by the user are skipped. Useful when you add a new AI provider and want to catch up on a backlog of previously unprocessed documents without reprocessing already-classified ones.",

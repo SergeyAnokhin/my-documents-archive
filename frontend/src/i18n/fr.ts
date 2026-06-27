@@ -340,6 +340,15 @@ export const fr: Translations = {
       cleanup_missing: "Nettoyer les fichiers manquants",
     },
     descriptions: {
+      index_unindexed: "OCR + analyse IA pour les documents en attente",
+      sync_library: "Scan de la bibliothèque et indexation des nouveaux fichiers",
+      reclassify_unclassified: "Classification IA des documents non classifiés",
+      reclassify_all: "Ré-exécuter l'analyse IA sur tous les documents",
+      batch_ocr_mistral: "OCR par lots via l'API Mistral (2× moins cher, asynchrone)",
+      batch_ocr_gemini: "OCR par lots via l'API Gemini (2× moins cher, asynchrone)",
+      cleanup_missing: "Supprimer de la BDD les entrées dont les fichiers n'existent plus",
+    },
+    detailedDescriptions: {
       index_unindexed: "Lance l'extraction OCR et l'analyse IA sur tous les documents qui n'ont pas encore été traités. Chaque document passe par le pipeline complet : OCR local (Tesseract ou worker EasyOCR), transcription optionnelle par un modèle vision, puis classification IA produisant un résumé, des tags, un type, une langue et les entités clés. À utiliser après l'importation en masse de nouveaux fichiers.",
       sync_library: "Scanne le dossier de la bibliothèque pour trouver les fichiers absents de la base de données et les met en file d'indexation. Supprime aussi définitivement les enregistrements dont les fichiers source ont été effacés du disque — l'opération est annulée si la bibliothèque est inaccessible pour éviter une suppression accidentelle en masse. Sûr à exécuter plusieurs fois.",
       reclassify_unclassified: "Relance l'analyse IA sur les documents qui ont un texte OCR mais n'ont jamais été classifiés (type 'non classifié' ou 'autre'). Les documents classifiés manuellement par l'utilisateur sont ignorés. Utile après l'ajout d'un nouveau fournisseur IA pour rattraper le retard accumulé sans retraiter les documents déjà classifiés.",
