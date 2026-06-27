@@ -306,6 +306,30 @@
 
 /* ── Create form ─────────────────────────────────────────────────────────── */
 
+.create-form-desc {
+  font-size: .875rem;
+  color: var(--color-ink-muted);
+  line-height: 1.6;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-tag);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-accent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.create-form-doc-link {
+  font-size: .8125rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  text-decoration: none;
+  align-self: flex-start;
+}
+.create-form-doc-link:hover {
+  text-decoration: underline;
+}
+
 .create-form {
   display: flex;
   flex-direction: column;

@@ -47,6 +47,12 @@ const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
   batch_ocr_gemini:  "gemini",
 };
 
+// External documentation links for task types that have official provider docs.
+const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
+  batch_ocr_mistral: "https://docs.mistral.ai/capabilities/batch/",
+  batch_ocr_gemini:  "https://ai.google.dev/gemini-api/docs/batch-mode",
+};
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -435,6 +441,20 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
           <button className="task-btn-ghost create-form-back" onClick={() => setSelectedType(null)}>
             <ChevronLeft size={14} /> {t.cancel}
           </button>
+
+          <div className="create-form-desc">
+            <p>{t.tasks.descriptions[selectedType as keyof typeof t.tasks.descriptions]}</p>
+            {TASK_DOC_URLS[selectedType] && (
+              <a
+                className="create-form-doc-link"
+                href={TASK_DOC_URLS[selectedType]}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t.tasks.readDocs}
+              </a>
+            )}
+          </div>
 
           <div className="create-form-field">
             <label className="create-form-label">{t.tasks.taskTitle}</label>
