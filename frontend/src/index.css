@@ -120,6 +120,11 @@ img { max-width: 100%; }
   clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 
+/* Tighter side gutters on narrow / phone screens */
+@media (max-width: 600px) {
+  .container { padding: 0 var(--sp-4); }
+}
+
 /* ── Typography helpers ─────────────────────────────────────────────────── */
 .text-muted   { color: var(--color-ink-muted); }
 .text-faint   { color: var(--color-ink-faint); }

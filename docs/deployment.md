@@ -16,7 +16,7 @@ push to main ─► GitHub Actions (.github/workflows/build.yml)
 ```
 
 ArgoCD tracks the **`deploy`** branch, never `main`. App slug / namespace /
-ingress host = **`my-documents-archive`** / `my-documents-archive.local`.
+ingress host = **`my-documents-archive`** / `my-documents-archive.lan`.
 GHCR packages are **public** (no pull secret).
 
 ## Files
@@ -144,13 +144,13 @@ kubectl -n argocd get application my-documents-archive
 (`C:\Windows\System32\drivers\etc\hosts` на Windows, `/etc/hosts` на Linux/Mac):
 
 ```
-192.168.1.X  my-documents-archive.local
+192.168.1.X  my-documents-archive.lan
 ```
 
 где `192.168.1.X` — IP любого узла кластера (Traefik слушает на всех нодах).
 Можно узнать: `kubectl get nodes -o wide`.
 
-После этого открывай: **http://my-documents-archive.local**
+После этого открывай: **http://my-documents-archive.lan**
 
 ### Шаг 6 — Первичная синхронизация существующих документов
 

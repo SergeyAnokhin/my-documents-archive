@@ -142,7 +142,7 @@ Platform contract lives in [k3s-platform-deployment.md](k3s-platform-deployment.
 | `deploy/helm/.../templates/ingress.yaml` | Traefik ingress: `/api`+`/thumbnails`→backend (no strip), `/`→frontend |
 | `deploy/helm/.../templates/{frontend-deployment,*-service,_helpers}.yaml` | Frontend Deployment, Services, name/label/image helpers |
 
-**Human-only steps** (cluster access; see spec §6): first build to populate GHCR → make packages public → install SMB CSI driver → create `my-documents-archive-smb-creds` secret (keys `username`/`password`) → `kubectl apply` the ArgoCD Application → add `my-documents-archive.local` to hosts/DNS. Backfill existing NAS docs via **Admin → Sync** (the watcher is non-recursive + new-files-only).
+**Human-only steps** (cluster access; see spec §6): first build to populate GHCR → make packages public → install SMB CSI driver → create `my-documents-archive-smb-creds` secret (keys `username`/`password`) → `kubectl apply` the ArgoCD Application → add `my-documents-archive.lan` to hosts/DNS. Backfill existing NAS docs via **Admin → Sync** (the watcher is non-recursive + new-files-only).
 
 ## Key Data Flow
 

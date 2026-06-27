@@ -170,3 +170,18 @@
 @keyframes tasks-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Narrow / phone screens ─────────────────────────────────────────────────
+   Keep the header on a single row by shrinking gaps, collapsing the Tasks
+   button to an icon, and dropping the logo wordmark on the smallest screens. */
+@media (max-width: 560px) {
+  .header-actions { gap: var(--sp-1); }
+  .icon-btn { width: 32px; height: 32px; }
+  /* Tasks button → icon only (hide the text label, keep icon + count badge) */
+  .header-tasks-btn { padding: 0 var(--sp-2); }
+  .header-tasks-btn > span:not(.tasks-btn-badge) { display: none; }
+}
+
+@media (max-width: 380px) {
+  .header-logo-name { display: none; }
+}

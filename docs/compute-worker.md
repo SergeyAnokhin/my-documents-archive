@@ -164,7 +164,7 @@ ipconfig | findstr "IPv4"
 
 ### 4. Подключить в UI
 
-Открой `http://my-documents-archive.local` → **Admin → Indexing → Compute Worker**,
+Открой `http://my-documents-archive.lan` → **Admin → Indexing → Compute Worker**,
 вставь URL:
 
 ```

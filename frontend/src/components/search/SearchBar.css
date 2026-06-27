@@ -198,6 +198,16 @@
   background: color-mix(in srgb, #6366f1 10%, transparent);
 }
 
+/* On narrow screens the bottom-row groups wrap to their own line, where the
+   left divider/indent looks orphaned — drop them so groups stack cleanly. */
+@media (max-width: 600px) {
+  .search-filters,
+  .search-depth {
+    padding-left: 0;
+    border-left: none;
+  }
+}
+
 /* ── Dev mode toggle (gear icon button) ── */
 .search-devmode-btn {
   display: flex;

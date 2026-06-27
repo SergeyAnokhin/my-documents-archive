@@ -82,10 +82,13 @@
   display: grid;
   gap: var(--sp-4);
 }
-.doc-grid-size-sm  { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-.doc-grid-size-md  { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-.doc-grid-size-lg  { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-.doc-grid-size-xl  { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+/* min(Npx, 100%) keeps a tile from ever exceeding the container width,
+   so large tile sizes collapse to a single column instead of overflowing
+   horizontally on narrow / phone screens. */
+.doc-grid-size-sm  { grid-template-columns: repeat(auto-fill, minmax(min(130px, 100%), 1fr)); }
+.doc-grid-size-md  { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); }
+.doc-grid-size-lg  { grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
+.doc-grid-size-xl  { grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr)); }
 
 /* AI mode */
 .ai-mode-content {
@@ -178,3 +181,10 @@
 .empty-state-icon { font-size: 3rem; line-height: 1; }
 .empty-state-title { font-size: 1.25rem; font-weight: 600; }
 .empty-state-hint { max-width: 320px; }
+
+/* ── Narrow / phone screens ─────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .home-page { padding-top: var(--sp-6); }
+  .home-hero { margin-bottom: var(--sp-6); gap: var(--sp-4); }
+  .home-tagline { font-size: 1.25rem; }
+}

@@ -70,3 +70,10 @@
   overflow-y: auto;
   padding: var(--sp-6);
 }
+
+/* Narrow / phone screens: reclaim edge space and tighten body padding */
+@media (max-width: 480px) {
+  .modal-overlay { padding: var(--sp-2); }
+  .modal-header { padding: var(--sp-4) var(--sp-4) var(--sp-3); }
+  .modal-body { padding: var(--sp-4); }
+}

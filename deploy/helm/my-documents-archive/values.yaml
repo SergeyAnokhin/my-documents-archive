@@ -43,6 +43,6 @@ frontend:
 ingress:
   enabled: true
   className: traefik
-  host: my-documents-archive.local
+  host: my-documents-archive.lan
   # DocIntel backend serves routes AT /api/... already, so DO NOT strip the prefix.
   stripApiPrefix: false
