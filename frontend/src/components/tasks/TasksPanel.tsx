@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Square, Play, ScrollText, Trash2, X, GripVertical, ChevronLeft, Layers } from "lucide-react";
+import { Plus, Square, Play, ScrollText, Trash2, X, GripVertical, ChevronLeft, Layers, Download } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import {
   listTasks, createTask, deleteTask, runTask, stopTask,
   stopAllTasks, getTaskLogs, updateTask, listProviders, getTaskCandidates, getScopeCount,
-  resumeBatchTask,
+  resumeBatchTask, getBatchResultUrl,
 } from "../../api/documents";
 import type { AIProvider, Task, TaskLog, TaskType } from "../../types";
 import "./TasksPanel.css";
@@ -854,6 +854,17 @@ function BatchMonitorModal({ tasks, t, onRefresh, onLogs, onClose }: BatchMonito
                     <ScrollText size={14} />
                     <span>{t.tasks.logs}</span>
                   </button>
+                  {task.status === "done" && (
+                    <a
+                      className="task-btn-ghost"
+                      href={getBatchResultUrl(task.id)}
+                      download={`batch_result_task_${task.id}.jsonl`}
+                      title={t.tasks.batchDownloadResult}
+                    >
+                      <Download size={14} />
+                      <span>{t.tasks.batchDownloadResult}</span>
+                    </a>
+                  )}
                   <div className="task-card-actions">
                     {task.status === "running" ? (
                       <button className="task-btn task-btn--stop" onClick={() => handleStop(task)}>

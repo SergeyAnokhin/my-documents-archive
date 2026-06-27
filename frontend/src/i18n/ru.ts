@@ -438,6 +438,7 @@ export const ru: Translations = {
     batchResume: "Возобновить опрос",
     batchResumeHint: "Удалённое задание продолжает выполняться — переподключиться и применить результаты.",
     batchNoJobId: "Нет ID удалённого задания — задача ещё не была отправлена.",
+    batchDownloadResult: "Скачать JSONL",
   },
 
   loading: "Загрузка…",

@@ -23,7 +23,7 @@ from .task_runtime import (
     set_progress as _set_progress,
 )
 from .ai_analysis import ANALYSIS_SYSTEM
-from .ai_common import strip_code_fences
+from .ai_common import parse_llm_json
 from .batch_ocr import GEMINI_BATCH_BASE
 
 log = logging.getLogger(__name__)
@@ -261,12 +261,23 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         results_resp.raise_for_status()
         results_text = results_resp.text
 
+    # Save raw results locally for debugging / manual download
+    from ..config import settings as _cfg
+    try:
+        _batch_dir = _cfg.docintell_dir / "batch_results"
+        _batch_dir.mkdir(parents=True, exist_ok=True)
+        (_batch_dir / f"task_{task_id}.jsonl").write_text(results_text, encoding="utf-8")
+        _log(task_id, f"Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
+    except Exception as _save_exc:
+        _log(task_id, f"Could not save raw results file: {_save_exc}", "warning")
+
     # ── 8. Save analysis to documents ────────────────────────────────────────
     _log(task_id, "Saving analysis results…")
     processed = 0
     failed_count = 0
     tokens_in = 0
     tokens_out = 0
+    key = ""
 
     db = SessionLocal()
     try:
@@ -297,8 +308,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     for part in (cand.get("content") or {}).get("parts") or []:
                         text += part.get("text", "")
 
-                raw_json = strip_code_fences(text.strip())
-                parsed = json.loads(raw_json)
+                parsed = parse_llm_json(text.strip())
 
                 doc = db.query(Document).filter(Document.id == doc_id).first()
                 if not doc:
@@ -331,7 +341,10 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
 
             except Exception as exc:
                 db.rollback()
-                _log(task_id, f"✗ Parse error for key '{key}': {exc}", "error")
+                text_preview = (text[:400].replace("\n", " ")) if "text" in dir() else ""
+                _log(task_id, f"✗ Doc key '{key}': {exc}", "error")
+                if text_preview:
+                    _log(task_id, f"  Model response preview: {text_preview}", "error")
                 failed_count += 1
     finally:
         db.close()

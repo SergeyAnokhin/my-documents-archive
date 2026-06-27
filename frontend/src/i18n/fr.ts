@@ -438,6 +438,7 @@ export const fr: Translations = {
     batchResume: "Reprendre le suivi",
     batchResumeHint: "La tâche distante continue — se reconnecter et appliquer les résultats.",
     batchNoJobId: "Pas d'ID de tâche distante — la tâche n'a pas encore été soumise.",
+    batchDownloadResult: "Télécharger JSONL",
   },
 
   loading: "Chargement…",

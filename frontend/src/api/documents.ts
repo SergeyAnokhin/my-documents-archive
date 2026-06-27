@@ -268,3 +268,6 @@ export const getScopeCount = (taskType: string, scope: number) =>
 
 export const resumeBatchTask = (id: number) =>
   api.post<{ message: string }>(`/tasks/${id}/resume-batch`);
+
+export const getBatchResultUrl = (id: number) =>
+  `/api/tasks/${id}/batch-result`;

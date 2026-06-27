@@ -4,6 +4,8 @@ Keeps in one place what used to be copy-pasted between ai_analysis.py and
 ai_vision.py: markdown-fence stripping, provider usage-stats updates, the
 env-var provider stand-in, and the canonical document-type taxonomy.
 """
+import json
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -32,6 +34,19 @@ def strip_code_fences(raw: str) -> str:
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
         text = "\n".join(lines[1:end])
     return text
+
+
+def parse_llm_json(raw: str) -> dict:
+    """Parse JSON from an LLM response, tolerating common model output quirks.
+
+    Handles:
+    - Markdown code fences (```json … ```)
+    - Trailing commas before } or ] (Gemini sometimes emits them)
+    """
+    text = strip_code_fences(raw)
+    # Remove trailing commas before closing braces/brackets
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    return json.loads(text)
 
 
 def update_provider_stats(

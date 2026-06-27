@@ -22,7 +22,7 @@ from .task_runtime import (
     set_progress as _set_progress,
 )
 from .ai_vision import VISION_FULL_PROMPT
-from .ai_common import strip_code_fences
+from .ai_common import parse_llm_json, strip_code_fences
 
 
 _LOCAL_OCR_MODELS = {"tesseract", "easyocr"}
@@ -269,6 +269,16 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         )
         results_resp.raise_for_status()
         results_text = results_resp.text
+
+    # Save raw results locally for debugging / manual download
+    from ..config import settings as _cfg
+    try:
+        _batch_dir = _cfg.docintell_dir / "batch_results"
+        _batch_dir.mkdir(parents=True, exist_ok=True)
+        (_batch_dir / f"task_{task_id}.jsonl").write_text(results_text, encoding="utf-8")
+        _log(task_id, f"Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
+    except Exception as _save_exc:
+        _log(task_id, f"Could not save raw results file: {_save_exc}", "warning")
 
     # ── 8. Save OCR text to documents ────────────────────────────────────────
     _log(task_id, "Saving OCR results to documents…")
@@ -585,6 +595,16 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         results_resp.raise_for_status()
         results_text = results_resp.text
 
+    # Save raw results locally for debugging / manual download
+    from ..config import settings as _cfg
+    try:
+        _batch_dir = _cfg.docintell_dir / "batch_results"
+        _batch_dir.mkdir(parents=True, exist_ok=True)
+        (_batch_dir / f"task_{task_id}.jsonl").write_text(results_text, encoding="utf-8")
+        _log(task_id, f"Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
+    except Exception as _save_exc:
+        _log(task_id, f"Could not save raw results file: {_save_exc}", "warning")
+
     # ── 8. Save OCR text to documents ────────────────────────────────────────
     _log(task_id, "Saving OCR results to documents…")
     processed = 0
@@ -626,10 +646,12 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
 
                 doc = db.query(Document).filter(Document.id == doc_id).first()
                 if doc:
+                    parse_error: str | None = None
+                    parsed = None
                     try:
-                        parsed = json.loads(strip_code_fences(text))
-                    except Exception:
-                        parsed = None
+                        parsed = parse_llm_json(text)
+                    except Exception as exc:
+                        parse_error = str(exc)
 
                     if parsed and isinstance(parsed, dict) and parsed.get("text"):
                         doc.ocr_text = parsed["text"]
@@ -664,12 +686,20 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         _log(task_id, f"✓ OCR + analysis saved for doc {doc_id}")
                         processed += 1
                     else:
-                        # JSON parse failed — save raw text as OCR only, leave analysis pending
+                        # Save raw text as OCR only; leave analysis pending
                         doc.ocr_text = text
                         doc.ocr_status = "done"
                         doc.ocr_model = f"{model} (batch)"
                         db.commit()
-                        _log(task_id, f"⚠ Doc {doc_id}: saved raw OCR text (JSON parse failed)", "error")
+                        if parse_error:
+                            _log(task_id, f"⚠ Doc {doc_id}: JSON parse error — {parse_error}", "error")
+                        elif not parsed:
+                            _log(task_id, f"⚠ Doc {doc_id}: response produced no JSON", "error")
+                        else:
+                            keys = list(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
+                            _log(task_id, f"⚠ Doc {doc_id}: parsed JSON missing 'text' field (got keys: {keys})", "error")
+                        preview = text[:400].replace("\n", " ")
+                        _log(task_id, f"  Model response preview: {preview}", "error")
                         processed += 1
 
             except Exception as exc:

@@ -446,6 +446,7 @@ export const en = {
     batchResume: "Resume Polling",
     batchResumeHint: "The remote job kept running — reconnect and apply results when done.",
     batchNoJobId: "No remote job ID — task hasn't been submitted yet.",
+    batchDownloadResult: "Download JSONL",
   },
 
   // Misc

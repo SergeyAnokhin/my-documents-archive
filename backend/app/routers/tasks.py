@@ -187,6 +187,28 @@ async def resume_batch_task(task_id: int, background_tasks: BackgroundTasks, db:
     return {"message": "Batch resume started"}
 
 
+@router.get("/{task_id}/batch-result")
+def download_batch_result(task_id: int, db: Session = Depends(get_db)):
+    """Download the raw JSONL batch result file saved during processing."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from ..config import settings
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    result_path = settings.docintell_dir / "batch_results" / f"task_{task_id}.jsonl"
+    if not result_path.exists():
+        raise HTTPException(404, "No batch result file found for this task")
+
+    return FileResponse(
+        str(result_path),
+        media_type="application/octet-stream",
+        filename=f"batch_result_task_{task_id}.jsonl",
+    )
+
+
 @router.get("/{task_id}/logs", response_model=List[TaskLogOut])
 def get_task_logs(task_id: int, limit: int = 200, db: Session = Depends(get_db)):
     return (
