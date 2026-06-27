@@ -27,7 +27,7 @@ async def trigger_single(
     doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    background_tasks.add_task(index_document, doc_id)
+    background_tasks.add_task(index_document, doc_id, True)  # force_full=True
     return {"message": f"Indexing started for document {doc_id}"}
 
 

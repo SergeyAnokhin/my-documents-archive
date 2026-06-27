@@ -137,6 +137,12 @@ export const updateAppSettings = (body: Record<string, string>) =>
 export const getLog = (limit = 100, minLevel = "info") =>
   api.get<LogEntry[]>(`/admin/log?limit=${limit}&min_level=${minLevel}`);
 
+export const getCustomTypeIcons = () =>
+  api.get<Record<string, string>>("/admin/type-icons");
+
+export const updateTypeIcons = () =>
+  api.post<{ updated: number; icons: Record<string, string> }>("/admin/update-type-icons");
+
 export const listBackups = () => api.get<BackupInfo[]>("/admin/backups");
 export const restoreBackup = (name: string) =>
   api.post<{ restored: string }>("/admin/backups/restore", { name });
@@ -214,3 +220,6 @@ export const stopTask = (id: number) => api.post<{ message: string }>(`/tasks/${
 export const stopAllTasks = () => api.post<{ message: string }>("/tasks/stop-all");
 
 export const getTaskLogs = (id: number) => api.get<TaskLog[]>(`/tasks/${id}/logs`);
+
+export const getTaskCandidates = () =>
+  api.get<Record<string, number | null>>("/tasks/candidates");

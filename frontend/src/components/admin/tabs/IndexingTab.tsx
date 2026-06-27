@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
-import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, getAppSettings, updateAppSettings, getWorkerStatus } from "../../../api/documents";
+import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, getAppSettings, updateAppSettings, getWorkerStatus, updateTypeIcons } from "../../../api/documents";
+import { setCustomTypeIcons } from "../../documents/typeIcons";
 import { api } from "../../../api/client";
 import type { IndexingStats, LabWorkerStatus } from "../../../types";
 
@@ -13,6 +14,7 @@ export function IndexingTab() {
   const [batching, setBatching] = useState(false);
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyingUnclassified, setReclassifyingUnclassified] = useState(false);
+  const [updatingIcons, setUpdatingIcons] = useState(false);
   const [msg, setMsg] = useState("");
   const [syncResult, setSyncResult] = useState<{ added: number; removed: number } | null>(null);
 
@@ -26,6 +28,10 @@ export function IndexingTab() {
   const [ocrEngines, setOcrEngines] = useState<string[]>(["easyocr", "tesseract"]);
   const [savingPriority, setSavingPriority] = useState(false);
 
+  // Auto-process mode
+  const [autoProcessMode, setAutoProcessMode] = useState("full");
+  const [savingMode, setSavingMode] = useState(false);
+
   const loadStats = () => getStats().then(setStats).catch(() => {});
   useEffect(() => { loadStats(); }, []);
 
@@ -35,10 +41,27 @@ export function IndexingTab() {
       if (s.ocr_priority) {
         setOcrEngines(s.ocr_priority.split(",").map((e: string) => e.trim()).filter(Boolean));
       }
+      if (s.auto_process_mode) setAutoProcessMode(s.auto_process_mode);
     }).catch(() => {});
   }, []);
 
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 4000); };
+
+  const handleUpdateIcons = async () => {
+    setUpdatingIcons(true);
+    try {
+      const res = await updateTypeIcons();
+      setCustomTypeIcons(res.icons);
+      window.dispatchEvent(new CustomEvent("docintell:library-changed"));
+      flash(res.updated > 0
+        ? ix.updateIconsDone.replace("{{n}}", String(res.updated))
+        : ix.updateIconsNone);
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setUpdatingIcons(false);
+    }
+  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -103,6 +126,19 @@ export function IndexingTab() {
       await updateAppSettings({ ocr_priority: next.join(",") });
     } finally {
       setSavingPriority(false);
+    }
+  };
+
+  const handleSaveMode = async (value: string) => {
+    setAutoProcessMode(value);
+    setSavingMode(true);
+    try {
+      await updateAppSettings({ auto_process_mode: value });
+      flash(ix.autoProcessSaved);
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setSavingMode(false);
     }
   };
 
@@ -197,6 +233,30 @@ export function IndexingTab() {
         <Button variant="secondary" loading={reclassifyingUnclassified} onClick={handleReclassifyUnclassified}>
           {ix.reclassifyUnclassifiedButton}
         </Button>
+        <Button variant="secondary" loading={updatingIcons} onClick={handleUpdateIcons}>
+          {ix.updateIconsButton}
+        </Button>
+      </div>
+
+      {/* Auto-process mode */}
+      <h3 className="admin-section-title" style={{ marginTop: 24 }}>{ix.autoProcessMode}</h3>
+      <p className="text-xs text-muted" style={{ marginBottom: 10 }}>{ix.autoProcessHint}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {(["full", "ocr_only", "manual"] as const).map(mode => (
+          <label key={mode} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", opacity: savingMode ? 0.6 : 1 }}>
+            <input
+              type="radio"
+              name="auto_process_mode"
+              value={mode}
+              checked={autoProcessMode === mode}
+              onChange={() => handleSaveMode(mode)}
+              style={{ marginTop: 2, flexShrink: 0 }}
+            />
+            <span style={{ fontSize: "0.875rem" }}>
+              {mode === "full" ? ix.autoProcessFull : mode === "ocr_only" ? ix.autoProcessOcrOnly : ix.autoProcessManual}
+            </span>
+          </label>
+        ))}
       </div>
 
       {/* Compute Worker */}

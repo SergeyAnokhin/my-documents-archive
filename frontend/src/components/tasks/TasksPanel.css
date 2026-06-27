@@ -330,6 +330,16 @@
   text-decoration: underline;
 }
 
+.create-form-candidates {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: var(--radius-full);
+  align-self: flex-start;
+}
+
 .create-form {
   display: flex;
   flex-direction: column;

@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import {
   listTasks, createTask, deleteTask, runTask, stopTask,
-  stopAllTasks, getTaskLogs, updateTask, listProviders,
+  stopAllTasks, getTaskLogs, updateTask, listProviders, getTaskCandidates,
 } from "../../api/documents";
 import type { AIProvider, Task, TaskLog, TaskType } from "../../types";
 import "./TasksPanel.css";
@@ -370,12 +370,18 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [providerId, setProviderId] = useState<string>("");
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [saving, setSaving] = useState(false);
+  const [candidates, setCandidates] = useState<Record<string, number | null> | null>(null);
 
   const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
   const isBatch = !!batchProviderType;
   const providerLabel = batchProviderType
     ? batchProviderType[0].toUpperCase() + batchProviderType.slice(1)
     : "";
+
+  // Fetch candidate counts once on mount
+  useEffect(() => {
+    getTaskCandidates().then(setCandidates).catch(() => {});
+  }, []);
 
   // Load matching providers when a batch type is selected
   useEffect(() => {
@@ -454,6 +460,16 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
                 {t.tasks.readDocs}
               </a>
             )}
+            <span className="create-form-candidates">
+              {candidates === null
+                ? t.tasks.candidatesLoading
+                : (() => {
+                    const count = candidates[selectedType];
+                    return count === null || count === undefined
+                      ? t.tasks.candidatesUnknown
+                      : t.tasks.candidatesCount.replace("{{count}}", String(count));
+                  })()}
+            </span>
           </div>
 
           <div className="create-form-field">

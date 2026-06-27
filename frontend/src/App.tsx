@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Header } from "./components/layout/Header";
 import { AdminPanel } from "./components/admin/AdminPanel";
@@ -7,6 +7,8 @@ import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
 import { LangContext, translations, type Lang } from "./i18n";
 import { AdvancedModeProvider } from "./contexts/AdvancedModeContext";
+import { getCustomTypeIcons } from "./api/documents";
+import { setCustomTypeIcons } from "./components/documents/typeIcons";
 
 function HomeRoute() {
   const [adminOpen, setAdminOpen] = useState(false);
@@ -23,6 +25,10 @@ function HomeRoute() {
 
 export default function App() {
   const [lang, setLang] = useState<Lang>("ru");
+
+  useEffect(() => {
+    getCustomTypeIcons().then(setCustomTypeIcons).catch(() => {});
+  }, []);
 
   return (
     <LangContext.Provider value={{ lang, t: translations[lang], setLang }}>

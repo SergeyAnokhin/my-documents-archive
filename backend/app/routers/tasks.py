@@ -61,6 +61,42 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+# ── Candidate counts (pre-flight info for the create form) ───────────────────
+
+@router.get("/candidates")
+def get_candidate_counts(db: Session = Depends(get_db)):
+    """Return how many documents each task type would process right now."""
+    from sqlalchemy import or_
+    base = db.query(Document).filter(Document.is_deleted == False)
+
+    pending = base.filter(Document.ocr_status == "pending").count()
+
+    reclassify_all_count = base.filter(
+        Document.ocr_status == "done",
+        Document.analysis_status != "done",
+    ).count()
+
+    reclassify_unclassified_count = base.filter(
+        Document.ocr_status == "done",
+        Document.manually_classified != True,
+        or_(
+            Document.document_type == "unclassified",
+            Document.document_type == "other",
+            Document.document_type.is_(None),
+        ),
+    ).count()
+
+    return {
+        "index_unindexed": pending,
+        "sync_library": None,
+        "reclassify_unclassified": reclassify_unclassified_count,
+        "reclassify_all": reclassify_all_count,
+        "batch_ocr_mistral": pending,
+        "batch_ocr_gemini": pending,
+        "cleanup_missing": None,
+    }
+
+
 # ── Control ───────────────────────────────────────────────────────────────────
 
 @router.post("/stop-all")

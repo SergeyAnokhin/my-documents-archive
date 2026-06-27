@@ -4,6 +4,11 @@ import {
   Coins, Wallet, KeyRound, BadgeCheck, Umbrella, Stethoscope, Pill, ClipboardPlus,
   GraduationCap, Award, ClipboardList, School, FileCheck, FileBadge, ClipboardCheck,
   Stamp, Mail, Bell, Megaphone, Image, ScanLine, FileQuestion, FileText,
+  // Extra icons available for custom document types
+  Archive, Banknote, BookOpen, Briefcase, Building, Building2,
+  CalendarDays, Clock, CreditCard, Flag, FolderOpen, Globe,
+  Lock, MapPin, Newspaper, Package, Phone, Printer,
+  Scale, Shield, ShieldCheck, ShoppingBag, Tag, Truck, Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,6 +55,25 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   unclassified: FileQuestion,
 };
 
+// Lookup map from icon name string → component.
+// Used to resolve icon names returned by the backend icon-suggestion service.
+// Must include every name in services/type_icon_suggestion.py ALLOWED_ICONS.
+export const ICON_NAME_MAP: Record<string, LucideIcon> = {
+  // Built-in type icons
+  Archive, Award, Baby, BadgeCheck, Bell, BookUser,
+  Car, ClipboardCheck, ClipboardList, ClipboardPlus, Coins,
+  Cross, FileBadge, FileCheck, FileQuestion, FileSignature, FileText,
+  GraduationCap, Gavel, Handshake, Heart, HeartCrack, House,
+  IdCard, Image, KeyRound, Landmark, Mail, Megaphone,
+  Pill, Plane, Receipt, ReceiptText, ScanLine, School,
+  Stamp, Stethoscope, Umbrella, UserCheck, Wallet,
+  // Extra icons for custom types
+  Banknote, BookOpen, Briefcase, Building, Building2,
+  CalendarDays, Clock, CreditCard, Flag, FolderOpen, Globe,
+  Lock, MapPin, Newspaper, Package, Phone, Printer,
+  Scale, Shield, ShieldCheck, ShoppingBag, Tag, Truck, Users,
+};
+
 // Substring keywords for free-form / non-taxonomy types entered via TypePicker.
 // First match wins, so order from most to least specific.
 const KEYWORD_ICONS: [string, LucideIcon][] = [
@@ -89,11 +113,25 @@ const KEYWORD_ICONS: [string, LucideIcon][] = [
   ["id", IdCard],
 ];
 
-/** Returns the lucide icon for a document type, with keyword and default fallbacks. */
+// Module-level cache of custom type → icon name, populated at app startup
+// and refreshed after the admin "Update Icons" action.
+let _customIcons: Record<string, string> = {};
+
+/** Updates the custom icon cache (called at startup and after admin update). */
+export function setCustomTypeIcons(icons: Record<string, string>): void {
+  _customIcons = icons;
+}
+
+/** Returns the lucide icon for a document type, including custom assignments. */
 export function iconForType(type?: string | null): LucideIcon {
   if (!type) return FileText;
   const slug = type.trim().toLowerCase();
+
   if (TYPE_ICONS[slug]) return TYPE_ICONS[slug];
+
+  const customIconName = _customIcons[slug];
+  if (customIconName && ICON_NAME_MAP[customIconName]) return ICON_NAME_MAP[customIconName];
+
   for (const [kw, icon] of KEYWORD_ICONS) {
     if (slug.includes(kw)) return icon;
   }

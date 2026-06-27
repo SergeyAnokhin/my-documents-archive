@@ -27,18 +27,39 @@ log = logging.getLogger(__name__)
 
 # ── Per-document pipeline ─────────────────────────────────────────────────────
 
-async def index_document(document_id: int) -> None:
-    """Full pipeline: OCR → Thumbnail → Vision → Analysis → Embedding."""
+async def index_document(document_id: int, force_full: bool = False) -> None:
+    """OCR → Thumbnail → Vision → Analysis → Embedding.
+
+    Steps run depend on the 'auto_process_mode' AppSetting:
+      full       — all steps (default)
+      ocr_only   — local OCR + thumbnail only; skip Vision + Analysis
+      manual     — thumbnail only; skip OCR + Vision + Analysis
+                   (leaves ocr_status=pending so batch-OCR tasks can pick it up)
+
+    Pass force_full=True to always run all steps regardless of the setting
+    (used by the per-document re-index endpoint).
+    """
     db = SessionLocal()
     try:
         doc = db.query(Document).filter(Document.id == document_id).first()
         if not doc:
             return
 
-        await _run_ocr(doc, db)
+        if force_full:
+            mode = "full"
+        else:
+            mode_row = db.query(AppSettings).filter(AppSettings.key == "auto_process_mode").first()
+            mode = mode_row.value if mode_row else "full"
+
         _run_thumbnail(doc, db)
-        await _run_vision(doc, db)
-        await _run_analysis(doc, db)
+
+        if mode != "manual":
+            await _run_ocr(doc, db)
+
+        if mode == "full":
+            await _run_vision(doc, db)
+            await _run_analysis(doc, db)
+
         await _run_embedding(doc, db)
         doc.indexed_at = datetime.utcnow()
         db.commit()
