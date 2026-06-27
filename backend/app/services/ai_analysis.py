@@ -15,30 +15,25 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Optional
 
-from sqlalchemy import text as sqla_text
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import AIProvider
 from .pricing import estimate_cost
+from .ai_common import (
+    DOCUMENT_TYPES_BLOCK,
+    SyntheticProvider,
+    strip_code_fences,
+    update_provider_stats,
+)
 
 log = logging.getLogger(__name__)
 
-ANALYSIS_SYSTEM = """\
+ANALYSIS_SYSTEM = f"""\
 You are a document analysis assistant. Analyze the document text and return a JSON object with:
 - "summary": 2-3 sentence summary in the document's original language
 - "document_type": the single most specific type from this list:
-    passport, national_id, driver_license, birth_certificate, death_certificate,
-    marriage_certificate, divorce_certificate, residence_permit, visa,
-    contract, agreement, power_of_attorney, court_document,
-    invoice, bank_statement, receipt, tax_document, payslip,
-    property_deed, title_certificate, insurance_policy,
-    medical_certificate, prescription, medical_record,
-    diploma, certificate, transcript, student_id,
-    permit, license, registration, notarial_deed,
-    letter, notice, announcement,
-    photo, scan,
-    unclassified
+{DOCUMENT_TYPES_BLOCK}
   Use "unclassified" if the document does not clearly fit any listed category.
 - "document_type_confidence": 0.0-1.0 how confident you are in the type assignment
 - "tags": array of 3-7 keyword strings
@@ -115,7 +110,7 @@ async def analyze_document(
             raw, tokens_in, tokens_out, cost = await _call_provider(provider, user_msg)
             result = _parse_result(raw)
             result.cost_usd = cost
-            _update_stats(db, provider, tokens_in, tokens_out, cost)
+            update_provider_stats(db, provider, tokens_in, tokens_out, cost)
             return result
         except Exception as e:
             log.warning("Analysis provider '%s' failed: %s", provider.name, e)
@@ -125,17 +120,6 @@ async def analyze_document(
 
 
 # ── Provider selection ─────────────────────────────────────────────────────────
-
-@dataclass
-class _Synthetic:
-    """Stand-in for an AIProvider ORM object, built from env vars."""
-    name: str
-    provider_type: str
-    api_key: str
-    base_url: Optional[str]
-    model: Optional[str] = None
-    id: None = None  # no DB id → stats not tracked
-
 
 def _get_providers(db: Session) -> list:
     """Return enabled analysis providers ordered by sort_order, with env-var fallback."""
@@ -160,26 +144,8 @@ def _get_providers(db: Session) -> list:
         ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),
     ]:
         if key:
-            result.append(_Synthetic(name=ptype, provider_type=ptype, api_key=key, base_url=url))
+            result.append(SyntheticProvider(name=ptype, provider_type=ptype, api_key=key, base_url=url))
     return result
-
-
-# ── Stats tracking ─────────────────────────────────────────────────────────────
-
-def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: float) -> None:
-    if not isinstance(getattr(provider, "id", None), int):
-        return
-    db.execute(
-        sqla_text(
-            "UPDATE ai_providers SET "
-            "total_tokens_in  = total_tokens_in  + :tin, "
-            "total_tokens_out = total_tokens_out + :tout, "
-            "total_cost_usd   = total_cost_usd   + :cost "
-            "WHERE id = :id"
-        ),
-        {"tin": tokens_in, "tout": tokens_out, "cost": cost, "id": provider.id},
-    )
-    db.commit()
 
 
 # ── Provider dispatch ──────────────────────────────────────────────────────────
@@ -275,31 +241,33 @@ async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -
 
 # ── Result parsing ─────────────────────────────────────────────────────────────
 
-def _parse_result(raw: str) -> AnalysisResult:
-    """Parse LLM output, tolerating markdown code fences."""
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-        text = "\n".join(lines[1:end])
+def coerce_analysis_fields(data: dict) -> AnalysisResult:
+    """Build an AnalysisResult from a parsed JSON dict, coercing/normalising field types.
 
-    data = json.loads(text)
+    Shared by `_parse_result` (text analysis) and `ai_vision` (combined vision+analysis),
+    so both produce identical document metadata from the same field names.
+    """
     amount = data.get("amount")
     confidence = data.get("document_type_confidence")
     return AnalysisResult(
-        summary=str(data.get("summary", "")),
-        document_type=str(data.get("document_type", "unclassified")),
+        summary=str(data.get("summary") or ""),
+        document_type=str(data.get("document_type") or "unclassified"),
         document_type_confidence=float(confidence) if confidence is not None else 0.0,
-        tags=[str(t) for t in data.get("tags", [])],
-        language=str(data.get("language", "")),
+        tags=[str(t) for t in (data.get("tags") or [])],
+        language=str(data.get("language") or ""),
         organization=data.get("organization") or None,
         amount=float(amount) if amount is not None else None,
         amount_currency=data.get("amount_currency") or None,
         person_first_name=data.get("person_first_name") or None,
         person_last_name=data.get("person_last_name") or None,
         document_date=data.get("document_date") or None,
-        short_title=str(data.get("short_title", ""))[:40],
+        short_title=str(data.get("short_title") or "")[:40],
     )
+
+
+def _parse_result(raw: str) -> AnalysisResult:
+    """Parse LLM output, tolerating markdown code fences."""
+    return coerce_analysis_fields(json.loads(strip_code_fences(raw)))
 
 
 async def suggest_document_types(
@@ -323,12 +291,7 @@ async def suggest_document_types(
     for provider in providers:
         try:
             raw, _, _, _ = await _call_provider(provider, user_msg, SUGGEST_TYPES_SYSTEM)
-            text = raw.strip()
-            if text.startswith("```"):
-                lines = text.split("\n")
-                end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-                text = "\n".join(lines[1:end])
-            data = json.loads(text)
+            data = json.loads(strip_code_fences(raw))
             if isinstance(data, list):
                 return data[:3]
         except Exception as e:

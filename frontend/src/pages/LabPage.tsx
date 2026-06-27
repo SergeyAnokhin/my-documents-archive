@@ -18,6 +18,7 @@ import type {
 import { formatMs, formatFileSize, VISION_CAPABLE, uid } from "./lab/labUtils";
 import { useLogs } from "./lab/useLogs";
 import { usePanelResize } from "./lab/usePanelResize";
+import { useImageTransform } from "./lab/useImageTransform";
 import { ResultsList } from "./lab/ResultsList";
 import { JudgePanel } from "./lab/JudgePanel";
 import { FloatingTextModal } from "./lab/FloatingTextModal";
@@ -35,8 +36,8 @@ export function LabPage() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [results, setResults] = useState<LabResult[]>([]);
 
-  const [runningOcr, setRunningOcr] = useState<string | null>(null);
-  const [runningVision, setRunningVision] = useState<number | null>(null);
+  const [runningOcr, setRunningOcr] = useState<Set<string>>(new Set());
+  const [runningVision, setRunningVision] = useState<Set<number>>(new Set());
 
   // Judge
   const [judgeProviders, setJudgeProviders] = useState<number[]>([]);
@@ -47,17 +48,10 @@ export function LabPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
 
-  // ── Zoom / Pan ──────────────────────────────────────────────────────────────
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const zoomRef = useRef(zoom);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-
+  // ── Image canvas refs ─────────────────────────────────────────────────────────
   const canvasRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const didAutoFitRef = useRef(false);
-  const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
 
   // ── Image tools ──────────────────────────────────────────────────────────────
   const [imageInfo, setImageInfo] = useState<LabImageInfo | null>(null);
@@ -75,6 +69,12 @@ export function LabPage() {
   const isCroppingRef = useRef(false);
   const cropStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  // ── Zoom / Pan (extracted) ─────────────────────────────────────────────────────
+  const isPdf = doc?.mime_type === "application/pdf" || !!doc?.filename.toLowerCase().endsWith(".pdf");
+  const {
+    zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, onCanvasMouseDown,
+  } = useImageTransform({ canvasRef, imgRef, cropMode, isPdf, resetKey: id });
+
   // ── Panel resize ─────────────────────────────────────────────────────────────
   const { panelWidth, onResizerDown } = usePanelResize();
 
@@ -88,7 +88,7 @@ export function LabPage() {
     e.preventDefault();
   };
 
-  // ── Global mouse handlers (modal drag, canvas pan, crop) ─────────────────────
+  // ── Global mouse handlers (modal drag, crop) ─────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (modalDragStart.current) {
@@ -97,14 +97,6 @@ export function LabPage() {
         setModalPos({
           x: Math.max(0, modalDragStart.current.px + dx),
           y: Math.max(0, modalDragStart.current.py + dy),
-        });
-      }
-      if (canvasPanStartRef.current) {
-        const dx = e.clientX - canvasPanStartRef.current.mouseX;
-        const dy = e.clientY - canvasPanStartRef.current.mouseY;
-        setPan({
-          x: canvasPanStartRef.current.panX + dx,
-          y: canvasPanStartRef.current.panY + dy,
         });
       }
       if (isCroppingRef.current && cropOverlayRef.current && cropStartRef.current) {
@@ -125,10 +117,6 @@ export function LabPage() {
     };
     const onUp = () => {
       modalDragStart.current = null;
-      if (canvasPanStartRef.current && canvasRef.current) {
-        delete canvasRef.current.dataset.panning;
-      }
-      canvasPanStartRef.current = null;
       if (isCroppingRef.current) {
         // discard tiny selections
         setCropRect(prev => (prev && prev.w < 5 && prev.h < 5) ? null : prev);
@@ -144,36 +132,12 @@ export function LabPage() {
     };
   }, []);
 
-  // ── Mouse wheel zoom at cursor ────────────────────────────────────────────────
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      setZoom(prevZoom => {
-        const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
-        setPan(prevPan => ({
-          x: mouseX - (mouseX - prevPan.x) * (newZoom / prevZoom),
-          y: mouseY - (mouseY - prevPan.y) * (newZoom / prevZoom),
-        }));
-        return newZoom;
-      });
-    };
-    canvas.addEventListener("wheel", handleWheel, { passive: false });
-    return () => canvas.removeEventListener("wheel", handleWheel);
-  }, []);
-
   // ── Logs ─────────────────────────────────────────────────────────────────────
   const { logs, showLogs, setShowLogs, addLog, clearLogs, logsEndRef } = useLogs();
 
   // ── Data loading ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!docId) return;
-    didAutoFitRef.current = false;
     getDocument(docId).then(setDoc).catch(() => {});
     getLabMethods().then(setMethods).catch(() => {});
     listProviders().then(setProviders).catch(() => {});
@@ -208,50 +172,6 @@ export function LabPage() {
   const upsert = (r: LabResult) =>
     setResults(prev => [...prev.filter(p => p.label !== r.label), r]);
 
-  // ── Zoom helpers ──────────────────────────────────────────────────────────────
-  const zoomAround = (factor: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const cx = canvas.clientWidth / 2;
-    const cy = canvas.clientHeight / 2;
-    setZoom(prevZoom => {
-      const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
-      setPan(prevPan => ({
-        x: cx - (cx - prevPan.x) * (newZoom / prevZoom),
-        y: cy - (cy - prevPan.y) * (newZoom / prevZoom),
-      }));
-      return newZoom;
-    });
-  };
-
-  const handleImgLoad = () => {
-    if (didAutoFitRef.current) return;
-    didAutoFitRef.current = true;
-    const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img || img.naturalWidth === 0) return;
-    const cw = canvas.clientWidth;
-    const ch = canvas.clientHeight;
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const fitZoom = Math.max(0.05, Math.min((cw - 32) / iw, (ch - 32) / ih));
-    setZoom(fitZoom);
-    setPan({ x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 });
-  };
-
-  const handleZoomReset = () => {
-    didAutoFitRef.current = false;
-    handleImgLoad();
-  };
-
-  // ── Canvas pan mousedown ──────────────────────────────────────────────────────
-  const onCanvasMouseDown = (e: React.MouseEvent) => {
-    if (cropMode || isPdf || e.button !== 0) return;
-    canvasPanStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
-    if (canvasRef.current) canvasRef.current.dataset.panning = "true";
-    e.preventDefault();
-  };
-
   // ── Crop overlay mousedown ────────────────────────────────────────────────────
   const onCropOverlayMouseDown = (e: React.MouseEvent) => {
     if (!cropMode || !cropOverlayRef.current) return;
@@ -269,7 +189,7 @@ export function LabPage() {
 
   // ── OCR / Vision handlers ─────────────────────────────────────────────────────
   const handleOcr = async (method: string) => {
-    setRunningOcr(method);
+    setRunningOcr(prev => new Set(prev).add(method));
     addLog(`→ OCR [${method}]`);
     try {
       const res = await runLabOcr(docId, method);
@@ -279,12 +199,12 @@ export function LabPage() {
       upsert({ id: uid(), kind: "ocr", label: method, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
       addLog(`✗ OCR [${method}]: ${(e as Error).message}`, "err");
     } finally {
-      setRunningOcr(null);
+      setRunningOcr(prev => { const s = new Set(prev); s.delete(method); return s; });
     }
   };
 
   const handleVision = async (p: AIProvider) => {
-    setRunningVision(p.id);
+    setRunningVision(prev => new Set(prev).add(p.id));
     addLog(`→ Vision [${p.name}]`);
     try {
       const res = await runLabVision(docId, p.id);
@@ -302,7 +222,7 @@ export function LabPage() {
       upsert({ id: uid(), kind: "vision", label: p.name, providerId: p.id, text: `⚠️ ${lab.failed}: ${(e as Error).message}`, ms: 0 });
       addLog(`✗ Vision [${p.name}]: ${(e as Error).message}`, "err");
     } finally {
-      setRunningVision(null);
+      setRunningVision(prev => { const s = new Set(prev); s.delete(p.id); return s; });
     }
   };
 
@@ -422,7 +342,6 @@ export function LabPage() {
     setPreviewResult(null);
   };
 
-  const isPdf = doc?.mime_type === "application/pdf" || doc?.filename.toLowerCase().endsWith(".pdf");
   const downloadUrl = `/api/documents/${docId}/download?inline=1`;
   const imgSrc = previewResult
     ? `data:image/jpeg;base64,${previewResult.image_b64}`
@@ -657,7 +576,7 @@ export function LabPage() {
                   variant="secondary"
                   size="sm"
                   icon={<Play size={13} />}
-                  loading={runningOcr === m}
+                  loading={runningOcr.has(m)}
                   onClick={() => handleOcr(m)}
                 >
                   {m}
@@ -684,7 +603,7 @@ export function LabPage() {
                     <Button
                       variant="secondary" size="sm"
                       icon={<Play size={13} />}
-                      loading={runningVision === p.id}
+                      loading={runningVision.has(p.id)}
                       onClick={() => handleVision(p)}
                     >
                       {lab.run}

@@ -19,7 +19,7 @@ from ..database import SessionLocal
 from ..models import AppSettings, Document, IndexingLog
 from .ocr import extract_text
 from .thumbnails import generate_thumbnail
-from .ai_analysis import analyze_document
+from .ai_analysis import AnalysisResult, analyze_document
 from .ai_vision import describe_document
 
 log = logging.getLogger(__name__)
@@ -58,7 +58,9 @@ async def _run_ocr(doc: Document, db: Session) -> None:
     db.commit()
 
     try:
-        text, engine = await extract_text(doc.filepath)
+        priority = db.query(AppSettings).filter(AppSettings.key == "ocr_priority").first()
+        engines = [e.strip() for e in priority.value.split(",")] if priority else None
+        text, engine = await extract_text(doc.filepath, engines=engines)
         doc.ocr_text = text
         doc.ocr_model = engine
         doc.ocr_status = "done"
@@ -108,13 +110,13 @@ async def _run_vision(doc: Document, db: Session) -> None:
             doc.vision_status = "skipped"
             _log(db, doc, "vision", "skipped", "No vision provider configured", level="debug")
         else:
-            text, fields, cost = result
+            text, analysis, cost = result
             doc.vision_description = text
             doc.api_cost_vision = cost
             doc.vision_status = "done"
-            if fields:
+            if analysis:
                 # Capable model returned full structured analysis — skip Step 4.
-                _apply_vision_fields(doc, fields, db)
+                _apply_analysis_result(doc, analysis, db)
                 doc.analysis_status = "done"
                 _log(db, doc, "vision", "done",
                      f"with analysis: type={doc.document_type}, lang={doc.language}", level="info")
@@ -130,32 +132,6 @@ async def _run_vision(doc: Document, db: Session) -> None:
         log.warning("Vision failed for doc %s: %s", doc.id, e)
 
     db.commit()
-
-
-def _apply_vision_fields(doc: Document, fields: dict, db: Session) -> None:
-    """Populate document columns from structured vision analysis result."""
-    doc.summary = str(fields.get("summary") or "")
-    doc.document_type = str(fields.get("document_type") or "unclassified")
-    confidence = fields.get("document_type_confidence")
-    doc.classification_confidence = float(confidence) if confidence is not None else 0.0
-    doc.classification_source = "auto"
-    doc.tags = [str(t) for t in (fields.get("tags") or [])]
-    doc.language = str(fields.get("language") or "")
-    doc.organization = fields.get("organization") or None
-    amount = fields.get("amount")
-    doc.amount = float(amount) if amount is not None else None
-    doc.amount_currency = fields.get("amount_currency") or None
-    doc.person_first_name = fields.get("person_first_name") or None
-    doc.person_last_name = fields.get("person_last_name") or None
-    date_str = fields.get("document_date")
-    if date_str:
-        try:
-            doc.document_date = datetime.strptime(str(date_str), "%Y-%m-%d")
-        except ValueError:
-            pass
-    short_title = str(fields.get("short_title") or "")[:40]
-    if doc.source == "upload" and short_title:
-        _rename_uploaded_file(doc, short_title, db)
 
 
 # ── Step 4 — AI Analysis ──────────────────────────────────────────────────────
@@ -181,28 +157,11 @@ async def _run_analysis(doc: Document, db: Session) -> None:
             doc.analysis_status = "skipped"
             _log(db, doc, "analysis", "skipped", "No AI provider configured", level="debug")
         else:
-            doc.summary                   = result.summary
-            doc.document_type             = result.document_type
-            doc.classification_confidence = result.document_type_confidence
-            doc.classification_source     = "auto"
-            doc.tags               = result.tags
-            doc.language           = result.language
-            doc.organization       = result.organization
-            doc.amount             = result.amount
-            doc.amount_currency    = result.amount_currency
-            doc.person_first_name  = result.person_first_name
-            doc.person_last_name   = result.person_last_name
-            if result.document_date:
-                try:
-                    doc.document_date = datetime.strptime(result.document_date, "%Y-%m-%d")
-                except ValueError:
-                    pass
-            doc.api_cost_analysis  = result.cost_usd
-            doc.analysis_status    = "done"
+            _apply_analysis_result(doc, result, db)
+            doc.api_cost_analysis = result.cost_usd
+            doc.analysis_status   = "done"
             _log(db, doc, "analysis", "done",
                  f"Type: {result.document_type}, lang: {result.language}", level="info")
-            if doc.source == "upload" and result.short_title:
-                _rename_uploaded_file(doc, result.short_title, db)
     except Exception as e:
         doc.analysis_status = "error"
         doc.analysis_error  = str(e)
@@ -352,6 +311,33 @@ async def reclassify_unclassified_batch(limit: int = 200) -> dict:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _apply_analysis_result(doc: Document, result: AnalysisResult, db: Session) -> None:
+    """Write AnalysisResult metadata onto a Document.
+
+    Shared by Step 3 (vision-as-analysis) and Step 4 (text analysis). Does NOT
+    touch status or api_cost columns — the caller owns those, since cost lands in
+    `api_cost_vision` vs `api_cost_analysis` depending on which step produced it.
+    """
+    doc.summary                   = result.summary
+    doc.document_type             = result.document_type
+    doc.classification_confidence = result.document_type_confidence
+    doc.classification_source     = "auto"
+    doc.tags               = result.tags
+    doc.language           = result.language
+    doc.organization       = result.organization
+    doc.amount             = result.amount
+    doc.amount_currency    = result.amount_currency
+    doc.person_first_name  = result.person_first_name
+    doc.person_last_name   = result.person_last_name
+    if result.document_date:
+        try:
+            doc.document_date = datetime.strptime(result.document_date, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if doc.source == "upload" and result.short_title:
+        _rename_uploaded_file(doc, result.short_title, db)
+
 
 def _rename_uploaded_file(doc: Document, short_title: str, db: Session) -> None:
     """Rename an uploaded file to its AI-generated short title, preserving extension."""

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
 import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, getAppSettings, updateAppSettings, getWorkerStatus } from "../../../api/documents";
@@ -22,12 +22,19 @@ export function IndexingTab() {
   const [workerStatus, setWorkerStatus_] = useState<LabWorkerStatus | null>(null);
   const [savingUrl, setSavingUrl] = useState(false);
 
+  // OCR engine priority
+  const [ocrEngines, setOcrEngines] = useState<string[]>(["easyocr", "tesseract"]);
+  const [savingPriority, setSavingPriority] = useState(false);
+
   const loadStats = () => getStats().then(setStats).catch(() => {});
   useEffect(() => { loadStats(); }, []);
 
   useEffect(() => {
     getAppSettings().then(s => {
       setWorkerUrl(s.ocr_worker_url ?? "");
+      if (s.ocr_priority) {
+        setOcrEngines(s.ocr_priority.split(",").map((e: string) => e.trim()).filter(Boolean));
+      }
     }).catch(() => {});
   }, []);
 
@@ -82,6 +89,20 @@ export function IndexingTab() {
       flash(e instanceof Error ? e.message : t.error);
     } finally {
       setReclassifyingUnclassified(false);
+    }
+  };
+
+  const moveEngine = async (index: number, dir: "up" | "down") => {
+    const swapIdx = dir === "up" ? index - 1 : index + 1;
+    if (swapIdx < 0 || swapIdx >= ocrEngines.length) return;
+    const next = [...ocrEngines];
+    [next[index], next[swapIdx]] = [next[swapIdx], next[index]];
+    setOcrEngines(next);
+    setSavingPriority(true);
+    try {
+      await updateAppSettings({ ocr_priority: next.join(",") });
+    } finally {
+      setSavingPriority(false);
     }
   };
 
@@ -191,6 +212,34 @@ export function IndexingTab() {
         <Button variant="secondary" loading={savingUrl} onClick={handleSaveUrl}>
           {t.save ?? "Save"}
         </Button>
+      </div>
+
+      {/* OCR Engine Priority */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ marginBottom: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{ix.ocrPriority}</span>
+          <p className="text-xs text-muted" style={{ marginTop: 2 }}>{ix.ocrPriorityHint}</p>
+        </div>
+        <ul className="provider-list">
+          {ocrEngines.map((engine, i) => (
+            <li key={engine} className="provider-item" style={{ padding: "5px 8px" }}>
+              <div style={{ display: "flex", flexDirection: "row", gap: 1, flexShrink: 0 }}>
+                <button className="icon-btn" onClick={() => moveEngine(i, "up")}
+                  disabled={i === 0 || savingPriority} style={{ opacity: i === 0 ? 0.25 : 1 }}
+                  title={t.admin.ai.moveUp}>
+                  <ChevronUp size={13} />
+                </button>
+                <button className="icon-btn" onClick={() => moveEngine(i, "down")}
+                  disabled={i === ocrEngines.length - 1 || savingPriority}
+                  style={{ opacity: i === ocrEngines.length - 1 ? 0.25 : 1 }}
+                  title={t.admin.ai.moveDown}>
+                  <ChevronDown size={13} />
+                </button>
+              </div>
+              <span className="provider-name">{engine === "easyocr" ? "EasyOCR" : "Tesseract"}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Per-engine test buttons */}

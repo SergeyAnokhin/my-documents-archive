@@ -111,7 +111,7 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md" }:
             <div className="doc-list-meta">
               {date && <span className="doc-date text-sm text-muted"><Calendar size={12} /> {date}</span>}
               <ProcessingBadge doc={doc} />
-              {doc.document_type && <TypeIcon type={doc.document_type} size={18} className="doc-type-icon" />}
+              {doc.document_type && <TypeIcon type={doc.document_type} size={27} className="doc-type-icon" />}
             </div>
           </div>
           {doc.document_type && (
@@ -144,7 +144,7 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md" }:
     >
       <div className="doc-grid-thumb">
         <Thumbnail doc={doc} />
-        {doc.document_type && <TypeIcon type={doc.document_type} size={16} className="doc-grid-type-icon" />}
+        {doc.document_type && <TypeIcon type={doc.document_type} size={24} className="doc-grid-type-icon" />}
         <ProcessingBadge doc={doc} className="doc-grid-status" />
       </div>
       <div className="doc-grid-footer">

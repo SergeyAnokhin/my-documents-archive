@@ -160,6 +160,8 @@ export const en = {
       workerDown: "Service unavailable",
       workerEngines: "engines",
       workerNoEasyocr: "EasyOCR not installed",
+      ocrPriority: "OCR Engine Priority",
+      ocrPriorityHint: "Engines are tried in order — first working wins.",
     },
     ai: {
       title: "AI Providers",

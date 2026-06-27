@@ -1,15 +1,16 @@
 """
 OCR service — Step 1 of the indexing pipeline.
 
-Priority:
-  1. External OCR Worker (if configured and reachable)
+Default priority (env-var based, backwards-compat):
+  1. External OCR Worker / EasyOCR (if ocr_engine="external")
   2. Local Tesseract (fallback / default)
+
+When `engines` is passed explicitly (DB-configured priority list), engines are
+tried in that order and the first one that succeeds wins.
 """
 
-import io
 import logging
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from PIL import Image
@@ -21,19 +22,41 @@ log = logging.getLogger(__name__)
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-async def extract_text(filepath: str) -> tuple[str, str]:
-    """Return (text, engine) for the file. engine is the local OCR engine that
-    produced the text — "easyocr" (external compute worker) or "tesseract"
-    (local fallback). Raises on unrecoverable error."""
+async def extract_text(filepath: str, engines: list[str] | None = None) -> tuple[str, str]:
+    """Return (text, engine) for the file.
+
+    engines: ordered list of engine names to try — "easyocr" | "tesseract".
+    When None, falls back to settings.ocr_engine env-var behaviour (backwards compat).
+    Raises when all engines fail or none are configured.
+    """
     path = Path(filepath)
 
-    if settings.ocr_engine == "external":
-        try:
-            return await _external_ocr(path)
-        except Exception as e:
-            log.warning("External OCR failed (%s), falling back to Tesseract", e)
+    if engines is None:
+        # Legacy env-var path
+        if settings.ocr_engine == "external":
+            try:
+                return await _external_ocr(path)
+            except Exception as e:
+                log.warning("External OCR failed (%s), falling back to Tesseract", e)
+        return _local_tesseract(path), "tesseract"
 
-    return _local_tesseract(path), "tesseract"
+    # DB-configured priority — try each engine in order
+    last_exc: Exception | None = None
+    for engine in engines:
+        if engine == "easyocr":
+            try:
+                return await _external_ocr(path)
+            except Exception as e:
+                log.warning("EasyOCR failed (%s), trying next engine", e)
+                last_exc = e
+        elif engine == "tesseract":
+            try:
+                return _local_tesseract(path), "tesseract"
+            except Exception as e:
+                log.warning("Tesseract failed (%s), trying next engine", e)
+                last_exc = e
+
+    raise last_exc or ValueError("No OCR engines configured")
 
 
 # ── Local Tesseract ───────────────────────────────────────────────────────────

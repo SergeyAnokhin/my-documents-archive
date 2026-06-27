@@ -36,19 +36,22 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/storage.py` | File hashing, MIME detection, library scanning (skips `.docintell`/hidden dirs), saving uploads to `YYYY/MM/`. `infer_document_date()`/`extract_folder_date()` guess a doc date from path (`[YYYY-MM]`, `YYYY/MM/`, `YYYY-MM/`) or file ctime. `check_library_accessible()` — sentinel check (`.docintell` dir) used to abort sync when the disk is offline |
 | `services/thumbnails.py` | Generate JPEG thumbnails (Pillow + pdf2image) |
 | `services/ocr.py` | OCR extraction: local Tesseract or external worker (fallback chain). `extract_text()` returns `(text, engine)`; the indexer stores `engine` (`tesseract`/`easyocr`) in `documents.ocr_model` for per-doc engine attribution |
-| `services/ai_analysis.py` | AI Analysis: produces summary, document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy: 30+ slugs (`passport`, `birth_certificate`, `contract`, `invoice`, `diploma`, … `unclassified`). Also exposes `suggest_document_types(summary, ocr_text, existing_types, db)` → top-3 suggestions for the UI picker. |
+| `services/ai_analysis.py` | AI Analysis: produces summary, document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy comes from `ai_common.DOCUMENT_TYPES_BLOCK` (shared with vision). `coerce_analysis_fields(dict)→AnalysisResult` is the shared field-coercion used by both this module and `ai_vision`. Also exposes `suggest_document_types(...)` → top-3 suggestions for the UI picker. |
+| `services/ai_common.py` | Shared AI-provider helpers, de-duplicated from analysis+vision: `strip_code_fences()`, `update_provider_stats()`, `SyntheticProvider` (env-var provider stand-in), `DOCUMENT_TYPES_BLOCK` (canonical type taxonomy). |
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model. For capable models (Anthropic/OpenAI/Gemini/OpenRouter) uses `VISION_FULL_PROMPT` — returns structured JSON (text + all analysis fields) in one call, so the indexer skips Step 4 entirely. For **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing) returns plain transcription — Analysis still runs. Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
 | `services/pricing.py` | `estimate_cost(model, tokens_in, tokens_out)` — static per-token price table for all known providers (Anthropic, OpenAI, Gemini, DeepSeek, Mistral, OpenRouter). Returns 0.0 for unknown models. |
 | `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
 | `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
-| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding; `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
+| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Batch ops: `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
 | `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
-| `routers/tasks.py` | Task queue CRUD + run/stop/logs — prefix `/api/tasks`. Used by the Tasks panel (advanced mode only). |
+| `routers/tasks.py` | Task queue CRUD + run/stop/logs + the `_run_task_bg` dispatcher and the short in-process runners (index/sync/reclassify/cleanup) — prefix `/api/tasks`. Used by the Tasks panel (advanced mode only). |
+| `services/task_runtime.py` | Shared helpers for background task runners (`log_task`, `is_stopped`, `set_progress`, `finish`) — each opens its own short-lived session. Imported by `tasks.py` and `batch_ocr.py`. |
+| `services/batch_ocr.py` | Long-running batch-OCR task runners `run_batch_ocr_mistral()` / `run_batch_ocr_gemini()` (submit remote batch job → poll → write OCR back). Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
 
 ## Compute (`compute/app/`)
 
@@ -103,6 +106,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `pages/HomePage.tsx` | Main page: hero search, toolbar, document grid/list |
 | `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`) **orchestrator**: document viewer (zoom/pan/crop/transform) + OCR/vision/judge handlers. Presentational pieces live in `pages/lab/`. See [lab-mode.md](lab-mode.md) |
 | `pages/lab/labUtils.ts` | `formatMs`, `formatFileSize`, `uid`, `VISION_CAPABLE` |
+| `pages/lab/useImageTransform.ts` | Zoom + pan for the lab image canvas: wheel-zoom at cursor, button zoom, fit-on-load, drag-to-pan. Owns its wheel/pan listeners; exposes `zoomRef` for the page's crop overlay. Extracted from `LabPage.tsx`. |
 | `pages/lab/useLogs.ts` | Activity-log hook (append + auto-scroll) for the panel |
 | `pages/lab/usePanelResize.ts` | Draggable right-panel width hook (persists to localStorage) |
 | `pages/lab/FieldChips.tsx` | Chips summarising extracted structured fields |

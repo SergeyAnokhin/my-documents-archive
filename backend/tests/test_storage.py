@@ -41,3 +41,30 @@ def test_save_uploaded_file_avoids_name_collision(tmp_path, monkeypatch):
     assert first.name == "doc.png"
     assert second.name == "doc_1.png"
     assert first.parent == second.parent  # same YYYY/MM/ folder
+
+
+def test_extract_folder_date_recognises_path_encodings():
+    # Doc:  docs/code-map.md → storage.py (infer_document_date / extract_folder_date).
+    # Rule: [YYYY-MM], YYYY/MM/ (slash sub-dirs) and a bare YYYY-MM/ dir all map to
+    #       the 1st of that month; a path with no date encoding → None.
+    from datetime import datetime
+    assert storage.extract_folder_date(Path("/lib/2024/03/scan.pdf")) == datetime(2024, 3, 1)
+    assert storage.extract_folder_date(Path("/lib/[2024-03] scan.pdf")) == datetime(2024, 3, 1)
+    assert storage.extract_folder_date(Path("/lib/2024-03/scan.pdf")) == datetime(2024, 3, 1)
+    assert storage.extract_folder_date(Path("/lib/misc/scan.pdf")) is None
+
+
+def test_infer_document_date_prefers_folder_date_over_recent_ctime(tmp_path):
+    # Doc:  docs/code-map.md → storage.py. Rule: folder date wins; a freshly
+    #       created file with no date in its path returns None (ctime is today,
+    #       so the copy-artefact guard rejects it) and the UI falls back to added_at.
+    from datetime import datetime
+    dated = tmp_path / "2021" / "07"
+    dated.mkdir(parents=True)
+    f = dated / "scan.pdf"
+    f.write_bytes(b"x")
+    assert storage.infer_document_date(f) == datetime(2021, 7, 1)
+
+    undated = tmp_path / "scan2.pdf"
+    undated.write_bytes(b"x")
+    assert storage.infer_document_date(undated) is None

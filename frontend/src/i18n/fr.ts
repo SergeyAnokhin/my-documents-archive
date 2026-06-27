@@ -155,6 +155,8 @@ export const fr: Translations = {
       workerDown: "Service indisponible",
       workerEngines: "moteurs",
       workerNoEasyocr: "EasyOCR non installé",
+      ocrPriority: "Priorité des moteurs OCR",
+      ocrPriorityHint: "Les moteurs sont essayés dans l'ordre — le premier fonctionnel est utilisé.",
     },
     ai: {
       title: "Fournisseurs IA",

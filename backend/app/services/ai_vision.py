@@ -18,17 +18,22 @@ import base64
 import io
 import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from PIL import Image
-from sqlalchemy import text as sqla_text
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import AIProvider
 from .pricing import estimate_cost
+from .ai_analysis import AnalysisResult, coerce_analysis_fields
+from .ai_common import (
+    DOCUMENT_TYPES_BLOCK,
+    SyntheticProvider,
+    strip_code_fences,
+    update_provider_stats,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,21 +47,13 @@ You are analyzing a scanned document. Provide a concise factual description (3-5
 # Combined vision+analysis prompt for capable (non-Mistral) models.
 # Returns a single JSON with both verbatim text and all structured fields,
 # so the indexer can skip the separate AI Analysis step entirely.
-VISION_FULL_PROMPT = """\
+VISION_FULL_PROMPT = f"""\
 Analyze this scanned document image. Return a single JSON object with these fields:
 
 "text": verbatim transcription of ALL visible text, preserving line breaks and reading order
 "summary": 2-3 sentence summary in the document's original language
 "document_type": the single most specific type from this list:
-    passport, national_id, driver_license, birth_certificate, death_certificate,
-    marriage_certificate, divorce_certificate, residence_permit, visa,
-    contract, agreement, power_of_attorney, court_document,
-    invoice, bank_statement, receipt, tax_document, payslip,
-    property_deed, title_certificate, insurance_policy,
-    medical_certificate, prescription, medical_record,
-    diploma, certificate, transcript, student_id,
-    permit, license, registration, notarial_deed,
-    letter, notice, announcement, photo, scan, unclassified
+{DOCUMENT_TYPES_BLOCK}
 "document_type_confidence": 0.0-1.0 confidence in the type assignment
 "tags": array of 3-7 keyword strings
 "language": ISO 639-1 code ("ru", "fr", "en", "de", "uk", etc.)
@@ -86,13 +83,13 @@ MISTRAL_OCR_PRICE_PER_PAGE = 0.001
 
 async def describe_document(
     filepath: str, db: Session
-) -> Optional[tuple[str, Optional[dict], float]]:
+) -> Optional[tuple[str, Optional[AnalysisResult], float]]:
     """
     Describe/analyze document using a vision model.
 
     For capable (non-Mistral) providers: uses VISION_FULL_PROMPT to get both the
     verbatim transcription AND all structured analysis fields in one call.
-    Returns (transcription_text, fields_dict, cost_usd).
+    Returns (transcription_text, AnalysisResult, cost_usd).
 
     For Mistral OCR: returns (transcription_text, None, cost_usd) — the indexer
     must still run AI Analysis separately.
@@ -112,7 +109,7 @@ async def describe_document(
     for provider in providers:
         try:
             text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_FULL_PROMPT)
-            _update_stats(db, provider, tin, tout, cost)
+            update_provider_stats(db, provider, tin, tout, cost)
 
             if provider.provider_type == "mistral":
                 # Mistral OCR ignores the prompt and returns plain markdown.
@@ -121,7 +118,7 @@ async def describe_document(
             data = _parse_vision_full(text)
             if data and "text" in data:
                 transcription = str(data.pop("text") or "").strip() or text
-                return transcription, data, cost
+                return transcription, coerce_analysis_fields(data), cost
 
             # Model returned plain text (unexpected) — treat as description only.
             return text, None, cost
@@ -134,13 +131,8 @@ async def describe_document(
 
 def _parse_vision_full(raw: str) -> Optional[dict]:
     """Parse VISION_FULL_PROMPT response. Returns the full dict or None on parse error."""
-    stripped = raw.strip()
-    if stripped.startswith("```"):
-        lines = stripped.split("\n")
-        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-        stripped = "\n".join(lines[1:end])
     try:
-        data = json.loads(stripped)
+        data = json.loads(strip_code_fences(raw))
         return data if isinstance(data, dict) else None
     except Exception:
         return None
@@ -189,17 +181,6 @@ def _pdf_first_page(path: Path) -> Image.Image:
 
 # ── Provider selection ────────────────────────────────────────────────────────
 
-@dataclass
-class _Synthetic:
-    name: str
-    provider_type: str
-    api_key: str
-    base_url: Optional[str]
-    model: Optional[str] = None
-    id: None = None
-    extra_params: Optional[dict] = None
-
-
 def _get_providers(db: Session) -> list:
     """Return enabled vision-capable providers ordered by sort_order, with env-var fallback."""
     db_providers = (
@@ -223,26 +204,8 @@ def _get_providers(db: Session) -> list:
         ("mistral",    settings.mistral_api_key,     None),
     ]:
         if key:
-            result.append(_Synthetic(ptype, ptype, key, url))
+            result.append(SyntheticProvider(ptype, ptype, key, url))
     return result
-
-
-# ── Stats tracking ─────────────────────────────────────────────────────────────
-
-def _update_stats(db: Session, provider, tokens_in: int, tokens_out: int, cost: float) -> None:
-    if not isinstance(getattr(provider, "id", None), int):
-        return
-    db.execute(
-        sqla_text(
-            "UPDATE ai_providers SET "
-            "total_tokens_in  = total_tokens_in  + :tin, "
-            "total_tokens_out = total_tokens_out + :tout, "
-            "total_cost_usd   = total_cost_usd   + :cost "
-            "WHERE id = :id"
-        ),
-        {"tin": tokens_in, "tout": tokens_out, "cost": cost, "id": provider.id},
-    )
-    db.commit()
 
 
 # ── Provider calls ────────────────────────────────────────────────────────────

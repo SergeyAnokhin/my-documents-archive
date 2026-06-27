@@ -6,8 +6,10 @@ per page (not per token). These tests pin the response parsing and pricing rule.
 from app.services.ai_vision import (
     VISION_CAPABLE,
     VISION_DEFAULTS,
+    VISION_FULL_PROMPT,
     MISTRAL_OCR_PRICE_PER_PAGE,
     parse_mistral_ocr as _parse_mistral_ocr,
+    _parse_vision_full,
 )
 from app.services.provider_models import _mistral_ocr_models
 
@@ -36,3 +38,27 @@ def test_parse_mistral_ocr_defaults_to_one_page():
 def test_mistral_model_list_surfaces_ocr_for_vision():
     models = _mistral_ocr_models()
     assert any(m["id"] == "mistral-ocr-latest" and m["supports_vision"] for m in models)
+
+
+# ── Combined vision+analysis parsing (VISION_FULL_PROMPT) ──────────────────────
+
+def test_vision_full_prompt_shares_document_taxonomy():
+    # Rule: the vision prompt is built from the same DOCUMENT_TYPES_BLOCK as the
+    # text-analysis prompt, so the two type lists never drift.
+    assert "passport" in VISION_FULL_PROMPT
+    assert "unclassified" in VISION_FULL_PROMPT
+
+
+def test_parse_vision_full_strips_code_fence_and_returns_dict():
+    # Rule: a ```json … ``` fence is stripped; a JSON object → dict.
+    raw = '```json\n{"text": "hello", "document_type": "invoice"}\n```'
+    data = _parse_vision_full(raw)
+    assert data["text"] == "hello"
+    assert data["document_type"] == "invoice"
+
+
+def test_parse_vision_full_returns_none_on_garbage_or_non_object():
+    # Rule: non-JSON or a non-object (e.g. a JSON array) → None, so the caller
+    # falls back to treating the response as plain transcription.
+    assert _parse_vision_full("not json at all") is None
+    assert _parse_vision_full("[1, 2, 3]") is None

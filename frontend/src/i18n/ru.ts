@@ -155,6 +155,8 @@ export const ru: Translations = {
       workerDown: "Сервис недоступен",
       workerEngines: "движки",
       workerNoEasyocr: "EasyOCR не установлен",
+      ocrPriority: "Приоритет движков OCR",
+      ocrPriorityHint: "Движки пробуются по порядку — первый рабочий используется.",
     },
     ai: {
       title: "Провайдеры ИИ",
