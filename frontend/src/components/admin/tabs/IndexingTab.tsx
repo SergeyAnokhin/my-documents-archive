@@ -267,18 +267,44 @@ export function IndexingTab() {
       </div>
 
       {/* Compute Worker */}
-      <h3 className="admin-section-title" style={{ marginTop: 24 }}>{ix.computeWorker}</h3>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input
-          className="admin-input"
-          value={workerUrl}
-          onChange={e => { setWorkerUrl(e.target.value); setWorkerStatus_(null); }}
-          placeholder={ix.workerUrlPlaceholder}
-          style={{ flex: 1 }}
-        />
-        <Button variant="secondary" loading={savingUrl} onClick={handleSaveUrl}>
-          {t.save ?? "Save"}
-        </Button>
+      <div style={{ marginTop: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <h3 className="admin-section-title">{ix.computeWorker}</h3>
+          {checkingEngine ? (
+            <span style={{ fontSize: 12, color: "var(--color-ink-muted)" }}>…</span>
+          ) : workerStatus?.reachable ? (
+            <>
+              <span className="status-dot done pulse" />
+              <span className="engine-pill ok"><span className="engine-pill-dot" />Tesseract</span>
+              <span className={`engine-pill ${workerStatus.engines.includes("easyocr") ? "ok" : "err"}`}>
+                <span className="engine-pill-dot" />EasyOCR
+              </span>
+            </>
+          ) : workerStatus && !workerStatus.reachable ? (
+            <span style={{ fontSize: 12, color: "var(--color-error)", fontWeight: 500 }}>● {ix.workerDown}</span>
+          ) : null}
+          <button
+            className="icon-btn"
+            title="Check"
+            disabled={!workerUrl.trim() || checkingEngine !== null}
+            onClick={() => handleCheckEngine("tesseract")}
+            style={{ marginLeft: "auto", opacity: !workerUrl.trim() ? 0.3 : 1 }}
+          >
+            <RefreshCw size={13} />
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            className="admin-input"
+            value={workerUrl}
+            onChange={e => { setWorkerUrl(e.target.value); setWorkerStatus_(null); }}
+            placeholder={ix.workerUrlPlaceholder}
+            style={{ flex: 1 }}
+          />
+          <Button variant="secondary" loading={savingUrl} onClick={handleSaveUrl}>
+            {t.save ?? "Save"}
+          </Button>
+        </div>
       </div>
 
       {/* OCR Engine Priority */}
@@ -309,53 +335,6 @@ export function IndexingTab() {
         </ul>
       </div>
 
-      {/* Per-engine test buttons */}
-      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={checkingEngine === "tesseract"}
-          disabled={checkingEngine !== null}
-          onClick={() => handleCheckEngine("tesseract")}
-        >
-          Tesseract
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={checkingEngine === "easyocr"}
-          disabled={checkingEngine !== null}
-          onClick={() => handleCheckEngine("easyocr")}
-        >
-          EasyOCR
-        </Button>
-      </div>
-
-      {workerStatus && (
-        <div style={{ marginTop: 8, fontSize: "0.875rem", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          {workerStatus.reachable && (
-            <span className="status-dot done pulse" title={ix.workerUp} />
-          )}
-          <span style={{ color: workerStatus.reachable ? "var(--color-success)" : "var(--color-error)", fontWeight: 500 }}>
-            {workerStatus.reachable ? ix.workerUp : ix.workerDown}
-          </span>
-          {workerStatus.reachable && (
-            <>
-              <span className="engine-pill ok">
-                <span className="engine-pill-dot" />
-                Tesseract
-              </span>
-              <span className={`engine-pill ${workerStatus.engines.includes("easyocr") ? "ok" : "err"}`}>
-                <span className="engine-pill-dot" />
-                EasyOCR
-                {!workerStatus.engines.includes("easyocr") && (
-                  <span style={{ fontSize: 10, marginLeft: 2 }}>— {ix.workerNoEasyocr}</span>
-                )}
-              </span>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
