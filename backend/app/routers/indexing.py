@@ -84,11 +84,28 @@ async def suggest_type(doc_id: int, db: Session = Depends(get_db)):
 @router.get("/status")
 def get_indexing_status(db: Session = Depends(get_db)):
     base = db.query(Document).filter(Document.is_deleted == False)
+    pending_count = base.filter(Document.ocr_status == "pending").count()
+    error_count   = base.filter(Document.ocr_status == "error").count()
+
+    # Up to 5 sample filenames: errors first, then pending
+    samples: list[dict] = []
+    for doc in (
+        base.filter(Document.ocr_status.in_(["error", "pending"]))
+        .order_by(
+            (Document.ocr_status == "error").desc(),
+            Document.id.asc(),
+        )
+        .limit(5)
+        .all()
+    ):
+        samples.append({"filename": doc.filename, "status": doc.ocr_status})
+
     return {
         "total":   base.count(),
-        "pending": base.filter(Document.ocr_status == "pending").count(),
+        "pending": pending_count,
         "done":    base.filter(Document.ocr_status == "done").count(),
-        "error":   base.filter(Document.ocr_status == "error").count(),
+        "error":   error_count,
+        "samples": samples,
     }
 
 

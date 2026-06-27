@@ -1,3 +1,7 @@
+.indexing-badge-wrap {
+  position: relative;
+}
+
 .indexing-badge {
   display: flex;
   align-items: center;
@@ -11,6 +15,13 @@
   font-weight: 500;
   color: var(--color-ink-muted);
   user-select: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.indexing-badge:hover {
+  border-color: var(--color-ink-muted);
+  background: var(--color-hover);
 }
 
 .indexing-badge-spinner {
@@ -20,4 +31,88 @@
   border-radius: 50%;
   animation: spin .8s linear infinite;
   flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Popover ─────────────────────────────────────────────────────────────────── */
+
+.indexing-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  padding: 10px 12px;
+}
+
+.indexing-popover-header {
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-ink-muted);
+  margin-bottom: 6px;
+}
+
+.indexing-popover-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: .78rem;
+  color: var(--color-ink);
+  margin-bottom: 8px;
+}
+
+.indexing-popover-error {
+  color: var(--color-error, #e55);
+}
+
+.indexing-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+.indexing-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .75rem;
+  color: var(--color-ink-muted);
+  overflow: hidden;
+}
+
+.indexing-popover-dot {
+  flex-shrink: 0;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.indexing-popover-item--error .indexing-popover-dot {
+  background: var(--color-error, #e55);
+}
+
+.indexing-popover-item--pending .indexing-popover-dot {
+  background: var(--color-ink-muted);
+  animation: spin .8s linear infinite;
+}
+
+.indexing-popover-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
