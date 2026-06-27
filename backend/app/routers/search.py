@@ -4,6 +4,7 @@ from sqlalchemy import or_, extract, func, String
 from typing import Optional
 import logging
 import re
+import time
 
 log = logging.getLogger(__name__)
 
@@ -90,12 +91,18 @@ def search_documents(
     if tag:
         base = base.filter(Document.tags.contains(tag))
 
+    t0 = time.perf_counter()
+
     # ── Semantic / hybrid ──────────────────────────────────────────────────
     if mode in ("semantic", "hybrid") and query:
+        t1 = time.perf_counter()
         sem_ids = _semantic_ids(query, page_size * 4)
+        log.info("[search] semantic  ids=%d  ms=%.0f", len(sem_ids), (time.perf_counter() - t1) * 1000)
 
         if mode == "hybrid":
+            t2 = time.perf_counter()
             ft_ids = _fulltext_ids(base, query)
+            log.info("[search] fulltext  ids=%d  ms=%.0f", len(ft_ids), (time.perf_counter() - t2) * 1000)
             ordered_ids = _merge_hybrid(sem_ids, ft_ids)
         else:
             ordered_ids = sem_ids
@@ -112,6 +119,8 @@ def search_documents(
 
             total = len(docs_all)
             docs  = docs_all[(page - 1) * page_size: page * page_size]
+            log.info("[search] done  mode=%s  query=%r  results=%d  ms=%.0f",
+                     mode, query[:60], total, (time.perf_counter() - t0) * 1000)
             return _build_response(docs, total, page, page_size, mode, query)
         # Fall through to fulltext if no embeddings yet
 
@@ -128,6 +137,9 @@ def search_documents(
         .limit(page_size)
         .all()
     )
+    if query:
+        log.info("[search] done  mode=fulltext  query=%r  results=%d  ms=%.0f",
+                 query[:60], total, (time.perf_counter() - t0) * 1000)
     return _build_response(docs, total, page, page_size, mode, query)
 
 
@@ -269,8 +281,10 @@ async def ask_documents(
     if not query.strip():
         return AIAnswerResponse(answer="", sources=[], cost=0.0)
 
+    t0 = time.perf_counter()
     cfg = _DEPTH_CFG.get(depth, _DEPTH_CFG[2])
-    log.debug("[ask] query=%r  depth=%d  cfg=%s", query, depth, cfg)
+    log.info("[ask] start  query=%r  depth=%d  n_retrieve=%d  n_send=%d",
+             query[:80], depth, cfg["n_retrieve"], cfg["n_send"])
 
     base = db.query(Document).filter(Document.is_deleted == False)
     if year:
@@ -280,18 +294,22 @@ async def ask_documents(
         base = base.filter(Document.language == filter_language)
 
     # ── Hybrid retrieval: semantic + fulltext always merged ────────────────
+    t1 = time.perf_counter()
     sem_ids = _semantic_ids(query, cfg["n_retrieve"] * 2)
-    log.debug("[ask] semantic_ids count=%d  top5=%s", len(sem_ids), sem_ids[:5])
+    log.info("[ask] step=semantic  ids=%d  ms=%.0f", len(sem_ids), (time.perf_counter() - t1) * 1000)
 
+    t2 = time.perf_counter()
     query_variants = _expand_fulltext_query(query)
     log.debug("[ask] fulltext variants: %s", query_variants)
     ft_ids: set[int] = set()
     for variant in query_variants:
         ft_ids |= _fulltext_ids(base, variant)
-    log.debug("[ask] fulltext_ids count=%d", len(ft_ids))
+    log.info("[ask] step=fulltext  ids=%d  variants=%d  ms=%.0f",
+             len(ft_ids), len(query_variants), (time.perf_counter() - t2) * 1000)
 
     merged = _merge_hybrid(sem_ids, ft_ids)
-    log.debug("[ask] merged count=%d  top5=%s", len(merged), merged[:5])
+    log.info("[ask] step=merge  total=%d  selected=%d",
+             len(merged), min(len(merged), cfg["n_retrieve"]))
 
     if merged:
         docs_all = base.filter(Document.id.in_(merged[:cfg["n_retrieve"]])).all()
@@ -345,8 +363,8 @@ async def ask_documents(
                   i, doc.id, doc.filename[:40], bool(doc.summary), ocr_sent)
 
     context = "\n\n---\n\n".join(context_parts)
-    log.debug("[ask] total_context_chars=%d  provider=%r  model=%r",
-              len(context), provider.name, provider.model)
+    log.info("[ask] step=context  docs=%d  chars=%d  provider=%r  model=%r",
+             len(docs), len(context), provider.name, provider.model)
 
     lang_names = {"en": "English", "ru": "Russian", "fr": "French"}
     resp_lang = lang_names.get(language, "English")
@@ -361,11 +379,12 @@ async def ask_documents(
     )
     user_msg = f"Documents:\n\n{context}\n\nQuestion: {query}"
 
+    t4 = time.perf_counter()
     try:
         from ..services.ai_analysis import run_text
         answer, tokens_in, tokens_out, cost = await run_text(provider, system, user_msg)
-        log.debug("[ask] llm done tokens=%d/%d cost=%.5f answer=%r",
-                  tokens_in, tokens_out, cost, (answer or "")[:200])
+        log.info("[ask] step=llm  ms=%.0f  tokens=%d/%d  cost=$%.5f",
+                 (time.perf_counter() - t4) * 1000, tokens_in, tokens_out, cost)
     except Exception as exc:
         answer = str(exc)
         tokens_in = tokens_out = 0
@@ -373,6 +392,8 @@ async def ask_documents(
         log.warning("[ask] LLM call failed: %s", exc)
 
     model_name = provider.model or provider.name
+    log.info("[ask] done  total_ms=%.0f  answer_chars=%d",
+             (time.perf_counter() - t0) * 1000, len(answer or ""))
     _log_ask(db, query, len(docs), depth, cost, tokens_in, tokens_out, model_name)
 
     return AIAnswerResponse(

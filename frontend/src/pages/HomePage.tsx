@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown } from "lucide-react";
+import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2 } from "lucide-react";
 import { SearchBar } from "../components/search/SearchBar";
 import { AIAnswer } from "../components/search/AIAnswer";
 import { DocumentCard } from "../components/documents/DocumentCard";
@@ -267,14 +267,7 @@ export function HomePage() {
         {/* ── AI mode content ── */}
         {mode === "ask" && (
           <div className="ai-mode-content">
-            {aiLoading && (
-              <div className="ai-mode-loading">
-                <span className="ai-mode-loading-dot" />
-                <span className="ai-mode-loading-dot" />
-                <span className="ai-mode-loading-dot" />
-                <span className="text-muted" style={{ marginLeft: 12 }}>{t.aiSearch.submitting}</span>
-              </div>
-            )}
+            {aiLoading && <AISearchProgress t={t} />}
             {!aiLoading && aiAnswer && (
               <AIAnswer
                 answer={aiAnswer.answer}
@@ -356,6 +349,45 @@ export function HomePage() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+const _STEP_DELAYS = [0, 320, 680, 1050]; // ms when each step becomes active
+
+function AISearchProgress({ t }: { t: ReturnType<typeof useT>["t"] }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    const timers = _STEP_DELAYS.slice(1).map((ms, i) =>
+      window.setTimeout(() => setActiveIdx(i + 1), ms)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  const steps = [
+    t.aiSearch.stepText,
+    t.aiSearch.stepSemantic,
+    t.aiSearch.stepRank,
+    t.aiSearch.stepLlm,
+  ];
+
+  return (
+    <div className="ai-search-progress">
+      {steps.map((label, i) => {
+        const done   = i < activeIdx;
+        const active = i === activeIdx;
+        return (
+          <div key={i} className={`ai-progress-step${done ? " done" : active ? " active" : ""}`}>
+            <span className="ai-step-icon">
+              {done   ? <Check size={13} />
+               : active ? <Loader2 size={13} className="ai-step-spin" />
+               : null}
+            </span>
+            <span>{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function AskHint({ t }: { t: ReturnType<typeof useT>["t"] }) {
   return (
