@@ -20,6 +20,8 @@ from .task_runtime import (
     log_task as _log,
     set_progress as _set_progress,
 )
+from .ai_vision import VISION_FULL_PROMPT
+from .ai_common import strip_code_fences
 
 
 _LOCAL_OCR_MODELS = {"tesseract", "easyocr"}
@@ -309,14 +311,6 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
     ))
 
 
-# Transcribe-verbatim prompt — Gemini has no dedicated OCR endpoint, so we ask
-# the vision model to act like one and return only the raw text.
-GEMINI_OCR_PROMPT = (
-    "Transcribe ALL text from this document image verbatim. "
-    "Preserve the reading order, line breaks and tables as plain text / markdown. "
-    "Do not summarize, translate or add any commentary — output only the transcribed text."
-)
-
 GEMINI_BATCH_BASE = "https://generativelanguage.googleapis.com"
 
 
@@ -325,8 +319,9 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     Gemini Batch OCR — uses Google Gemini's Batch Mode (50 % cheaper, async).
 
     Gemini has no dedicated OCR endpoint, so we send each document's first page
-    to a vision model with a verbatim-transcription prompt and store the result
-    in Document.ocr_text — the same target the Mistral batch writes to.
+    to a vision model with VISION_FULL_PROMPT and store both the verbatim text
+    (ocr_text) and all analysis fields (summary, document_type, tags, etc.) in
+    one pass — equivalent to what the synchronous vision pipeline does.
 
     Flow (REST, mirrors `run_batch_ocr_mistral`):
       1. Load first page of each pending document as JPEG.
@@ -402,10 +397,10 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     "contents": [{
                         "parts": [
                             {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-                            {"text": GEMINI_OCR_PROMPT},
+                            {"text": VISION_FULL_PROMPT},
                         ],
                     }],
-                    "generation_config": {"max_output_tokens": 8192},
+                    "generation_config": {"max_output_tokens": 16384},
                 },
             }))
             _log(task_id, f"✓ Loaded: {doc.filename}")
@@ -584,12 +579,44 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
 
                 doc = db.query(Document).filter(Document.id == doc_id).first()
                 if doc:
-                    doc.ocr_text = text
-                    doc.ocr_status = "done"
-                    doc.ocr_model = f"{model} (batch)"
-                    db.commit()
-                    _log(task_id, f"✓ Saved OCR for doc {doc_id}")
-                    processed += 1
+                    try:
+                        parsed = json.loads(strip_code_fences(text))
+                    except Exception:
+                        parsed = None
+
+                    if parsed and isinstance(parsed, dict) and parsed.get("text"):
+                        doc.ocr_text = parsed["text"]
+                        doc.ocr_status = "done"
+                        doc.ocr_model = f"{model} (batch)"
+                        doc.summary = parsed.get("summary", "")
+                        doc.document_type = parsed.get("document_type", "unclassified")
+                        doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                        tags = parsed.get("tags") or []
+                        doc.tags = json.dumps(tags, ensure_ascii=False)
+                        doc.language = parsed.get("language", "")
+                        doc.organization = parsed.get("organization")
+                        amount = parsed.get("amount")
+                        doc.amount = float(amount) if amount is not None else None
+                        doc.amount_currency = parsed.get("amount_currency")
+                        doc.person_first_name = parsed.get("person_first_name")
+                        doc.person_last_name = parsed.get("person_last_name")
+                        doc.document_date = parsed.get("document_date")
+                        short_title = parsed.get("short_title", "")
+                        if short_title:
+                            doc.short_title = short_title
+                        doc.analysis_status = "done"
+                        doc.analysis_model = f"{model} (batch)"
+                        db.commit()
+                        _log(task_id, f"✓ OCR + analysis saved for doc {doc_id}")
+                        processed += 1
+                    else:
+                        # JSON parse failed — save raw text as OCR only, leave analysis pending
+                        doc.ocr_text = text
+                        doc.ocr_status = "done"
+                        doc.ocr_model = f"{model} (batch)"
+                        db.commit()
+                        _log(task_id, f"⚠ Doc {doc_id}: saved raw OCR text (JSON parse failed)", "error")
+                        processed += 1
 
             except Exception as exc:
                 _log(task_id, f"✗ Result parse error: {exc}", "error")
@@ -606,6 +633,6 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     }
     _finish(task_id, "done", summary)
     _log(task_id, (
-        f"Done — {processed} saved, {failed_count} failed, "
+        f"Done — {processed} OCR+analyzed, {failed_count} failed, "
         f"{tokens_in}+{tokens_out} tokens (batch discount applied)"
     ))
