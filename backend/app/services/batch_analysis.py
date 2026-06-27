@@ -10,6 +10,7 @@ Mistral batch OCR has produced ocr_text that still needs AI metadata extraction.
 import asyncio
 import json
 import logging
+from datetime import datetime
 
 import httpx
 
@@ -287,7 +288,14 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 doc.amount_currency = parsed.get("amount_currency")
                 doc.person_first_name = parsed.get("person_first_name")
                 doc.person_last_name = parsed.get("person_last_name")
-                doc.document_date = parsed.get("document_date")
+                raw_date = parsed.get("document_date")
+                if raw_date:
+                    try:
+                        doc.document_date = datetime.strptime(raw_date, "%Y-%m-%d")
+                    except ValueError:
+                        doc.document_date = None
+                else:
+                    doc.document_date = None
                 short_title = parsed.get("short_title", "")
                 if short_title:
                     doc.short_title = short_title
@@ -297,6 +305,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 _log(task_id, f"✓ {doc.filename}")
 
             except Exception as exc:
+                db.rollback()
                 _log(task_id, f"✗ Parse error for key '{key}': {exc}", "error")
                 failed_count += 1
     finally:

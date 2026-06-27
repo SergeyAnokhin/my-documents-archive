@@ -8,6 +8,7 @@ See docs/batch-ocr.md.
 import asyncio
 import base64
 import json
+from datetime import datetime
 
 import httpx
 from sqlalchemy import or_
@@ -600,7 +601,14 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         doc.amount_currency = parsed.get("amount_currency")
                         doc.person_first_name = parsed.get("person_first_name")
                         doc.person_last_name = parsed.get("person_last_name")
-                        doc.document_date = parsed.get("document_date")
+                        raw_date = parsed.get("document_date")
+                        if raw_date:
+                            try:
+                                doc.document_date = datetime.strptime(raw_date, "%Y-%m-%d")
+                            except ValueError:
+                                doc.document_date = None
+                        else:
+                            doc.document_date = None
                         short_title = parsed.get("short_title", "")
                         if short_title:
                             doc.short_title = short_title
