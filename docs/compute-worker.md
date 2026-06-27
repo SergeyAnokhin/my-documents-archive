@@ -127,3 +127,52 @@ are available. The Lab page shows a Run button per method — only methods retur
 this endpoint appear. If the worker is down, only `tesseract` (in-process) shows.
 
 See [lab-mode.md](lab-mode.md) for the full lab flow.
+
+## Запуск на dev-машине при k8s-деплое
+
+Если основной стек (`backend` + `frontend`) развёрнут в Kubernetes, compute-воркер
+можно запускать на локальной Windows-машине разработчика — это даёт доступ к EasyOCR
+без выделенной ноды в кластере.
+
+### 1. Запустить воркер
+
+```powershell
+npm run compute
+```
+
+При старте в консоль выводится LAN-адрес, который нужно вставить в UI:
+
+```
+  Compute worker → http://192.168.1.X:8001
+```
+
+### 2. Открыть порт в Windows Firewall (один раз, от администратора)
+
+```powershell
+netsh advfirewall firewall add rule `
+  name="DocIntel compute worker" `
+  dir=in action=allow protocol=TCP localport=8001
+```
+
+### 3. Узнать LAN-адрес машины
+
+```powershell
+ipconfig | findstr "IPv4"
+```
+
+Запомни адрес вида `192.168.1.X`.
+
+### 4. Подключить в UI
+
+Открой `http://my-documents-archive.local` → **Admin → Indexing → Compute Worker**,
+вставь URL:
+
+```
+http://192.168.1.X:8001
+```
+
+Статус проверяется автоматически через ~0,7 с после вставки — должен появиться
+зелёный индикатор. Нажми **Save** для сохранения.
+
+> Если воркер не запущен, backend продолжает работу с Tesseract из образа — EasyOCR
+> просто не появляется в OCR Lab.

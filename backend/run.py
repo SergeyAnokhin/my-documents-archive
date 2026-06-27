@@ -1,8 +1,16 @@
 """Entry point: python run.py"""
+import logging
 import uvicorn
 from pathlib import Path
 
 Path("logs").mkdir(exist_ok=True)
+
+
+class _SuppressTasksPoll(logging.Filter):
+    """Drop the high-frequency GET /api/tasks polling noise from access logs."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "GET /api/tasks" not in msg
 
 _LOG_CONFIG = {
     "version": 1,
@@ -24,6 +32,11 @@ _LOG_CONFIG = {
             "datefmt": "%H:%M:%S",
         },
     },
+    "filters": {
+        "suppress_tasks_poll": {
+            "()": "__main__._SuppressTasksPoll",
+        },
+    },
     "handlers": {
         "default": {
             "formatter": "default",
@@ -34,6 +47,7 @@ _LOG_CONFIG = {
             "formatter": "access",
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
+            "filters": ["suppress_tasks_poll"],
         },
         "file": {
             "formatter": "file",
@@ -42,6 +56,7 @@ _LOG_CONFIG = {
             "maxBytes": 2097152,   # 2 MB, then rotate
             "backupCount": 1,
             "encoding": "utf-8",
+            "filters": ["suppress_tasks_poll"],
         },
     },
     "loggers": {

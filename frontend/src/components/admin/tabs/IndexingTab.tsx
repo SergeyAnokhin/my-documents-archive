@@ -45,6 +45,13 @@ export function IndexingTab() {
     }).catch(() => {});
   }, []);
 
+  // Auto-probe the worker 700 ms after the user stops typing / pastes a URL.
+  useEffect(() => {
+    if (!workerUrl.trim()) { setWorkerStatus_(null); return; }
+    const id = setTimeout(() => { handleCheckEngine("tesseract"); }, 700);
+    return () => clearTimeout(id);
+  }, [workerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 4000); };
 
   const handleUpdateIcons = async () => {
