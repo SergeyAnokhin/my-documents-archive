@@ -1,5 +1,8 @@
 """Entry point: python run.py"""
 import uvicorn
+from pathlib import Path
+
+Path("logs").mkdir(exist_ok=True)
 
 _LOG_CONFIG = {
     "version": 1,
@@ -16,6 +19,10 @@ _LOG_CONFIG = {
             "fmt": '%(asctime)s.%(msecs)03d %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
             "datefmt": "%H:%M:%S",
         },
+        "file": {
+            "format": "%(asctime)s.%(msecs)03d  %(levelname)-7s  %(name)s  %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
     },
     "handlers": {
         "default": {
@@ -28,12 +35,21 @@ _LOG_CONFIG = {
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
         },
+        "file": {
+            "formatter": "file",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "logs/backend.log",
+            "maxBytes": 2097152,   # 2 MB, then rotate
+            "backupCount": 1,
+            "encoding": "utf-8",
+        },
     },
     "loggers": {
-        "uvicorn":        {"handlers": ["default"], "level": "INFO", "propagate": False},
-        "uvicorn.error":  {"handlers": ["default"], "level": "INFO", "propagate": False},
-        "uvicorn.access": {"handlers": ["access"],  "level": "INFO", "propagate": False},
-        "app":            {"handlers": ["default"], "level": "INFO", "propagate": False},
+        "uvicorn":        {"handlers": ["default", "file"], "level": "INFO",  "propagate": False},
+        "uvicorn.error":  {"handlers": ["default", "file"], "level": "INFO",  "propagate": False},
+        "uvicorn.access": {"handlers": ["access",  "file"], "level": "INFO",  "propagate": False},
+        # DEBUG so search step logs (log.debug) are visible while investigating
+        "app":            {"handlers": ["default", "file"], "level": "DEBUG", "propagate": False},
     },
 }
 
