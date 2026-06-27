@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import json as _json
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List, Any
 
@@ -42,6 +43,16 @@ class DocumentOut(BaseModel):
     api_cost_analysis: float = 0.0
     ocr_model: Optional[str] = None
     updated_at: Optional[datetime] = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def parse_tags(cls, v):
+        if isinstance(v, str):
+            try:
+                return _json.loads(v)
+            except Exception:
+                return []
+        return v or []
 
     model_config = {"from_attributes": True}
 

@@ -352,12 +352,16 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
       4. Create a batch job (models/{model}:batchGenerateContent).
       5. Poll every `poll_interval` seconds until JOB_STATE_SUCCEEDED.
       6. Download the responses file and save OCR text back to each document.
+
+    Flow (resume via config["resume_batch_job_id"]):
+      Skips phases 1–4, jumps straight to polling an existing remote job.
     """
     from .ai_vision import load_first_page
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
+    resume_job_id = config.get("resume_batch_job_id")
 
     # ── 1. Resolve Gemini provider ───────────────────────────────────────────
     db = SessionLocal()
@@ -383,128 +387,144 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
 
         api_key = provider.api_key
         model = provider.model or "gemini-2.5-flash"
-
-        # ── 2. Collect documents by scope ─────────────────────────────────────
-        scope = int(config.get("scope", 1))
-        docs = _scope_filter(db.query(Document), scope).limit(limit).all()
-        total = len(docs)
     finally:
         db.close()
 
-    if total == 0:
-        _log(task_id, "No pending documents found")
-        _finish(task_id, "done", {"processed": 0})
-        return
-
-    _log(task_id, f"Found {total} document(s) — model: {model}")
-    _set_progress(task_id, 0, total)
-
-    # ── 3. Build JSONL (inline base64) ───────────────────────────────────────
-    _log(task_id, "Loading document images…")
-    jsonl_lines: list[str] = []
-    doc_id_map: dict[str, int] = {}   # key (str doc.id) → doc.id
-
-    for i, doc in enumerate(docs):
-        if _is_stopped(task_id):
-            _log(task_id, f"Stopped during image loading after {i} document(s)")
-            return
-        try:
-            img_bytes = load_first_page(doc.filepath)
-            b64 = base64.b64encode(img_bytes).decode()
-            key = str(doc.id)
-            doc_id_map[key] = doc.id
-            jsonl_lines.append(json.dumps({
-                "key": key,
-                "request": {
-                    "contents": [{
-                        "parts": [
-                            {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-                            {"text": VISION_FULL_PROMPT},
-                        ],
-                    }],
-                    "generation_config": {"max_output_tokens": 16384},
-                },
-            }))
-            _log(task_id, f"✓ Loaded: {doc.filename}")
-        except Exception as exc:
-            _log(task_id, f"✗ {doc.filename}: cannot load image — {exc}", "error")
-        _set_progress(task_id, i + 1, total)
-
-    if not jsonl_lines:
-        _log(task_id, "No document images could be loaded", "error")
-        _finish(task_id, "error")
-        return
-
-    jsonl_bytes = ("\n".join(jsonl_lines)).encode()
     key_header = {"x-goog-api-key": api_key}
 
-    # ── 4. Upload JSONL via Files API (resumable upload) ──────────────────────
-    _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
-    async with httpx.AsyncClient(timeout=180) as client:
-        start_resp = await client.post(
-            f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
-            headers={
-                **key_header,
-                "X-Goog-Upload-Protocol": "resumable",
-                "X-Goog-Upload-Command": "start",
-                "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
-                "X-Goog-Upload-Header-Content-Type": "application/jsonl",
-                "Content-Type": "application/json",
-            },
-            json={"file": {"display_name": f"docintel_ocr_{task_id}"}},
-        )
-        start_resp.raise_for_status()
-        upload_url = start_resp.headers.get("x-goog-upload-url")
-        if not upload_url:
-            _log(task_id, "Gemini did not return an upload URL", "error")
+    if resume_job_id:
+        # ── Resume path: skip submission, reconnect to existing job ──────────
+        batch_job_name = resume_job_id
+        _log(task_id, f"Resuming existing Gemini batch job: {batch_job_name}")
+        db = SessionLocal()
+        try:
+            all_ids = db.query(Document.id).filter(Document.is_deleted == False).all()
+            doc_id_map: dict[str, int] = {str(row[0]): row[0] for row in all_ids}
+        finally:
+            db.close()
+    else:
+        # ── 2. Collect documents by scope ─────────────────────────────────────
+        db = SessionLocal()
+        try:
+            scope = int(config.get("scope", 1))
+            docs = _scope_filter(db.query(Document), scope).limit(limit).all()
+            total = len(docs)
+        finally:
+            db.close()
+
+        if total == 0:
+            _log(task_id, "No pending documents found")
+            _finish(task_id, "done", {"processed": 0})
+            return
+
+        _log(task_id, f"Found {total} document(s) — model: {model}")
+        _set_progress(task_id, 0, total)
+
+        # ── 3. Build JSONL (inline base64) ───────────────────────────────────
+        _log(task_id, "Loading document images…")
+        jsonl_lines: list[str] = []
+        doc_id_map = {}
+
+        for i, doc in enumerate(docs):
+            if _is_stopped(task_id):
+                _log(task_id, f"Stopped during image loading after {i} document(s)")
+                return
+            try:
+                img_bytes = load_first_page(doc.filepath)
+                b64 = base64.b64encode(img_bytes).decode()
+                key = str(doc.id)
+                doc_id_map[key] = doc.id
+                jsonl_lines.append(json.dumps({
+                    "key": key,
+                    "request": {
+                        "contents": [{
+                            "parts": [
+                                {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+                                {"text": VISION_FULL_PROMPT},
+                            ],
+                        }],
+                        "generation_config": {"max_output_tokens": 16384},
+                    },
+                }))
+                _log(task_id, f"✓ Loaded: {doc.filename}")
+            except Exception as exc:
+                _log(task_id, f"✗ {doc.filename}: cannot load image — {exc}", "error")
+            _set_progress(task_id, i + 1, total)
+
+        if not jsonl_lines:
+            _log(task_id, "No document images could be loaded", "error")
             _finish(task_id, "error")
             return
 
-        upload_resp = await client.post(
-            upload_url,
-            headers={
-                "Content-Length": str(len(jsonl_bytes)),
-                "X-Goog-Upload-Offset": "0",
-                "X-Goog-Upload-Command": "upload, finalize",
-            },
-            content=jsonl_bytes,
-        )
-        upload_resp.raise_for_status()
-        input_file_name = upload_resp.json()["file"]["name"]   # files/xxxx
+        jsonl_bytes = ("\n".join(jsonl_lines)).encode()
 
-    _log(task_id, f"Uploaded input file: {input_file_name}")
-
-    # ── 5. Create batch job ──────────────────────────────────────────────────
-    async with httpx.AsyncClient(timeout=60) as client:
-        batch_resp = await client.post(
-            f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
-            headers={**key_header, "Content-Type": "application/json"},
-            json={
-                "batch": {
-                    "display_name": f"docintel-ocr-{task_id}",
-                    "input_config": {"file_name": input_file_name},
+        # ── 4. Upload JSONL via Files API (resumable upload) ──────────────────
+        _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+        async with httpx.AsyncClient(timeout=180) as client:
+            start_resp = await client.post(
+                f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
+                headers={
+                    **key_header,
+                    "X-Goog-Upload-Protocol": "resumable",
+                    "X-Goog-Upload-Command": "start",
+                    "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
+                    "X-Goog-Upload-Header-Content-Type": "application/jsonl",
+                    "Content-Type": "application/json",
                 },
-            },
-        )
-        batch_resp.raise_for_status()
-        batch_data = batch_resp.json()
+                json={"file": {"display_name": f"docintel_ocr_{task_id}"}},
+            )
+            start_resp.raise_for_status()
+            upload_url = start_resp.headers.get("x-goog-upload-url")
+            if not upload_url:
+                _log(task_id, "Gemini did not return an upload URL", "error")
+                _finish(task_id, "error")
+                return
 
-    batch_job_name = batch_data["name"]   # e.g. batches/xxxx
-    _log(task_id, f"Batch job created: {batch_job_name}")
+            upload_resp = await client.post(
+                upload_url,
+                headers={
+                    "Content-Length": str(len(jsonl_bytes)),
+                    "X-Goog-Upload-Offset": "0",
+                    "X-Goog-Upload-Command": "upload, finalize",
+                },
+                content=jsonl_bytes,
+            )
+            upload_resp.raise_for_status()
+            input_file_name = upload_resp.json()["file"]["name"]   # files/xxxx
 
-    # Save job name so it's visible in result_summary during polling
-    db = SessionLocal()
-    try:
-        task_row = db.query(Task).filter(Task.id == task_id).first()
-        if task_row:
-            task_row.result_summary = {
-                "phase": "polling",
-                "batch_job_id": batch_job_name,
-                "doc_count": len(jsonl_lines),
-            }
-            db.commit()
-    finally:
-        db.close()
+        _log(task_id, f"Uploaded input file: {input_file_name}")
+
+        # ── 5. Create batch job ──────────────────────────────────────────────
+        async with httpx.AsyncClient(timeout=60) as client:
+            batch_resp = await client.post(
+                f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
+                headers={**key_header, "Content-Type": "application/json"},
+                json={
+                    "batch": {
+                        "display_name": f"docintel-ocr-{task_id}",
+                        "input_config": {"file_name": input_file_name},
+                    },
+                },
+            )
+            batch_resp.raise_for_status()
+            batch_data = batch_resp.json()
+
+        batch_job_name = batch_data["name"]   # e.g. batches/xxxx
+        _log(task_id, f"Batch job created: {batch_job_name}")
+
+        # Save job name so it's visible in result_summary during polling
+        db = SessionLocal()
+        try:
+            task_row = db.query(Task).filter(Task.id == task_id).first()
+            if task_row:
+                task_row.result_summary = {
+                    "phase": "polling",
+                    "batch_job_id": batch_job_name,
+                    "doc_count": len(jsonl_lines),
+                }
+                db.commit()
+        finally:
+            db.close()
 
     # ── 6. Poll until complete ────────────────────────────────────────────────
     _log(task_id, f"Job submitted. Polling every {poll_interval}s… (up to 48 h)")

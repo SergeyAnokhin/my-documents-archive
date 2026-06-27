@@ -393,6 +393,15 @@ export const en = {
     },
     scopeCount: "{{count}} files match this scope",
     scopeCountLoading: "Counting…",
+    batchMonitor: "Batch Jobs",
+    batchMonitorTitle: "Remote Batch Jobs",
+    batchMonitorEmpty: "No batch tasks found. Create batch OCR or analysis tasks first.",
+    batchMonitorHint: "Batch jobs run remotely on Mistral / Gemini and may take up to 24–48 h.",
+    batchJobId: "Job ID",
+    batchDocCount: "{{count}} docs",
+    batchResume: "Resume Polling",
+    batchResumeHint: "The remote job kept running — reconnect and apply results when done.",
+    batchNoJobId: "No remote job ID — task hasn't been submitted yet.",
   },
 
   // Misc

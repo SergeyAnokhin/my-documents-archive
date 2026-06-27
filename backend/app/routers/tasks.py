@@ -162,6 +162,31 @@ def stop_task(task_id: int, db: Session = Depends(get_db)):
     return {"message": "Task stopped"}
 
 
+@router.post("/{task_id}/resume-batch")
+async def resume_batch_task(task_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Resume polling for a remote batch job that kept running while the server was down."""
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if task.status == "running":
+        return {"message": "Task already running"}
+    if task.task_type not in ("batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini"):
+        raise HTTPException(400, "Only batch tasks support resume")
+
+    batch_job_id = (task.result_summary or {}).get("batch_job_id")
+    if not batch_job_id:
+        raise HTTPException(400, "No remote batch_job_id found — task has no running remote job")
+
+    task.status = "running"
+    task.started_at = datetime.utcnow()
+    task.finished_at = None
+    db.commit()
+
+    config = {**(task.config or {}), "resume_batch_job_id": str(batch_job_id)}
+    background_tasks.add_task(_run_task_bg, task_id, task.task_type, config)
+    return {"message": "Batch resume started"}
+
+
 @router.get("/{task_id}/logs", response_model=List[TaskLogOut])
 def get_task_logs(task_id: int, limit: int = 200, db: Session = Depends(get_db)):
     return (

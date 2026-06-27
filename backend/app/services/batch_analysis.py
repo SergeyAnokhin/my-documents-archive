@@ -33,13 +33,15 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
     """Submit text-only analysis batch to Gemini and persist results.
 
     Config keys:
-      limit         — max documents to include (default 50)
-      provider_id   — AIProvider id to use; falls back to first enabled Gemini
-      poll_interval — seconds between status polls (default 30)
+      limit                 — max documents to include (default 50)
+      provider_id           — AIProvider id to use; falls back to first enabled Gemini
+      poll_interval         — seconds between status polls (default 30)
+      resume_batch_job_id   — if set, skip submission and resume polling this job
     """
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
+    resume_job_id = config.get("resume_batch_job_id")
 
     # ── 1. Resolve provider ───────────────────────────────────────────────────
     db = SessionLocal()
@@ -65,120 +67,136 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
 
         api_key = provider.api_key
         model = provider.model or "gemini-2.5-flash"
-
-        # ── 2. Collect documents with text but no analysis ────────────────────
-        docs = (
-            db.query(Document)
-            .filter(
-                Document.is_deleted == False,
-                Document.ocr_text.isnot(None),
-                Document.ocr_text != "",
-                Document.analysis_status != "done",
-            )
-            .limit(limit)
-            .all()
-        )
-        total = len(docs)
     finally:
         db.close()
 
-    if total == 0:
-        _log(task_id, "No documents found with OCR text pending analysis")
-        _finish(task_id, "done", {"processed": 0})
-        return
-
-    _log(task_id, f"Found {total} document(s) for analysis — model: {model}")
-    _set_progress(task_id, 0, total)
-
-    # ── 3. Build JSONL (text-only requests) ──────────────────────────────────
-    jsonl_lines: list[str] = []
-    doc_id_map: dict[str, int] = {}
-
-    for doc in docs:
-        text_snippet = (doc.ocr_text or "")[:4000]
-        user_msg = f"OCR Text:\n{text_snippet}"
-        key = str(doc.id)
-        doc_id_map[key] = doc.id
-        jsonl_lines.append(json.dumps({
-            "key": key,
-            "request": {
-                "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
-                "contents": [{
-                    "parts": [{"text": user_msg}],
-                }],
-                "generation_config": {"max_output_tokens": 1024},
-            },
-        }))
-
-    jsonl_bytes = ("\n".join(jsonl_lines)).encode()
     key_header = {"x-goog-api-key": api_key}
 
-    # ── 4. Upload JSONL ───────────────────────────────────────────────────────
-    _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
-    async with httpx.AsyncClient(timeout=180) as client:
-        start_resp = await client.post(
-            f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
-            headers={
-                **key_header,
-                "X-Goog-Upload-Protocol": "resumable",
-                "X-Goog-Upload-Command": "start",
-                "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
-                "X-Goog-Upload-Header-Content-Type": "application/jsonl",
-                "Content-Type": "application/json",
-            },
-            json={"file": {"display_name": f"docintel_analysis_{task_id}"}},
-        )
-        start_resp.raise_for_status()
-        upload_url = start_resp.headers.get("x-goog-upload-url")
-        if not upload_url:
-            _log(task_id, "Gemini did not return an upload URL", "error")
-            _finish(task_id, "error")
+    if resume_job_id:
+        # ── Resume path: skip submission, reconnect to existing job ──────────
+        batch_job_name = resume_job_id
+        _log(task_id, f"Resuming existing Gemini analysis batch job: {batch_job_name}")
+        db = SessionLocal()
+        try:
+            all_ids = db.query(Document.id).filter(Document.is_deleted == False).all()
+            doc_id_map: dict[str, int] = {str(row[0]): row[0] for row in all_ids}
+        finally:
+            db.close()
+    else:
+        # ── 2. Collect documents with text but no analysis ────────────────────
+        db = SessionLocal()
+        try:
+            docs = (
+                db.query(Document)
+                .filter(
+                    Document.is_deleted == False,
+                    Document.ocr_text.isnot(None),
+                    Document.ocr_text != "",
+                    Document.analysis_status != "done",
+                )
+                .limit(limit)
+                .all()
+            )
+            total = len(docs)
+        finally:
+            db.close()
+
+        if total == 0:
+            _log(task_id, "No documents found with OCR text pending analysis")
+            _finish(task_id, "done", {"processed": 0})
             return
 
-        upload_resp = await client.post(
-            upload_url,
-            headers={
-                "Content-Length": str(len(jsonl_bytes)),
-                "X-Goog-Upload-Offset": "0",
-                "X-Goog-Upload-Command": "upload, finalize",
-            },
-            content=jsonl_bytes,
-        )
-        upload_resp.raise_for_status()
-        input_file_name = upload_resp.json()["file"]["name"]
+        _log(task_id, f"Found {total} document(s) for analysis — model: {model}")
+        _set_progress(task_id, 0, total)
 
-    _log(task_id, f"Uploaded input file: {input_file_name}")
+        # ── 3. Build JSONL (text-only requests) ──────────────────────────────
+        jsonl_lines: list[str] = []
+        doc_id_map = {}
 
-    # ── 5. Create batch job ──────────────────────────────────────────────────
-    async with httpx.AsyncClient(timeout=60) as client:
-        batch_resp = await client.post(
-            f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
-            headers={**key_header, "Content-Type": "application/json"},
-            json={
-                "batch": {
-                    "display_name": f"docintel-analysis-{task_id}",
-                    "input_config": {"file_name": input_file_name},
+        for doc in docs:
+            text_snippet = (doc.ocr_text or "")[:4000]
+            user_msg = f"OCR Text:\n{text_snippet}"
+            key = str(doc.id)
+            doc_id_map[key] = doc.id
+            jsonl_lines.append(json.dumps({
+                "key": key,
+                "request": {
+                    "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
+                    "contents": [{
+                        "parts": [{"text": user_msg}],
+                    }],
+                    "generation_config": {"max_output_tokens": 1024},
                 },
-            },
-        )
-        batch_resp.raise_for_status()
-        batch_data = batch_resp.json()
+            }))
 
-    batch_job_name = batch_data["name"]
-    _log(task_id, f"Batch job created: {batch_job_name}")
+        jsonl_bytes = ("\n".join(jsonl_lines)).encode()
 
-    db = SessionLocal()
-    try:
-        task_row = db.query(Task).filter(Task.id == task_id).first()
-        if task_row:
-            task_row.result_summary = {
-                "phase": "polling",
-                "batch_job_id": batch_job_name,
-                "doc_count": len(jsonl_lines),
-            }
-            db.commit()
-    finally:
-        db.close()
+        # ── 4. Upload JSONL ───────────────────────────────────────────────────
+        _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+        async with httpx.AsyncClient(timeout=180) as client:
+            start_resp = await client.post(
+                f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
+                headers={
+                    **key_header,
+                    "X-Goog-Upload-Protocol": "resumable",
+                    "X-Goog-Upload-Command": "start",
+                    "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
+                    "X-Goog-Upload-Header-Content-Type": "application/jsonl",
+                    "Content-Type": "application/json",
+                },
+                json={"file": {"display_name": f"docintel_analysis_{task_id}"}},
+            )
+            start_resp.raise_for_status()
+            upload_url = start_resp.headers.get("x-goog-upload-url")
+            if not upload_url:
+                _log(task_id, "Gemini did not return an upload URL", "error")
+                _finish(task_id, "error")
+                return
+
+            upload_resp = await client.post(
+                upload_url,
+                headers={
+                    "Content-Length": str(len(jsonl_bytes)),
+                    "X-Goog-Upload-Offset": "0",
+                    "X-Goog-Upload-Command": "upload, finalize",
+                },
+                content=jsonl_bytes,
+            )
+            upload_resp.raise_for_status()
+            input_file_name = upload_resp.json()["file"]["name"]
+
+        _log(task_id, f"Uploaded input file: {input_file_name}")
+
+        # ── 5. Create batch job ──────────────────────────────────────────────
+        async with httpx.AsyncClient(timeout=60) as client:
+            batch_resp = await client.post(
+                f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
+                headers={**key_header, "Content-Type": "application/json"},
+                json={
+                    "batch": {
+                        "display_name": f"docintel-analysis-{task_id}",
+                        "input_config": {"file_name": input_file_name},
+                    },
+                },
+            )
+            batch_resp.raise_for_status()
+            batch_data = batch_resp.json()
+
+        batch_job_name = batch_data["name"]
+        _log(task_id, f"Batch job created: {batch_job_name}")
+
+        db = SessionLocal()
+        try:
+            task_row = db.query(Task).filter(Task.id == task_id).first()
+            if task_row:
+                task_row.result_summary = {
+                    "phase": "polling",
+                    "batch_job_id": batch_job_name,
+                    "doc_count": len(jsonl_lines),
+                }
+                db.commit()
+        finally:
+            db.close()
 
     # ── 6. Poll until complete ────────────────────────────────────────────────
     _log(task_id, f"Job submitted. Polling every {poll_interval}s…")

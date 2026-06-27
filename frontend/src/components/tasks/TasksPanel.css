@@ -285,7 +285,8 @@
 }
 .task-btn--stop:hover { opacity: 0.85; }
 
-.task-btn--disabled {
+.task-btn--disabled,
+.task-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -481,6 +482,90 @@
 .log-time { flex-shrink: 0; }
 
 .log-message { word-break: break-all; }
+
+/* ── Batch monitor modal ─────────────────────────────────────────────────── */
+
+.batch-monitor-hint {
+  margin-bottom: var(--sp-4);
+  line-height: 1.5;
+}
+
+.batch-monitor-empty {
+  padding: var(--sp-12) var(--sp-4);
+  text-align: center;
+}
+
+.batch-monitor-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.batch-monitor-row {
+  padding: var(--sp-4);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  transition: border-color var(--transition);
+}
+
+.batch-monitor-row--running {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
+}
+
+.batch-monitor-row--error {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.batch-monitor-row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.batch-monitor-row-title {
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--color-ink);
+  flex: 1;
+}
+
+.batch-monitor-jobid {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.batch-monitor-jobid-value {
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  color: var(--color-ink-muted);
+  background: var(--color-tag);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+  max-width: 420px;
+}
+
+.batch-monitor-resume-hint {
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.batch-monitor-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--color-border-soft);
+}
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 

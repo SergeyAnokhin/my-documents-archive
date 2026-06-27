@@ -226,3 +226,6 @@ export const getTaskCandidates = () =>
 
 export const getScopeCount = (taskType: string, scope: number) =>
   api.get<{ count: number }>(`/tasks/candidates/scope?task_type=${taskType}&scope=${scope}`);
+
+export const resumeBatchTask = (id: number) =>
+  api.post<{ message: string }>(`/tasks/${id}/resume-batch`);
