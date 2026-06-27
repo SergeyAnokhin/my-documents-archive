@@ -10,6 +10,7 @@ import base64
 import json
 
 import httpx
+from sqlalchemy import or_
 
 from ..database import SessionLocal
 from ..models import AIProvider, Document, Task
@@ -19,6 +20,41 @@ from .task_runtime import (
     log_task as _log,
     set_progress as _set_progress,
 )
+
+
+_LOCAL_OCR_MODELS = {"tesseract", "easyocr"}
+
+
+def _scope_filter(query, scope: int):
+    """Return query filtered to documents that qualify for re-OCR at the given scope (cumulative ≤ N).
+
+    Scope 1: no extracted text at all.
+    Scope 2: +documents with local-only OCR (Tesseract / EasyOCR).
+    Scope 3: +documents that have AI OCR text but no AI analysis yet.
+    Scope 4: all non-deleted documents (full reprocessing).
+    """
+    base = Document.is_deleted == False
+    if scope <= 1:
+        return query.filter(base, Document.ocr_text.is_(None))
+    if scope == 2:
+        return query.filter(
+            base,
+            or_(
+                Document.ocr_text.is_(None),
+                Document.ocr_model.is_(None),
+                Document.ocr_model.in_(_LOCAL_OCR_MODELS),
+            ),
+        )
+    if scope == 3:
+        return query.filter(
+            base,
+            or_(
+                Document.ocr_text.is_(None),
+                Document.analysis_status != "done",
+            ),
+        )
+    # scope 4: all
+    return query.filter(base)
 
 
 async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
@@ -65,19 +101,15 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         model = provider.model or "mistral-ocr-latest"
         image_policy = (provider.extra_params or {}).get("image_policy", "placeholder")
 
-        # ── 2. Collect pending documents ─────────────────────────────────────
-        docs = (
-            db.query(Document)
-            .filter(Document.ocr_status == "pending", Document.is_deleted == False)
-            .limit(limit)
-            .all()
-        )
+        # ── 2. Collect documents by scope ─────────────────────────────────────
+        scope = int(config.get("scope", 1))
+        docs = _scope_filter(db.query(Document), scope).limit(limit).all()
         total = len(docs)
     finally:
         db.close()
 
     if total == 0:
-        _log(task_id, "No pending documents found")
+        _log(task_id, "No documents found for the selected scope")
         _finish(task_id, "done", {"processed": 0})
         return
 
@@ -335,13 +367,9 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         api_key = provider.api_key
         model = provider.model or "gemini-2.5-flash"
 
-        # ── 2. Collect pending documents ─────────────────────────────────────
-        docs = (
-            db.query(Document)
-            .filter(Document.ocr_status == "pending", Document.is_deleted == False)
-            .limit(limit)
-            .all()
-        )
+        # ── 2. Collect documents by scope ─────────────────────────────────────
+        scope = int(config.get("scope", 1))
+        docs = _scope_filter(db.query(Document), scope).limit(limit).all()
         total = len(docs)
     finally:
         db.close()

@@ -346,6 +346,7 @@ export const fr: Translations = {
       reclassify_all: "Tout re-classifier",
       batch_ocr_mistral: "OCR Mistral par lots",
       batch_ocr_gemini: "OCR Gemini par lots",
+      batch_analysis_gemini: "Analyse Gemini par lots",
       cleanup_missing: "Nettoyer les fichiers manquants",
     },
     descriptions: {
@@ -355,6 +356,7 @@ export const fr: Translations = {
       reclassify_all: "Ré-exécuter l'analyse IA sur tous les documents",
       batch_ocr_mistral: "OCR par lots via l'API Mistral (2× moins cher, asynchrone)",
       batch_ocr_gemini: "OCR par lots via l'API Gemini (2× moins cher, asynchrone)",
+      batch_analysis_gemini: "Analyse IA par lots via Gemini (texte seul, 2× moins cher)",
       cleanup_missing: "Supprimer de la BDD les entrées dont les fichiers n'existent plus",
     },
     detailedDescriptions: {
@@ -362,8 +364,9 @@ export const fr: Translations = {
       sync_library: "Scanne le dossier de la bibliothèque pour trouver les fichiers absents de la base de données et les met en file d'indexation. Supprime aussi définitivement les enregistrements dont les fichiers source ont été effacés du disque — l'opération est annulée si la bibliothèque est inaccessible pour éviter une suppression accidentelle. Le nombre exact de nouveaux fichiers dépend du contenu du disque et n'est connu qu'au moment de l'exécution.",
       reclassify_unclassified: "Lance l'analyse IA sur les documents dont l'OCR est terminé mais dont le type est encore 'non classifié' ou 'autre' — uniquement ceux qui n'ont pas été classifiés manuellement. Utile après l'ajout d'un nouveau fournisseur IA pour rattraper le retard sans retraiter les documents déjà classifiés. Les types définis manuellement ne sont jamais écrasés.",
       reclassify_all: "Lance l'analyse IA sur les documents dont l'OCR est terminé mais qui n'ont jamais été analysés (pas de résumé, tags ou type). Il s'agit d'une première analyse pour les documents 'en retard', pas d'une ré-analyse : les documents déjà analysés sont ignorés. À utiliser quand de nombreux documents ont un texte OCR mais aucune métadonnée IA.",
-      batch_ocr_mistral: "Soumet en masse les documents sans OCR à l'API Mistral Batch avec 50 % de réduction. Sélectionne les mêmes fichiers qu''Indexer les non-indexés' (statut OCR 'en attente'), mais les route vers l'endpoint OCR dédié de Mistral plutôt que vers le moteur local. La tâche interroge l'API à l'intervalle configuré — les résultats peuvent prendre jusqu'à 24–48 heures.",
-      batch_ocr_gemini: "Soumet en masse les documents sans OCR à l'API Gemini Batch avec 50 % de réduction. Sélectionne les fichiers avec le statut OCR 'en attente' ; chaque page est envoyée à un modèle vision Gemini avec un prompt de transcription verbatim — Gemini n'a pas d'endpoint OCR dédié. La tâche interroge l'API à l'intervalle configuré — les résultats peuvent prendre jusqu'à 24–48 heures.",
+      batch_ocr_mistral: "Soumet des documents en masse à l'API Mistral Batch avec 50 % de réduction. Le niveau de portée détermine les fichiers inclus : niveau 1 = sans texte, niveau 2 = inclut Tesseract/EasyOCR, niveau 3 = inclut les fichiers avec OCR IA mais sans analyse, niveau 4 = tout retraiter. La tâche interroge l'API à l'intervalle configuré — jusqu'à 24–48 heures.",
+      batch_ocr_gemini: "Soumet des documents en masse à l'API Gemini Batch avec 50 % de réduction. La portée fonctionne comme pour l'OCR Mistral par lots. Chaque page est envoyée à un modèle vision Gemini avec un prompt de transcription verbatim. Les résultats peuvent prendre jusqu'à 24–48 heures.",
+      batch_analysis_gemini: "Envoie le texte OCR extrait à l'API Gemini Batch pour une analyse IA (résumé, type, tags, langue, entités) avec 50 % de réduction. Cible les fichiers qui ont déjà un texte OCR mais n'ont pas encore été analysés — utile après un OCR Mistral par lots pour compléter le pipeline sans refaire la reconnaissance. Seul le texte est envoyé, pas les images.",
       cleanup_missing: "Vérifie chaque enregistrement de la base de données et supprime en douceur (soft-delete) ceux dont les fichiers sont introuvables au chemin enregistré sur le disque. Les enregistrements supprimés en douceur sont masqués dans l'interface mais restent dans la base. À exécuter après la suppression manuelle de fichiers pour effacer les entrées 'fantômes'.",
     },
     progress: "{{current}} / {{total}}",
@@ -373,6 +376,15 @@ export const fr: Translations = {
     candidatesCount: "{{count}} documents correspondent aux critères de sélection",
     candidatesUnknown: "Le nombre exact est déterminé au moment de l'exécution",
     candidatesLoading: "Comptage des candidats…",
+    scopeLabel: "Portée (fichiers à traiter)",
+    scopeOptions: {
+      "1": "Niveau 1 — aucun texte extrait",
+      "2": "Niveau 2 — inclut Tesseract / EasyOCR",
+      "3": "Niveau 3 — inclut les fichiers avec OCR IA sans analyse",
+      "4": "Niveau 4 — tous les fichiers (retraitement complet)",
+    },
+    scopeCount: "{{count}} fichiers correspondent à ce niveau",
+    scopeCountLoading: "Comptage…",
   },
 
   loading: "Chargement…",

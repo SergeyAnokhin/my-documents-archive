@@ -65,8 +65,10 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 
 @router.get("/candidates")
 def get_candidate_counts(db: Session = Depends(get_db)):
-    """Return how many documents each task type would process right now."""
+    """Return how many documents each task type would process right now (scope=1 for OCR tasks)."""
     from sqlalchemy import or_
+    from ..services.batch_ocr import _scope_filter
+
     base = db.query(Document).filter(Document.is_deleted == False)
 
     pending = base.filter(Document.ocr_status == "pending").count()
@@ -86,15 +88,40 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         ),
     ).count()
 
+    batch_analysis_count = base.filter(
+        Document.ocr_text.isnot(None),
+        Document.ocr_text != "",
+        Document.analysis_status != "done",
+    ).count()
+
+    batch_ocr_scope1 = _scope_filter(db.query(Document), 1).count()
+
     return {
         "index_unindexed": pending,
         "sync_library": None,
         "reclassify_unclassified": reclassify_unclassified_count,
         "reclassify_all": reclassify_all_count,
-        "batch_ocr_mistral": pending,
-        "batch_ocr_gemini": pending,
+        "batch_ocr_mistral": batch_ocr_scope1,
+        "batch_ocr_gemini": batch_ocr_scope1,
+        "batch_analysis_gemini": batch_analysis_count,
         "cleanup_missing": None,
     }
+
+
+@router.get("/candidates/scope")
+def get_scope_count(
+    task_type: str,
+    scope: int = 1,
+    db: Session = Depends(get_db),
+):
+    """Return how many documents qualify for OCR batch tasks at a given cumulative scope level."""
+    from ..services.batch_ocr import _scope_filter
+
+    if task_type not in ("batch_ocr_mistral", "batch_ocr_gemini"):
+        raise HTTPException(400, "scope count only applies to batch_ocr_mistral / batch_ocr_gemini")
+
+    count = _scope_filter(db.query(Document), scope).count()
+    return {"count": count}
 
 
 # ── Control ───────────────────────────────────────────────────────────────────
@@ -156,6 +183,7 @@ from ..services.task_runtime import (  # noqa: E402
     set_progress as _set_progress,
 )
 from ..services.batch_ocr import run_batch_ocr_gemini, run_batch_ocr_mistral  # noqa: E402
+from ..services.batch_analysis import run_batch_analysis_gemini  # noqa: E402
 
 
 async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
@@ -174,6 +202,8 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await run_batch_ocr_mistral(task_id, config)
         elif task_type == "batch_ocr_gemini":
             await run_batch_ocr_gemini(task_id, config)
+        elif task_type == "batch_analysis_gemini":
+            await run_batch_analysis_gemini(task_id, config)
         elif task_type == "cleanup_missing":
             await _cleanup_missing(task_id, config)
         else:

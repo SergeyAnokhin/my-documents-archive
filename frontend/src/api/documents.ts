@@ -223,3 +223,6 @@ export const getTaskLogs = (id: number) => api.get<TaskLog[]>(`/tasks/${id}/logs
 
 export const getTaskCandidates = () =>
   api.get<Record<string, number | null>>("/tasks/candidates");
+
+export const getScopeCount = (taskType: string, scope: number) =>
+  api.get<{ count: number }>(`/tasks/candidates/scope?task_type=${taskType}&scope=${scope}`);

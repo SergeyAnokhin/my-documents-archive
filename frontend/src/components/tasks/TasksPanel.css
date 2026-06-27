@@ -340,6 +340,43 @@
   align-self: flex-start;
 }
 
+/* ── Scope selector ───────────────────────────────────────────────────────── */
+
+.create-scope-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.create-scope-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--color-ink-muted);
+  transition: border-color .15s, background .15s;
+}
+
+.create-scope-option:hover {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.create-scope-option--selected {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.create-scope-option input[type="radio"] {
+  accent-color: var(--color-accent);
+}
+
 .create-form {
   display: flex;
   flex-direction: column;
@@ -444,3 +481,4 @@
   font-size: 1rem;
   color: var(--color-ink);
 }
+

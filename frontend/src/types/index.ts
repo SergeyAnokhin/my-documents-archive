@@ -231,6 +231,7 @@ export type TaskType =
   | "reclassify_all"
   | "batch_ocr_mistral"
   | "batch_ocr_gemini"
+  | "batch_analysis_gemini"
   | "cleanup_missing";
 
 export interface Task {

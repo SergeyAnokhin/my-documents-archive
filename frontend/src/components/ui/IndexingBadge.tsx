@@ -13,6 +13,7 @@ interface Status {
   done: number;
   error: number;
   samples: DocSample[];
+  mode: string;
 }
 
 export function IndexingBadge() {
@@ -52,7 +53,7 @@ export function IndexingBadge() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  if (!status || status.pending === 0) return null;
+  if (!status || status.pending === 0 || status.mode === "manual") return null;
 
   const previewSamples = status.samples.slice(0, 3);
 

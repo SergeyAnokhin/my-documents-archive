@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import {
   listTasks, createTask, deleteTask, runTask, stopTask,
-  stopAllTasks, getTaskLogs, updateTask, listProviders, getTaskCandidates,
+  stopAllTasks, getTaskLogs, updateTask, listProviders, getTaskCandidates, getScopeCount,
 } from "../../api/documents";
 import type { AIProvider, Task, TaskLog, TaskType } from "../../types";
 import "./TasksPanel.css";
@@ -19,6 +19,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   reclassify_all:          "RECLASSIFY",
   batch_ocr_mistral:       "BATCH OCR",
   batch_ocr_gemini:        "BATCH OCR",
+  batch_analysis_gemini:   "BATCH AI",
   cleanup_missing:         "CLEANUP",
 };
 
@@ -29,6 +30,7 @@ const ALL_TYPES: TaskType[] = [
   "reclassify_all",
   "batch_ocr_mistral",
   "batch_ocr_gemini",
+  "batch_analysis_gemini",
   "cleanup_missing",
 ];
 
@@ -38,19 +40,25 @@ const TYPES_WITH_LIMIT: TaskType[] = [
   "reclassify_all",
   "batch_ocr_mistral",
   "batch_ocr_gemini",
+  "batch_analysis_gemini",
 ];
 
 // Batch tasks that pick an async provider + poll interval, mapped to the
 // provider_type they require.
 const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
-  batch_ocr_mistral: "mistral",
-  batch_ocr_gemini:  "gemini",
+  batch_ocr_mistral:     "mistral",
+  batch_ocr_gemini:      "gemini",
+  batch_analysis_gemini: "gemini",
 };
+
+// Tasks that have a scope selector (cumulative level filter).
+const TYPES_WITH_SCOPE: TaskType[] = ["batch_ocr_mistral", "batch_ocr_gemini"];
 
 // External documentation links for task types that have official provider docs.
 const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
-  batch_ocr_mistral: "https://docs.mistral.ai/capabilities/batch/",
-  batch_ocr_gemini:  "https://ai.google.dev/gemini-api/docs/batch-mode",
+  batch_ocr_mistral:     "https://docs.mistral.ai/capabilities/batch/",
+  batch_ocr_gemini:      "https://ai.google.dev/gemini-api/docs/batch-mode",
+  batch_analysis_gemini: "https://ai.google.dev/gemini-api/docs/batch-mode",
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -371,9 +379,13 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [saving, setSaving] = useState(false);
   const [candidates, setCandidates] = useState<Record<string, number | null> | null>(null);
+  const [scope, setScope] = useState(1);
+  const [scopeCount, setScopeCount] = useState<number | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
 
   const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
   const isBatch = !!batchProviderType;
+  const hasScope = selectedType ? TYPES_WITH_SCOPE.includes(selectedType) : false;
   const providerLabel = batchProviderType
     ? batchProviderType[0].toUpperCase() + batchProviderType.slice(1)
     : "";
@@ -397,9 +409,22 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       .catch(() => {});
   }, [selectedType]);
 
+  // Fetch scope count when scope or task type changes (only for scope-aware tasks)
+  useEffect(() => {
+    if (!selectedType || !TYPES_WITH_SCOPE.includes(selectedType)) return;
+    setScopeLoading(true);
+    setScopeCount(null);
+    getScopeCount(selectedType, scope)
+      .then(data => setScopeCount(data.count))
+      .catch(() => setScopeCount(null))
+      .finally(() => setScopeLoading(false));
+  }, [selectedType, scope]);
+
   const handleSelectType = (type: TaskType) => {
     setSelectedType(type);
     setTitle(t.tasks.types[type as keyof typeof t.tasks.types] ?? type);
+    setScope(1);
+    setScopeCount(null);
     if (BATCH_PROVIDER_TYPE[type]) {
       setLimit("50");
     }
@@ -412,6 +437,9 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       const config: Record<string, unknown> = {};
       if (TYPES_WITH_LIMIT.includes(selectedType)) {
         config.limit = parseInt(limit, 10) || 50;
+      }
+      if (hasScope) {
+        config.scope = scope;
       }
       if (isBatch) {
         if (providerId) config.provider_id = parseInt(providerId, 10);
@@ -460,17 +488,46 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
                 {t.tasks.readDocs}
               </a>
             )}
-            <span className="create-form-candidates">
-              {candidates === null
-                ? t.tasks.candidatesLoading
-                : (() => {
-                    const count = candidates[selectedType];
-                    return count === null || count === undefined
-                      ? t.tasks.candidatesUnknown
-                      : t.tasks.candidatesCount.replace("{{count}}", String(count));
-                  })()}
-            </span>
+            {!hasScope && (
+              <span className="create-form-candidates">
+                {candidates === null
+                  ? t.tasks.candidatesLoading
+                  : (() => {
+                      const count = candidates[selectedType];
+                      return count === null || count === undefined
+                        ? t.tasks.candidatesUnknown
+                        : t.tasks.candidatesCount.replace("{{count}}", String(count));
+                    })()}
+              </span>
+            )}
           </div>
+
+          {hasScope && (
+            <div className="create-form-field">
+              <label className="create-form-label">{t.tasks.scopeLabel}</label>
+              <div className="create-scope-options">
+                {([1, 2, 3, 4] as const).map(lvl => (
+                  <label key={lvl} className={`create-scope-option${scope === lvl ? " create-scope-option--selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="scope"
+                      value={lvl}
+                      checked={scope === lvl}
+                      onChange={() => setScope(lvl)}
+                    />
+                    {t.tasks.scopeOptions[String(lvl) as keyof typeof t.tasks.scopeOptions]}
+                  </label>
+                ))}
+              </div>
+              <span className="create-form-candidates">
+                {scopeLoading
+                  ? t.tasks.scopeCountLoading
+                  : scopeCount === null
+                    ? ""
+                    : t.tasks.scopeCount.replace("{{count}}", String(scopeCount))}
+              </span>
+            </div>
+          )}
 
           <div className="create-form-field">
             <label className="create-form-label">{t.tasks.taskTitle}</label>

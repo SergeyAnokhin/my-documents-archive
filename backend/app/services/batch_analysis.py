@@ -1,0 +1,311 @@
+"""Batch AI analysis via Gemini Batch API.
+
+Selects documents that have OCR text but no AI analysis yet, submits them
+as a text-only batch to Gemini, and saves the analysis results back to each
+document (summary, document_type, tags, language, etc.).
+
+This is analogous to batch_ocr_gemini but for the analysis phase — useful after
+Mistral batch OCR has produced ocr_text that still needs AI metadata extraction.
+"""
+import asyncio
+import json
+import logging
+
+import httpx
+
+from ..database import SessionLocal
+from ..models import AIProvider, Document, Task
+from .task_runtime import (
+    finish as _finish,
+    is_stopped as _is_stopped,
+    log_task as _log,
+    set_progress as _set_progress,
+)
+from .ai_analysis import ANALYSIS_SYSTEM
+from .ai_common import strip_code_fences
+from .batch_ocr import GEMINI_BATCH_BASE
+
+log = logging.getLogger(__name__)
+
+
+async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
+    """Submit text-only analysis batch to Gemini and persist results.
+
+    Config keys:
+      limit         — max documents to include (default 50)
+      provider_id   — AIProvider id to use; falls back to first enabled Gemini
+      poll_interval — seconds between status polls (default 300)
+    """
+    limit = int(config.get("limit", 50))
+    provider_id = config.get("provider_id")
+    poll_interval = int(config.get("poll_interval", 300))
+
+    # ── 1. Resolve provider ───────────────────────────────────────────────────
+    db = SessionLocal()
+    try:
+        if provider_id:
+            provider = db.query(AIProvider).filter(
+                AIProvider.id == int(provider_id),
+                AIProvider.provider_type == "gemini",
+            ).first()
+        else:
+            provider = None
+
+        if not provider:
+            provider = db.query(AIProvider).filter(
+                AIProvider.provider_type == "gemini",
+                AIProvider.enabled == True,
+            ).order_by(AIProvider.sort_order).first()
+
+        if not provider:
+            _log(task_id, "No Gemini provider configured — add one in AI Settings", "error")
+            _finish(task_id, "error")
+            return
+
+        api_key = provider.api_key
+        model = provider.model or "gemini-2.5-flash"
+
+        # ── 2. Collect documents with text but no analysis ────────────────────
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.ocr_text.isnot(None),
+                Document.ocr_text != "",
+                Document.analysis_status != "done",
+            )
+            .limit(limit)
+            .all()
+        )
+        total = len(docs)
+    finally:
+        db.close()
+
+    if total == 0:
+        _log(task_id, "No documents found with OCR text pending analysis")
+        _finish(task_id, "done", {"processed": 0})
+        return
+
+    _log(task_id, f"Found {total} document(s) for analysis — model: {model}")
+    _set_progress(task_id, 0, total)
+
+    # ── 3. Build JSONL (text-only requests) ──────────────────────────────────
+    jsonl_lines: list[str] = []
+    doc_id_map: dict[str, int] = {}
+
+    for doc in docs:
+        text_snippet = (doc.ocr_text or "")[:4000]
+        user_msg = f"OCR Text:\n{text_snippet}"
+        key = str(doc.id)
+        doc_id_map[key] = doc.id
+        jsonl_lines.append(json.dumps({
+            "key": key,
+            "request": {
+                "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
+                "contents": [{
+                    "parts": [{"text": user_msg}],
+                }],
+                "generation_config": {"max_output_tokens": 1024},
+            },
+        }))
+
+    jsonl_bytes = ("\n".join(jsonl_lines)).encode()
+    key_header = {"x-goog-api-key": api_key}
+
+    # ── 4. Upload JSONL ───────────────────────────────────────────────────────
+    _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+    async with httpx.AsyncClient(timeout=180) as client:
+        start_resp = await client.post(
+            f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
+            headers={
+                **key_header,
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(len(jsonl_bytes)),
+                "X-Goog-Upload-Header-Content-Type": "application/jsonl",
+                "Content-Type": "application/json",
+            },
+            json={"file": {"display_name": f"docintel_analysis_{task_id}"}},
+        )
+        start_resp.raise_for_status()
+        upload_url = start_resp.headers.get("x-goog-upload-url")
+        if not upload_url:
+            _log(task_id, "Gemini did not return an upload URL", "error")
+            _finish(task_id, "error")
+            return
+
+        upload_resp = await client.post(
+            upload_url,
+            headers={
+                "Content-Length": str(len(jsonl_bytes)),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            },
+            content=jsonl_bytes,
+        )
+        upload_resp.raise_for_status()
+        input_file_name = upload_resp.json()["file"]["name"]
+
+    _log(task_id, f"Uploaded input file: {input_file_name}")
+
+    # ── 5. Create batch job ──────────────────────────────────────────────────
+    async with httpx.AsyncClient(timeout=60) as client:
+        batch_resp = await client.post(
+            f"{GEMINI_BATCH_BASE}/v1beta/models/{model}:batchGenerateContent",
+            headers={**key_header, "Content-Type": "application/json"},
+            json={
+                "batch": {
+                    "display_name": f"docintel-analysis-{task_id}",
+                    "input_config": {"file_name": input_file_name},
+                },
+            },
+        )
+        batch_resp.raise_for_status()
+        batch_data = batch_resp.json()
+
+    batch_job_name = batch_data["name"]
+    _log(task_id, f"Batch job created: {batch_job_name}")
+
+    db = SessionLocal()
+    try:
+        task_row = db.query(Task).filter(Task.id == task_id).first()
+        if task_row:
+            task_row.result_summary = {
+                "phase": "polling",
+                "batch_job_id": batch_job_name,
+                "doc_count": len(jsonl_lines),
+            }
+            db.commit()
+    finally:
+        db.close()
+
+    # ── 6. Poll until complete ────────────────────────────────────────────────
+    _log(task_id, f"Job submitted. Polling every {poll_interval}s…")
+
+    job_data: dict = {}
+    while True:
+        await asyncio.sleep(poll_interval)
+
+        if _is_stopped(task_id):
+            _log(task_id, f"Stopped by user. Batch job {batch_job_name} is still running on Gemini.")
+            return
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            status_resp = await client.get(
+                f"{GEMINI_BATCH_BASE}/v1beta/{batch_job_name}",
+                headers=key_header,
+            )
+            status_resp.raise_for_status()
+            job_data = status_resp.json()
+
+        meta = job_data.get("metadata") or {}
+        job_status = meta.get("state") or job_data.get("state") or "JOB_STATE_UNSPECIFIED"
+        _log(task_id, f"Status: {job_status}")
+
+        if job_status == "JOB_STATE_SUCCEEDED" or job_data.get("done"):
+            break
+        if job_status in ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
+            err = (job_data.get("error") or {}).get("message", job_status)
+            _log(task_id, f"Batch job ended: {job_status} — {err}", "error")
+            _finish(task_id, "error", {"batch_job_id": batch_job_name, "status": job_status})
+            return
+
+    # ── 7. Download results ──────────────────────────────────────────────────
+    response_obj = job_data.get("response") or {}
+    output_file_name = (
+        response_obj.get("responsesFile")
+        or (response_obj.get("dest") or {}).get("fileName")
+        or (job_data.get("dest") or {}).get("fileName")
+    )
+    if not output_file_name:
+        _log(task_id, "Batch completed but no responses file found", "error")
+        _finish(task_id, "error")
+        return
+
+    _log(task_id, f"Downloading results from {output_file_name}…")
+    async with httpx.AsyncClient(timeout=180) as client:
+        results_resp = await client.get(
+            f"{GEMINI_BATCH_BASE}/download/v1beta/{output_file_name}:download",
+            headers=key_header,
+            params={"alt": "media"},
+        )
+        results_resp.raise_for_status()
+        results_text = results_resp.text
+
+    # ── 8. Save analysis to documents ────────────────────────────────────────
+    _log(task_id, "Saving analysis results…")
+    processed = 0
+    failed_count = 0
+    tokens_in = 0
+    tokens_out = 0
+
+    db = SessionLocal()
+    try:
+        for line in results_text.strip().splitlines():
+            if not line.strip():
+                continue
+            try:
+                result_obj = json.loads(line)
+                key = result_obj.get("key", "")
+                doc_id = doc_id_map.get(key)
+                if not doc_id:
+                    continue
+
+                if result_obj.get("error"):
+                    err_msg = result_obj["error"].get("message", "Unknown error")
+                    _log(task_id, f"✗ Doc {doc_id}: {err_msg}", "error")
+                    failed_count += 1
+                    continue
+
+                resp_body = result_obj.get("response") or {}
+                candidates = resp_body.get("candidates") or []
+                usage = resp_body.get("usageMetadata") or {}
+                tokens_in += usage.get("promptTokenCount", 0)
+                tokens_out += usage.get("candidatesTokenCount", 0)
+
+                text = ""
+                for cand in candidates:
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        text += part.get("text", "")
+
+                raw_json = strip_code_fences(text.strip())
+                parsed = json.loads(raw_json)
+
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc:
+                    continue
+
+                doc.summary = parsed.get("summary", "")
+                doc.document_type = parsed.get("document_type", "unclassified")
+                doc.document_type_confidence = float(parsed.get("document_type_confidence", 0.0))
+                tags = parsed.get("tags") or []
+                doc.tags = json.dumps(tags, ensure_ascii=False)
+                doc.language = parsed.get("language", "")
+                doc.organization = parsed.get("organization")
+                amount = parsed.get("amount")
+                doc.amount = float(amount) if amount is not None else None
+                doc.amount_currency = parsed.get("amount_currency")
+                doc.person_first_name = parsed.get("person_first_name")
+                doc.person_last_name = parsed.get("person_last_name")
+                doc.document_date = parsed.get("document_date")
+                short_title = parsed.get("short_title", "")
+                if short_title:
+                    doc.short_title = short_title
+                doc.analysis_status = "done"
+                db.commit()
+                processed += 1
+                _log(task_id, f"✓ {doc.filename}")
+
+            except Exception as exc:
+                _log(task_id, f"✗ Parse error for key '{key}': {exc}", "error")
+                failed_count += 1
+    finally:
+        db.close()
+
+    summary = {"processed": processed, "failed": failed_count, "batch_job_id": batch_job_name}
+    if tokens_in or tokens_out:
+        summary["tokens_in"] = tokens_in
+        summary["tokens_out"] = tokens_out
+
+    _finish(task_id, "done", summary)
+    _log(task_id, f"Done — {processed} analyzed, {failed_count} failed")

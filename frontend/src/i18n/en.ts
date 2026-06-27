@@ -354,6 +354,7 @@ export const en = {
       reclassify_all: "Re-classify All",
       batch_ocr_mistral: "Mistral Batch OCR",
       batch_ocr_gemini: "Gemini Batch OCR",
+      batch_analysis_gemini: "Gemini Batch Analysis",
       cleanup_missing: "Clean Up Missing",
     },
     descriptions: {
@@ -363,6 +364,7 @@ export const en = {
       reclassify_all: "Re-run AI analysis on all documents",
       batch_ocr_mistral: "Batch OCR via Mistral API (2× cheaper, async)",
       batch_ocr_gemini: "Batch OCR via Gemini API (2× cheaper, async)",
+      batch_analysis_gemini: "Batch AI analysis via Gemini API (text only, 2× cheaper)",
       cleanup_missing: "Remove DB entries for files that no longer exist on disk",
     },
     detailedDescriptions: {
@@ -370,8 +372,9 @@ export const en = {
       sync_library: "Scans the library folder for files not yet in the database and queues them for indexing. It also hard-deletes database records whose source files have been removed from disk — the operation is aborted entirely if the library is unreachable to prevent accidental mass deletion. The exact number of new files depends on disk contents and is only known at runtime.",
       reclassify_unclassified: "Runs AI analysis on documents that completed OCR but whose type is still 'unclassified' or 'other' — and only those not manually classified by the user. Useful after adding a new AI provider to catch up on a backlog without reprocessing already-classified documents. Manually set types are never overwritten.",
       reclassify_all: "Runs AI analysis on documents that completed OCR but have never been analyzed (no summary, tags, or type yet). This is a first-time analysis for 'lagging' documents, not a re-run: documents already analyzed are skipped. Use when you have accumulated many OCR-done documents with no AI metadata.",
-      batch_ocr_mistral: "Submits OCR-pending documents in bulk to the Mistral Batch API at 50% off the regular price. Picks the same files as 'Index Unindexed' (OCR status 'pending'), but routes them through Mistral's dedicated OCR endpoint instead of the local engine. The task polls the API at the configured interval — results may take up to 24–48 hours.",
-      batch_ocr_gemini: "Submits OCR-pending documents in bulk to the Gemini Batch API at 50% off the regular price. Picks files with OCR status 'pending'; each page is sent to a Gemini vision model with a verbatim-transcription prompt — Gemini has no dedicated OCR endpoint. The task polls the API at the configured interval — results may take up to 24–48 hours.",
+      batch_ocr_mistral: "Submits documents in bulk to the Mistral Batch API at 50% off the regular price. Use the scope selector to control which files are included: level 1 picks files with no text at all, level 2 adds files with local Tesseract/EasyOCR only, level 3 adds files that already have AI OCR but no analysis yet, level 4 reprocesses everything. The task polls the API at the configured interval — results may take up to 24–48 hours.",
+      batch_ocr_gemini: "Submits documents in bulk to the Gemini Batch API at 50% off the regular price. Use the scope selector to control which files are included — same levels as Mistral Batch OCR. Each page is sent to a Gemini vision model with a verbatim-transcription prompt. The task polls the API at the configured interval — results may take up to 24–48 hours.",
+      batch_analysis_gemini: "Submits the extracted OCR text of documents to Gemini Batch API for AI analysis (summary, type, tags, language, entities) at 50% off the regular price. Targets files that already have OCR text but have not been analyzed yet — useful after a Mistral Batch OCR run to complete the pipeline without re-doing OCR. No images are sent, only text.",
       cleanup_missing: "Checks every record in the database and soft-deletes those whose files can no longer be found at their stored path on disk. Soft-deleted records are hidden from the UI but remain in the database. Run after manually removing files from the library folder to clear out 'ghost' entries.",
     },
     progress: "{{current}} / {{total}}",
@@ -381,6 +384,15 @@ export const en = {
     candidatesCount: "{{count}} documents match the selection criteria",
     candidatesUnknown: "Exact count determined at runtime",
     candidatesLoading: "Counting candidates…",
+    scopeLabel: "Scope (which files to process)",
+    scopeOptions: {
+      "1": "Level 1 — no text extracted at all",
+      "2": "Level 2 — includes Tesseract / EasyOCR files",
+      "3": "Level 3 — includes files with AI OCR but no analysis",
+      "4": "Level 4 — all files (full reprocessing)",
+    },
+    scopeCount: "{{count}} files match this scope",
+    scopeCountLoading: "Counting…",
   },
 
   // Misc

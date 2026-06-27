@@ -83,9 +83,13 @@ async def suggest_type(doc_id: int, db: Session = Depends(get_db)):
 
 @router.get("/status")
 def get_indexing_status(db: Session = Depends(get_db)):
+    from ..models import AppSettings
     base = db.query(Document).filter(Document.is_deleted == False)
     pending_count = base.filter(Document.ocr_status == "pending").count()
     error_count   = base.filter(Document.ocr_status == "error").count()
+
+    mode_row = db.query(AppSettings).filter(AppSettings.key == "auto_process_mode").first()
+    mode = mode_row.value if mode_row else "full"
 
     # Up to 5 sample filenames: errors first, then pending
     samples: list[dict] = []
@@ -106,6 +110,7 @@ def get_indexing_status(db: Session = Depends(get_db)):
         "done":    base.filter(Document.ocr_status == "done").count(),
         "error":   error_count,
         "samples": samples,
+        "mode":    mode,
     }
 
 
