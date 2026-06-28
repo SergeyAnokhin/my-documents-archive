@@ -130,7 +130,7 @@ Also extract structured metadata from the best/corrected transcription and the i
 IMPORTANT: Write ALL evaluation text (comments, summary, corrected content) in {lang_name}.
 Do NOT translate the original transcribed texts themselves.
 
-Return ONLY a raw JSON object (no markdown fences):
+Return ONLY a raw JSON object — no prose, no markdown, no explanation before or after it:
 {{
   "rankings": [{{"label": "<label>", "score": <0-100 int>, "comment": "<short reason>"}}],
   "best": "<label of the best transcription>",
@@ -147,7 +147,8 @@ Return ONLY a raw JSON object (no markdown fences):
     "language": "<ISO code>"
   }}
 }}
-Use the exact labels provided. Order "rankings" best-first."""
+Use the exact labels provided. Order "rankings" best-first.
+Your ENTIRE response must be the JSON object above and nothing else."""
 
 
 # ── First-page image ───────────────────────────────────────────────────────────
@@ -440,7 +441,7 @@ async def judge(
 
 
 def _parse_json(raw: str) -> dict:
-    """Parse judge output, tolerating markdown code fences."""
+    """Parse judge output, tolerating markdown code fences and surrounding prose."""
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
@@ -448,14 +449,25 @@ def _parse_json(raw: str) -> dict:
         text = "\n".join(lines[1:end])
     try:
         return json.loads(text)
-    except json.JSONDecodeError as e:
-        # Paid external service returned unparseable JSON — log the full raw
-        # response so it's easy to reproduce and fix without burning tokens again.
-        log.error(
-            "Judge: JSON parse failed — %s\nRaw response (%d chars):\n%.3000s",
-            e, len(raw), raw,
-        )
-        raise
+    except json.JSONDecodeError:
+        pass
+
+    # Model may have wrapped the JSON in prose — try to extract the object.
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start:end])
+        except json.JSONDecodeError:
+            pass
+
+    log.error(
+        "Judge: model returned non-JSON response (%d chars):\n%.3000s",
+        len(raw), raw,
+    )
+    raise ValueError(
+        f"Judge model did not return valid JSON — got {len(raw)} chars of prose"
+    )
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────────

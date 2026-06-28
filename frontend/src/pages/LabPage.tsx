@@ -404,6 +404,7 @@ export function LabPage() {
       e.preventDefault();
       if (cropMode) { setCropMode(false); setCropRect(null); }
       else if (hasTransformChange || !!previewResult) { handleCancel(); }
+      else { navigate("/"); }
     } else if (e.key === "Enter" && (hasTransformChange || !!previewResult) && !isApplying) {
       e.preventDefault();
       handleApply();

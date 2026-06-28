@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, ZoomIn, ZoomOut, Maximize } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
@@ -40,25 +40,28 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const [localType, setLocalType] = useState<string | undefined>(undefined);
   const [localManual, setLocalManual] = useState<boolean | undefined>(undefined);
 
-  // ── Zoom / Pan ──────────────────────────────────────────────────────────────
+  // ── Zoom / Pan / Rotation ───────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  // Refs hold the committed values synchronously so rapid events (wheel scroll)
-  // always chain off the latest value rather than a stale render snapshot.
+  const [viewRotation, setViewRotation] = useState(0);
+  // Refs hold committed values synchronously so rapid events chain correctly.
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
+  const viewRotationRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const didAutoFitRef = useRef(false);
   const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
 
-  // Reset zoom/pan when switching documents
+  // Reset zoom/pan/rotation when switching documents
   useEffect(() => {
     didAutoFitRef.current = false;
     zoomRef.current = 1;
     panRef.current = { x: 0, y: 0 };
+    viewRotationRef.current = 0;
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setViewRotation(0);
   }, [doc?.id]);
 
   // Global pan tracking
@@ -150,8 +153,9 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     if (!canvas || !img || img.naturalWidth === 0) return;
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
+    const rotated = viewRotationRef.current === 90 || viewRotationRef.current === 270;
+    const iw = rotated ? img.naturalHeight : img.naturalWidth;
+    const ih = rotated ? img.naturalWidth : img.naturalHeight;
     const fitZoom = Math.max(0.05, Math.min((cw - 24) / iw, (ch - 24) / ih));
     const fitPan = { x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 };
     zoomRef.current = fitZoom;
@@ -163,6 +167,20 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const handleZoomReset = () => {
     didAutoFitRef.current = false;
     handleImgLoad();
+  };
+
+  const rotateCcw = () => {
+    const newR = (viewRotationRef.current - 90 + 360) % 360;
+    viewRotationRef.current = newR;
+    setViewRotation(newR);
+    handleZoomReset();
+  };
+
+  const rotateCw = () => {
+    const newR = (viewRotationRef.current + 90) % 360;
+    viewRotationRef.current = newR;
+    setViewRotation(newR);
+    handleZoomReset();
   };
 
   const zoomAround = (factor: number) => {
@@ -208,6 +226,16 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
               <button className="icon-btn" title="Fit to screen" onClick={handleZoomReset}>
                 <Maximize size={14} />
               </button>
+              <span style={{ width: 1, height: 14, background: "var(--color-border)", flexShrink: 0, margin: "0 2px" }} />
+              <button className="icon-btn" title="Rotate left" onClick={rotateCcw}>
+                <RotateCcw size={14} />
+              </button>
+              {viewRotation !== 0 && (
+                <span className="viewer-zoom-pct">{viewRotation}°</span>
+              )}
+              <button className="icon-btn" title="Rotate right" onClick={rotateCw}>
+                <RotateCw size={14} />
+              </button>
             </div>
           )}
 
@@ -227,14 +255,16 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                   transformOrigin: "0 0",
                 }}
               >
-                <img
-                  ref={imgRef}
-                  src={imgSrc}
-                  alt={doc.filename}
-                  className="viewer-doc-img"
-                  onLoad={handleImgLoad}
-                  draggable={false}
-                />
+                <div style={{ display: "inline-block", transformOrigin: "50% 50%", transform: viewRotation ? `rotate(${viewRotation}deg)` : undefined }}>
+                  <img
+                    ref={imgRef}
+                    src={imgSrc}
+                    alt={doc.filename}
+                    className="viewer-doc-img"
+                    onLoad={handleImgLoad}
+                    draggable={false}
+                  />
+                </div>
               </div>
             </div>
           ) : (

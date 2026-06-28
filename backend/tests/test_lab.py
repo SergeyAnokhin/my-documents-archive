@@ -23,7 +23,7 @@ def test_parse_json_tolerates_markdown_fences():
 
 
 def test_parse_json_raises_on_garbage():
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises((json.JSONDecodeError, ValueError)):
         _parse_json("not json at all")
 
 
