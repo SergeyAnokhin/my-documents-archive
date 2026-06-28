@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X } from "lucide-react";
+import {
+  Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical,
+  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check,
+} from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
@@ -8,6 +11,7 @@ import { useT } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
 import { TypePicker } from "./TypePicker";
+import { useImageEdit } from "../../hooks/useImageEdit";
 import "./DocumentViewer.css";
 
 interface Props {
@@ -46,7 +50,6 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewRotation, setViewRotation] = useState(0);
-  // Refs hold committed values synchronously so rapid events chain correctly.
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
   const viewRotationRef = useRef(0);
@@ -54,6 +57,22 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const imgRef = useRef<HTMLImageElement>(null);
   const didAutoFitRef = useRef(false);
   const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
+
+  // ── Crop mode (lifted here so reset can be triggered on doc change) ─────────
+  const [cropMode, setCropMode] = useState(false);
+
+  // ── Image editing ────────────────────────────────────────────────────────────
+  const armAutoFit = useCallback(() => { didAutoFitRef.current = false; }, []);
+  const imageEdit = useImageEdit({
+    docId: doc?.id ?? 0,
+    isPdf: doc?.mime_type === "application/pdf" || false,
+    zoomRef,
+    imgRef,
+    armAutoFit,
+    cropMode,
+    setCropMode,
+    confirmMsg: t.lab.applyConfirm,
+  });
 
   // Reset zoom/pan/rotation and local metadata when switching documents
   useEffect(() => {
@@ -64,6 +83,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setViewRotation(0);
+    setCropMode(false);
     setLocalTags(undefined);
     setLocalDate(undefined);
   }, [doc?.id]);
@@ -88,8 +108,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     };
   }, []);
 
-  // Core zoom primitive — updates refs synchronously so rapid events chain correctly,
-  // then schedules React state updates for re-render.
+  // Core zoom primitive
   const applyZoomAt = (factor: number, cx: number, cy: number) => {
     const prevZoom = zoomRef.current;
     const newZoom = Math.max(0.05, Math.min(20, prevZoom * factor));
@@ -213,7 +232,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   };
 
   const onCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || cropMode) return;
     canvasPanStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
     e.preventDefault();
   };
@@ -227,8 +246,22 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const thumbUrl = doc.thumbnail_path
     ? `/thumbnails/${doc.thumbnail_path.split(/[/\\]/).pop()}${vParam ? `?v=${vParam}` : ""}`
     : null;
-  // Original for images, thumbnail as fallback for other types (e.g. Word docs)
-  const imgSrc = isImageMime ? docUrl : thumbUrl;
+
+  // After apply, use imgVersion to bust the cache (updated_at may not have changed yet)
+  const baseImgUrl = imageEdit.imgVersion > 0
+    ? `/api/documents/${doc.id}/download?inline=1&ev=${imageEdit.imgVersion}`
+    : docUrl;
+  const rawImgSrc = isImageMime ? baseImgUrl : thumbUrl;
+  // Show preview data when available (preview contains the transform applied to original)
+  const imgSrc = imageEdit.previewResult
+    ? `data:image/jpeg;base64,${imageEdit.previewResult.image_b64}`
+    : rawImgSrc;
+
+  // During crop mode or when preview is shown, suppress view-only CSS rotation
+  // so crop coordinates match original image pixel space
+  const displayRotation = (cropMode || imageEdit.previewResult) ? 0 : viewRotation;
+
+  const lab = t.lab;
 
   return (
     <Modal open={!!doc} onClose={onClose} size="xl" title={doc.filename}>
@@ -236,7 +269,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
         {/* Left — document */}
         <div className="viewer-preview">
           {/* Zoom toolbar (not shown for PDF — browser viewer has native zoom) */}
-          {!isPdf && imgSrc && (
+          {!isPdf && rawImgSrc && (
             <div className="viewer-zoom-toolbar">
               <button className="icon-btn" title="Zoom out" onClick={() => zoomAround(1 / 1.25)}>
                 <ZoomOut size={14} />
@@ -248,27 +281,128 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
               <button className="icon-btn" title="Fit to screen" onClick={handleZoomReset}>
                 <Maximize size={14} />
               </button>
-              <span style={{ width: 1, height: 14, background: "var(--color-border)", flexShrink: 0, margin: "0 2px" }} />
-              <button className="icon-btn" title="Rotate left" onClick={rotateCcw}>
+              <span className="viewer-toolbar-sep" />
+              <button className="icon-btn" title="Rotate left (view only)" onClick={rotateCcw}>
                 <RotateCcw size={14} />
               </button>
               {viewRotation !== 0 && (
                 <span className="viewer-zoom-pct">{viewRotation}°</span>
               )}
-              <button className="icon-btn" title="Rotate right" onClick={rotateCw}>
+              <button className="icon-btn" title="Rotate right (view only)" onClick={rotateCw}>
                 <RotateCw size={14} />
               </button>
+              <span className="viewer-toolbar-sep" />
+              <button
+                className={`icon-btn${cropMode ? " viewer-btn-active" : ""}`}
+                title={cropMode ? lab.cropClear : `${lab.cropTool} — ${lab.cropHint}`}
+                onClick={() => { setCropMode(m => !m); if (cropMode) imageEdit.setCropRect(null); }}
+              >
+                <Scissors size={14} />
+              </button>
+              {imageEdit.imageInfo && (
+                <span className="viewer-img-info text-xs text-muted">
+                  {imageEdit.previewResult
+                    ? `${imageEdit.previewResult.width}×${imageEdit.previewResult.height}`
+                    : `${imageEdit.imageInfo.width}×${imageEdit.imageInfo.height}`}
+                </span>
+              )}
+              {imageEdit.isPreviewing && (
+                <span className="viewer-preview-badge viewer-preview-badge--loading">{lab.previewTag}</span>
+              )}
+              {imageEdit.previewResult && !imageEdit.isPreviewing && (
+                <span className="viewer-preview-badge">{lab.previewTag}</span>
+              )}
+            </div>
+          )}
+
+          {/* Image editing toolbar — resize / quality / rotation / apply */}
+          {!isPdf && rawImgSrc && imageEdit.imageInfo && (
+            <div className="viewer-edit-toolbar">
+              <span className="viewer-edit-label text-xs">{lab.resize}</span>
+              <select
+                className="viewer-edit-select"
+                value={String(imageEdit.outputScale)}
+                onChange={e => imageEdit.setOutputScale(Number(e.target.value))}
+              >
+                <option value="1">100% — {lab.original}</option>
+                <option value="0.75">75%</option>
+                <option value="0.5">50% — ÷2</option>
+                <option value="0.25">25% — ÷4</option>
+                <option value="0.1">10% — ÷10</option>
+              </select>
+              {imageEdit.imageInfo.can_adjust_quality && (
+                <>
+                  <span className="viewer-toolbar-sep" />
+                  <span className="viewer-edit-label text-xs">{lab.quality}</span>
+                  <input
+                    type="range" min="10" max="95" step="5"
+                    value={imageEdit.outputQuality}
+                    onChange={e => imageEdit.setOutputQuality(Number(e.target.value))}
+                    className="viewer-edit-slider"
+                  />
+                  <span className="text-xs" style={{ minWidth: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {imageEdit.outputQuality}
+                  </span>
+                </>
+              )}
+              <span className="viewer-toolbar-sep" />
+              <button
+                className="icon-btn"
+                title={lab.rotateLeft}
+                onClick={() => imageEdit.setOutputRotation(r => (r - 90 + 360) % 360)}
+              >
+                <RotateCcw size={14} />
+              </button>
+              {imageEdit.outputRotation !== 0 && (
+                <span className="text-xs text-muted" style={{ minWidth: 28, textAlign: "center" }}>
+                  {imageEdit.outputRotation}°
+                </span>
+              )}
+              <button
+                className="icon-btn"
+                title={lab.rotateRight}
+                onClick={() => imageEdit.setOutputRotation(r => (r + 90) % 360)}
+              >
+                <RotateCw size={14} />
+              </button>
+              {cropMode && imageEdit.cropRect && imageEdit.cropRect.w > 0 && (
+                <>
+                  <span className="viewer-toolbar-sep" />
+                  <span className="text-xs text-muted">
+                    {lab.cropSelected}: {imageEdit.cropRect.w}×{imageEdit.cropRect.h}
+                  </span>
+                </>
+              )}
+              {(imageEdit.hasTransformChange || !!imageEdit.previewResult) && (
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  <Button
+                    variant="ghost" size="sm"
+                    onClick={imageEdit.handleCancel}
+                    disabled={imageEdit.isApplying}
+                  >
+                    {lab.cancelEdit}
+                  </Button>
+                  <Button
+                    variant="primary" size="sm"
+                    icon={<Check size={13} />}
+                    loading={imageEdit.isApplying}
+                    onClick={imageEdit.handleApply}
+                  >
+                    {imageEdit.applyDone ? lab.applyDone : lab.applyBtn}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
           {isPdf ? (
             <iframe src={docUrl} title={doc.filename} className="viewer-pdf" />
-          ) : imgSrc ? (
+          ) : rawImgSrc ? (
             <div
               className="viewer-canvas"
               ref={canvasRef}
               onMouseDown={onCanvasMouseDown}
-              style={{ cursor: canvasPanStartRef.current ? "grabbing" : "grab" }}
+              style={{ cursor: cropMode ? "crosshair" : "grab" }}
             >
               <div
                 className="viewer-img-wrapper"
@@ -277,15 +411,44 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                   transformOrigin: "0 0",
                 }}
               >
-                <div style={{ display: "inline-block", transformOrigin: "50% 50%", transform: viewRotation ? `rotate(${viewRotation}deg)` : undefined }}>
-                  <img
-                    ref={imgRef}
-                    src={imgSrc}
-                    alt={doc.filename}
-                    className="viewer-doc-img"
-                    onLoad={handleImgLoad}
-                    draggable={false}
-                  />
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <div style={{
+                    display: "inline-block",
+                    transformOrigin: "50% 50%",
+                    transform: displayRotation ? `rotate(${displayRotation}deg)` : undefined,
+                  }}>
+                    <img
+                      ref={imgRef}
+                      src={imgSrc}
+                      alt={doc.filename}
+                      className="viewer-doc-img"
+                      onLoad={handleImgLoad}
+                      draggable={false}
+                    />
+                  </div>
+                  {cropMode && !imageEdit.previewResult && (
+                    <div
+                      className="viewer-crop-overlay"
+                      ref={imageEdit.cropOverlayRef}
+                      onMouseDown={imageEdit.onCropOverlayMouseDown}
+                    >
+                      {imageEdit.cropRect && imageEdit.cropRect.w > 0 && imageEdit.cropRect.h > 0 && (
+                        <div
+                          className="viewer-crop-selection"
+                          style={{
+                            left: imageEdit.cropRect.x,
+                            top: imageEdit.cropRect.y,
+                            width: imageEdit.cropRect.w,
+                            height: imageEdit.cropRect.h,
+                          }}
+                        >
+                          <span className="viewer-crop-label">
+                            {imageEdit.cropRect.w}×{imageEdit.cropRect.h}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

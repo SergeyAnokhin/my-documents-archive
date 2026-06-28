@@ -9,16 +9,13 @@ import { useT } from "../i18n";
 import {
   getDocument, getLabMethods, listProviders,
   runLabOcr, runLabVision, runLabJudge, saveLabResult,
-  getLabImageInfo, previewLabTransform, applyLabTransform,
 } from "../api/documents";
-import type {
-  Document, AIProvider, LabMethods, LabResult, LabJudgeResult,
-  LabImageInfo, LabPreviewResult, LabTransformParams,
-} from "../types";
+import type { Document, AIProvider, LabMethods, LabResult, LabJudgeResult } from "../types";
 import { formatMs, formatFileSize, VISION_CAPABLE, uid } from "./lab/labUtils";
 import { useLogs } from "./lab/useLogs";
 import { usePanelResize } from "./lab/usePanelResize";
 import { useImageTransform } from "./lab/useImageTransform";
+import { useImageEdit } from "../hooks/useImageEdit";
 import { ResultsList } from "./lab/ResultsList";
 import { JudgePanel } from "./lab/JudgePanel";
 import { FloatingTextModal } from "./lab/FloatingTextModal";
@@ -51,38 +48,31 @@ export function LabPage() {
   // ── Image canvas refs ─────────────────────────────────────────────────────────
   const canvasRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const viewerRef = useRef<HTMLDivElement>(null);
 
-  // ── Image tools ──────────────────────────────────────────────────────────────
-  const [imageInfo, setImageInfo] = useState<LabImageInfo | null>(null);
-  const [outputScale, setOutputScale] = useState<number>(1);
-  const [outputQuality, setOutputQuality] = useState<number>(85);
-  const [outputRotation, setOutputRotation] = useState<number>(0);
+  // ── Crop mode (lifted here so it can be passed to both useImageTransform and useImageEdit) ──
   const [cropMode, setCropMode] = useState(false);
-  const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [previewResult, setPreviewResult] = useState<LabPreviewResult | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
-  const [applyDone, setApplyDone] = useState(false);
-  const [imgVersion, setImgVersion] = useState(0);
 
-  const cropOverlayRef = useRef<HTMLDivElement>(null);
-  const isCroppingRef = useRef(false);
-  const cropStartRef = useRef<{ x: number; y: number } | null>(null);
-  const autoPreviewCtrl = useRef<AbortController | null>(null);
-  // Stable keyboard listener — updated every render, registered once
-  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
-
-  // ── Zoom / Pan (extracted) ─────────────────────────────────────────────────────
+  // ── Zoom / Pan ─────────────────────────────────────────────────────────────────
   const isPdf = doc?.mime_type === "application/pdf" || !!doc?.filename.toLowerCase().endsWith(".pdf");
   const {
     zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, armAutoFit, onCanvasMouseDown,
   } = useImageTransform({ canvasRef, imgRef, cropMode, isPdf, resetKey: id });
 
+  // ── Image editing (resize / quality / rotation / crop / preview / apply) ──────
+  const { logs, showLogs, setShowLogs, addLog, clearLogs, logsEndRef } = useLogs();
+
+  const imageEdit = useImageEdit({
+    docId, isPdf, zoomRef, imgRef, armAutoFit,
+    cropMode, setCropMode,
+    onLog: addLog,
+    confirmMsg: lab.applyConfirm,
+  });
+
   // ── Panel resize ─────────────────────────────────────────────────────────────
   const { panelWidth, onResizerDown } = usePanelResize();
 
   // ── Keyboard listener — stable registration, handler ref updated every render ─
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
     const handler = (e: KeyboardEvent) => keyHandlerRef.current(e);
     window.addEventListener("keydown", handler);
@@ -99,42 +89,18 @@ export function LabPage() {
     e.preventDefault();
   };
 
-  // ── Global mouse handlers (modal drag, crop) ─────────────────────────────────
+  // ── Modal drag global handlers ────────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (modalDragStart.current) {
-        const dx = e.clientX - modalDragStart.current.mx;
-        const dy = e.clientY - modalDragStart.current.my;
-        setModalPos({
-          x: Math.max(0, modalDragStart.current.px + dx),
-          y: Math.max(0, modalDragStart.current.py + dy),
-        });
-      }
-      if (isCroppingRef.current && cropOverlayRef.current && cropStartRef.current) {
-        const rect = cropOverlayRef.current.getBoundingClientRect();
-        const z = zoomRef.current;
-        const curX = Math.max(0, (e.clientX - rect.left) / z);
-        const curY = Math.max(0, (e.clientY - rect.top) / z);
-        const imgEl = imgRef.current;
-        const maxW = imgEl ? imgEl.naturalWidth : Infinity;
-        const maxH = imgEl ? imgEl.naturalHeight : Infinity;
-        setCropRect({
-          x: Math.round(Math.max(0, Math.min(cropStartRef.current.x, curX))),
-          y: Math.round(Math.max(0, Math.min(cropStartRef.current.y, curY))),
-          w: Math.round(Math.min(Math.abs(curX - cropStartRef.current.x), maxW)),
-          h: Math.round(Math.min(Math.abs(curY - cropStartRef.current.y), maxH)),
-        });
-      }
+      if (!modalDragStart.current) return;
+      const dx = e.clientX - modalDragStart.current.mx;
+      const dy = e.clientY - modalDragStart.current.my;
+      setModalPos({
+        x: Math.max(0, modalDragStart.current.px + dx),
+        y: Math.max(0, modalDragStart.current.py + dy),
+      });
     };
-    const onUp = () => {
-      modalDragStart.current = null;
-      if (isCroppingRef.current) {
-        // discard tiny selections
-        setCropRect(prev => (prev && prev.w < 5 && prev.h < 5) ? null : prev);
-      }
-      isCroppingRef.current = false;
-      cropStartRef.current = null;
-    };
+    const onUp = () => { modalDragStart.current = null; };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -143,16 +109,12 @@ export function LabPage() {
     };
   }, []);
 
-  // ── Logs ─────────────────────────────────────────────────────────────────────
-  const { logs, showLogs, setShowLogs, addLog, clearLogs, logsEndRef } = useLogs();
-
   // ── Data loading ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!docId) return;
     getDocument(docId).then(setDoc).catch(() => {});
     getLabMethods().then(setMethods).catch(() => {});
     listProviders().then(setProviders).catch(() => {});
-    getLabImageInfo(docId).then(setImageInfo).catch(() => {});
   }, [docId]);
 
   const visionProviders = useMemo(
@@ -198,21 +160,6 @@ export function LabPage() {
       for (const k of keyMap[fieldKey] ?? [fieldKey]) delete (next as Record<string, unknown>)[k];
       return { ...r, fields: next };
     }));
-  };
-
-  // ── Crop overlay mousedown ────────────────────────────────────────────────────
-  const onCropOverlayMouseDown = (e: React.MouseEvent) => {
-    if (!cropMode || !cropOverlayRef.current) return;
-    const rect = cropOverlayRef.current.getBoundingClientRect();
-    const z = zoomRef.current;
-    cropStartRef.current = {
-      x: Math.max(0, (e.clientX - rect.left) / z),
-      y: Math.max(0, (e.clientY - rect.top) / z),
-    };
-    isCroppingRef.current = true;
-    setCropRect(null);
-    e.preventDefault();
-    e.stopPropagation();
   };
 
   // ── OCR / Vision handlers ─────────────────────────────────────────────────────
@@ -322,92 +269,6 @@ export function LabPage() {
     }));
   };
 
-  const hasTransformChange = outputScale !== 1 || !!cropRect || outputRotation !== 0 || (imageInfo?.can_adjust_quality && outputQuality !== 85);
-
-  // ── Auto-preview on transform change (400 ms debounce) ───────────────────────
-  useEffect(() => {
-    if (!hasTransformChange || isPdf) {
-      autoPreviewCtrl.current?.abort();
-      autoPreviewCtrl.current = null;
-      setPreviewResult(null);
-      setIsPreviewing(false);
-      return;
-    }
-    autoPreviewCtrl.current?.abort();
-    const ctrl = new AbortController();
-    autoPreviewCtrl.current = ctrl;
-    setIsPreviewing(true);
-    const params: LabTransformParams = {};
-    if (outputScale !== 1) params.scale = outputScale;
-    if (cropRect) params.crop = cropRect;
-    if (imageInfo?.can_adjust_quality && outputQuality !== 85) params.quality = outputQuality;
-    if (outputRotation) params.rotation = outputRotation;
-    const t = setTimeout(async () => {
-      if (ctrl.signal.aborted) return;
-      try {
-        const result = await previewLabTransform(docId, params);
-        if (!ctrl.signal.aborted) {
-          setPreviewResult(result);
-          armAutoFit();
-          addLog(`→ Preview: ${result.width}×${result.height} · ${formatFileSize(result.file_size)}`, "ok");
-        }
-      } catch (e) {
-        if (!ctrl.signal.aborted) addLog(`✗ Preview: ${(e as Error).message}`, "err");
-      } finally {
-        if (!ctrl.signal.aborted) {
-          setIsPreviewing(false);
-          autoPreviewCtrl.current = null;
-        }
-      }
-    }, 400);
-    return () => { clearTimeout(t); ctrl.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outputRotation, outputScale, cropRect, outputQuality, docId, hasTransformChange, isPdf]);
-
-  // ── Image transform handlers ──────────────────────────────────────────────────
-  const handleCancel = () => {
-    autoPreviewCtrl.current?.abort();
-    autoPreviewCtrl.current = null;
-    setPreviewResult(null);
-    setIsPreviewing(false);
-    setOutputScale(1);
-    setOutputQuality(85);
-    setOutputRotation(0);
-    setCropRect(null);
-    setCropMode(false);
-  };
-
-  const handleApply = async () => {
-    if (!window.confirm(lab.applyConfirm)) return;
-    autoPreviewCtrl.current?.abort();
-    autoPreviewCtrl.current = null;
-    setIsApplying(true);
-    try {
-      const params: LabTransformParams = {};
-      if (outputScale !== 1) params.scale = outputScale;
-      if (cropRect) params.crop = cropRect;
-      if (imageInfo?.can_adjust_quality && outputQuality !== 85) params.quality = outputQuality;
-      if (outputRotation) params.rotation = outputRotation;
-      const result = await applyLabTransform(docId, params);
-      setImageInfo(prev => prev ? { ...prev, width: result.width, height: result.height, file_size: result.file_size } : prev);
-      setPreviewResult(null);
-      setOutputScale(1);
-      setOutputQuality(85);
-      setOutputRotation(0);
-      setCropRect(null);
-      setCropMode(false);
-      setApplyDone(true);
-      setImgVersion(v => v + 1);
-      armAutoFit();
-      addLog(`✓ Applied: ${result.width}×${result.height} · ${formatFileSize(result.file_size)}`, "ok");
-      setTimeout(() => setApplyDone(false), 2500);
-    } catch (e) {
-      addLog(`✗ Apply: ${(e as Error).message}`, "err");
-    } finally {
-      setIsApplying(false);
-    }
-  };
-
   // Update keyboard handler every render so it always closes over fresh state
   keyHandlerRef.current = (e: KeyboardEvent) => {
     const tag = (e.target as HTMLElement)?.tagName;
@@ -415,23 +276,23 @@ export function LabPage() {
     if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomAround(1.25); }
     else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomAround(1 / 1.25); }
     else if (e.key === " ") { e.preventDefault(); handleZoomReset(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setOutputRotation(r => (r - 90 + 360) % 360); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setOutputRotation(r => (r + 90) % 360); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); imageEdit.setOutputRotation(r => (r - 90 + 360) % 360); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); imageEdit.setOutputRotation(r => (r + 90) % 360); }
     else if (e.key === "Escape") {
       e.preventDefault();
-      if (cropMode) { setCropMode(false); setCropRect(null); }
-      else if (hasTransformChange || !!previewResult) { handleCancel(); }
+      if (cropMode) { setCropMode(false); imageEdit.setCropRect(null); }
+      else if (imageEdit.hasTransformChange || !!imageEdit.previewResult) { imageEdit.handleCancel(); }
       else { navigate("/"); }
-    } else if (e.key === "Enter" && (hasTransformChange || !!previewResult) && !isApplying) {
+    } else if (e.key === "Enter" && (imageEdit.hasTransformChange || !!imageEdit.previewResult) && !imageEdit.isApplying) {
       e.preventDefault();
-      handleApply();
+      imageEdit.handleApply();
     }
   };
 
   const downloadUrl = `/api/documents/${docId}/download?inline=1`;
-  const imgSrc = previewResult
-    ? `data:image/jpeg;base64,${previewResult.image_b64}`
-    : `${downloadUrl}&v=${imgVersion}`;
+  const imgSrc = imageEdit.previewResult
+    ? `data:image/jpeg;base64,${imageEdit.previewResult.image_b64}`
+    : `${downloadUrl}&v=${imageEdit.imgVersion}`;
 
   return (
     <div className="lab">
@@ -468,24 +329,24 @@ export function LabPage() {
                 <button
                   className={`icon-btn${cropMode ? " active" : ""}`}
                   title={cropMode ? lab.cropClear : `${lab.cropTool} — ${lab.cropHint}`}
-                  onClick={() => { setCropMode(m => !m); if (cropMode) setCropRect(null); }}
+                  onClick={() => { setCropMode(m => !m); if (cropMode) imageEdit.setCropRect(null); }}
                 >
                   <Scissors size={16} />
                 </button>
               </>
             )}
-            {imageInfo && (
+            {imageEdit.imageInfo && (
               <span className="lab-img-info text-xs text-muted">
-                {previewResult
-                  ? `${previewResult.width}×${previewResult.height} · ${formatFileSize(previewResult.file_size)}`
-                  : `${imageInfo.width}×${imageInfo.height} · ${formatFileSize(imageInfo.file_size)}`
+                {imageEdit.previewResult
+                  ? `${imageEdit.previewResult.width}×${imageEdit.previewResult.height} · ${formatFileSize(imageEdit.previewResult.file_size)}`
+                  : `${imageEdit.imageInfo.width}×${imageEdit.imageInfo.height} · ${formatFileSize(imageEdit.imageInfo.file_size)}`
                 }
               </span>
             )}
-            {isPreviewing && (
+            {imageEdit.isPreviewing && (
               <span className="lab-preview-badge lab-preview-badge--loading">{lab.previewTag}</span>
             )}
-            {previewResult && !isPreviewing && (
+            {imageEdit.previewResult && !imageEdit.isPreviewing && (
               <span className="lab-preview-badge">{lab.previewTag}</span>
             )}
           </div>
@@ -495,8 +356,8 @@ export function LabPage() {
               <span className="lab-tool2-label text-xs">{lab.resize}</span>
               <select
                 className="lab-select2"
-                value={String(outputScale)}
-                onChange={e => setOutputScale(Number(e.target.value))}
+                value={String(imageEdit.outputScale)}
+                onChange={e => imageEdit.setOutputScale(Number(e.target.value))}
               >
                 <option value="1">100% — {lab.original}</option>
                 <option value="0.75">75%</option>
@@ -504,63 +365,67 @@ export function LabPage() {
                 <option value="0.25">25% — ÷4</option>
                 <option value="0.1">10% — ÷10</option>
               </select>
-              {imageInfo?.can_adjust_quality && (
+              {imageEdit.imageInfo?.can_adjust_quality && (
                 <>
                   <div className="lab-toolbar-sep" />
                   <span className="lab-tool2-label text-xs">{lab.quality}</span>
                   <input
                     type="range" min="10" max="95" step="5"
-                    value={outputQuality}
-                    onChange={e => setOutputQuality(Number(e.target.value))}
+                    value={imageEdit.outputQuality}
+                    onChange={e => imageEdit.setOutputQuality(Number(e.target.value))}
                     className="lab-slider2"
                   />
-                  <span className="text-xs" style={{ minWidth: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{outputQuality}</span>
+                  <span className="text-xs" style={{ minWidth: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {imageEdit.outputQuality}
+                  </span>
                 </>
               )}
               <div className="lab-toolbar-sep" />
               <button
                 className="icon-btn"
                 title={`${lab.rotateLeft} (←)`}
-                onClick={() => setOutputRotation(r => (r - 90 + 360) % 360)}
+                onClick={() => imageEdit.setOutputRotation(r => (r - 90 + 360) % 360)}
               >
                 <RotateCcw size={15} />
               </button>
-              {outputRotation !== 0 && (
+              {imageEdit.outputRotation !== 0 && (
                 <span className="text-xs text-muted" style={{ minWidth: 30, textAlign: "center" }}>
-                  {outputRotation}°
+                  {imageEdit.outputRotation}°
                 </span>
               )}
               <button
                 className="icon-btn"
                 title={`${lab.rotateRight} (→)`}
-                onClick={() => setOutputRotation(r => (r + 90) % 360)}
+                onClick={() => imageEdit.setOutputRotation(r => (r + 90) % 360)}
               >
                 <RotateCw size={15} />
               </button>
-              {cropMode && cropRect && cropRect.w > 0 && (
+              {cropMode && imageEdit.cropRect && imageEdit.cropRect.w > 0 && (
                 <>
                   <div className="lab-toolbar-sep" />
-                  <span className="text-xs text-muted">{lab.cropSelected}: {cropRect.w}×{cropRect.h}</span>
+                  <span className="text-xs text-muted">
+                    {lab.cropSelected}: {imageEdit.cropRect.w}×{imageEdit.cropRect.h}
+                  </span>
                 </>
               )}
-              {(hasTransformChange || !!previewResult) && (
+              {(imageEdit.hasTransformChange || !!imageEdit.previewResult) && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                   <Button
                     variant="ghost" size="sm"
                     title={`${lab.cancelEdit} (Esc)`}
-                    onClick={handleCancel}
-                    disabled={isApplying}
+                    onClick={imageEdit.handleCancel}
+                    disabled={imageEdit.isApplying}
                   >
                     {lab.cancelEdit}
                   </Button>
                   <Button
                     variant="primary" size="sm"
                     icon={<Check size={13} />}
-                    loading={isApplying}
-                    title={`${applyDone ? lab.applyDone : lab.applyBtn} (Enter)`}
-                    onClick={handleApply}
+                    loading={imageEdit.isApplying}
+                    title={`${imageEdit.applyDone ? lab.applyDone : lab.applyBtn} (Enter)`}
+                    onClick={imageEdit.handleApply}
                   >
-                    {applyDone ? lab.applyDone : lab.applyBtn}
+                    {imageEdit.applyDone ? lab.applyDone : lab.applyBtn}
                   </Button>
                 </div>
               )}
@@ -578,7 +443,6 @@ export function LabPage() {
             ) : (
               <div
                 className="lab-doc-viewer"
-                ref={viewerRef}
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: "0 0",
@@ -593,23 +457,25 @@ export function LabPage() {
                     onLoad={handleImgLoad}
                     draggable={false}
                   />
-                  {cropMode && !previewResult && (
+                  {cropMode && !imageEdit.previewResult && (
                     <div
                       className="lab-crop-overlay"
-                      ref={cropOverlayRef}
-                      onMouseDown={onCropOverlayMouseDown}
+                      ref={imageEdit.cropOverlayRef}
+                      onMouseDown={imageEdit.onCropOverlayMouseDown}
                     >
-                      {cropRect && cropRect.w > 0 && cropRect.h > 0 && (
+                      {imageEdit.cropRect && imageEdit.cropRect.w > 0 && imageEdit.cropRect.h > 0 && (
                         <div
                           className="lab-crop-selection"
                           style={{
-                            left: cropRect.x,
-                            top: cropRect.y,
-                            width: cropRect.w,
-                            height: cropRect.h,
+                            left: imageEdit.cropRect.x,
+                            top: imageEdit.cropRect.y,
+                            width: imageEdit.cropRect.w,
+                            height: imageEdit.cropRect.h,
                           }}
                         >
-                          <span className="lab-crop-label">{cropRect.w}×{cropRect.h}</span>
+                          <span className="lab-crop-label">
+                            {imageEdit.cropRect.w}×{imageEdit.cropRect.h}
+                          </span>
                         </div>
                       )}
                     </div>

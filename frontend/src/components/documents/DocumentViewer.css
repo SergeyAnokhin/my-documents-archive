@@ -208,6 +208,111 @@
   gap: var(--sp-2);
 }
 
+/* ── Image edit toolbar ──────────────────────────────────────────────────── */
+
+.viewer-toolbar-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.viewer-img-info {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-preview-badge {
+  background: #f59e0b;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.viewer-preview-badge--loading {
+  animation: viewer-badge-pulse 0.9s ease-in-out infinite;
+}
+@keyframes viewer-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.viewer-btn-active {
+  color: var(--color-accent, #6366f1);
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 4px;
+}
+
+.viewer-edit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-soft);
+  flex-shrink: 0;
+}
+
+.viewer-edit-label {
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.viewer-edit-select {
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  cursor: pointer;
+  max-width: 140px;
+}
+
+.viewer-edit-slider {
+  width: 72px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--color-accent, #6366f1);
+}
+
+/* ── Crop overlay ────────────────────────────────────────────────────────── */
+
+.viewer-crop-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.viewer-crop-selection {
+  position: absolute;
+  border: 2px solid #6366f1;
+  background: rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+  pointer-events: none;
+}
+
+.viewer-crop-label {
+  position: absolute;
+  bottom: 3px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
 /* ── Type badge button ───────────────────────────────────────────────────── */
 
 .type-badge-btn {
