@@ -4,6 +4,7 @@ metadata:
   name: my-documents-archive
   namespace: argocd
 spec:
+  revisionHistoryLimit: 2
   project: default
   source:
     repoURL: https://github.com/SergeyAnokhin/my-documents-archive.git

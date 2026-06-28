@@ -47,7 +47,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
 | `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
 | `services/type_icon_suggestion.py` | Suggests Lucide icon names for custom document types via LLM. `suggest_icons_for_types(slugs, db)` → calls AI provider once per type, resolves conflicts (max 5 retries), saves results under AppSettings key `custom_type_icons`. `get_pending_custom_types(db)` returns types in the library that lack a custom icon. Exposed via `GET /api/admin/type-icons` and `POST /api/admin/update-type-icons`. |
-| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Preserves old `document_type` in tags when type changes during reclassification. Batch ops: `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
+| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Preserves old `document_type` in tags when type changes during reclassification. Batch ops: `reclassify_pending_batch()` (docs with summary → one LLM call per doc, type-only, no summary/tag regeneration; skips docs without summary); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag, full re-analysis) |
 | `services/recluster.py` | Cluster-based recategorization: clean summaries (strip tags/names/dates) → embed (sentence-transformers) → auto-select k via silhouette score → k-means → LLM names each cluster (type slug + icon) → apply (old type preserved in tags). Entry point: `run_recluster(task_id=None)`. Endpoint: `POST /api/admin/recluster`. Task type: `recluster`. |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
@@ -175,10 +175,26 @@ Admin sync
   → BackgroundTasks: index_document() for each new file
   → SyncResponse {found, new_files, removed}
 
-Admin reclassify
+Admin reclassify-all (type-only, cheap)
   → POST /api/admin/reclassify-all
   → BackgroundTasks: indexer.reclassify_pending_batch()
-      → re-runs _run_analysis() for docs with ocr_status=done, analysis_status≠done
+      → filter: summary IS NOT NULL (docs without summary are logged + skipped)
+      → one LLM call per doc: existing summary → document_type only
+      → old document_type preserved in tags if it changed
+      → does NOT touch summary, tags, language, or other fields
+
+Admin reclassify-unclassified (full re-analysis for unclassified only)
+  → POST /api/admin/reclassify-unclassified
+  → BackgroundTasks: indexer.reclassify_unclassified_batch()
+      → filter: document_type in (unclassified, other, NULL) AND manually_classified=False
+      → full _run_analysis() call per doc
+
+Admin recluster (cluster-based taxonomy reset)
+  → POST /api/admin/recluster
+  → BackgroundTasks: recluster.run_recluster()
+      → embed all summaries locally → auto-select k via silhouette → k-means
+      → LLM names each cluster (type slug + icon)
+      → old document_type preserved in tags
 ```
 
 ## Database Location
@@ -201,7 +217,7 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 | `index_unindexed` | OCR + AI analysis for pending documents |
 | `sync_library` | Scan library + index new files |
 | `reclassify_unclassified` | AI classification for unclassified docs |
-| `reclassify_all` | Re-run AI analysis on all docs |
+| `reclassify_all` | Type-only classification for docs that already have a summary (one LLM call per doc, no summary/tag regeneration) |
 | `recluster` | Cluster-based recategorization of all analyzed docs (silhouette k-selection + LLM naming) |
 | `batch_ocr_mistral` | Async batch OCR via Mistral Batch API (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
 | `batch_ocr_gemini` | Async batch OCR via Gemini Batch Mode (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
@@ -218,9 +234,9 @@ Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and sup
 - **AI providers live in the DB** (`AIProvider` rows, added via Admin UI), not in env. The `*_api_key` fields in `config.py` are only fallback overrides.
 - **Tests**: `npm test` from repo root runs all three suites (backend/compute pytest, frontend vitest). See [testing.md](testing.md). Test files live in `backend/tests/`, `compute/tests/`, and `frontend/src/**/*.test.ts`.
 - **Compute worker native crash (Windows+conda)**: On miniforge/miniconda, `import easyocr` → `from skimage import io` triggers an OpenBLAS vs MKL DLL conflict when torch (MKL-linked) is already loaded. Exit code `3228369023` (STATUS_ACCESS_VIOLATION), NOT catchable by `except Exception`. Fix: `pip install numpy scipy scikit-image --force-reinstall`. The worker uses `_probe()` (subprocess) at startup to survive this crash in the probe itself. See [compute-worker.md](compute-worker.md).
-- **Classification fields**: `Document` has three classification-tracking columns: `classification_confidence` (float, LLM self-reported), `classification_source` (`"auto"`/`"manual"`), `manually_classified` (bool). Docs with `manually_classified=True` are skipped by the batch reclassify tasks but are re-classified if the user explicitly clicks "Re-classify" in dev mode (`reclassify_document()` resets the flag).
+- **Classification fields**: `Document` has three classification-tracking columns: `classification_confidence` (float, LLM self-reported), `classification_source` (`"auto"`/`"manual"`), `manually_classified` (bool). `reclassify_unclassified_batch()` skips `manually_classified=True` docs. `reclassify_pending_batch()` (Re-classify All) and `reclassify_document()` do not — they always override. Old type is preserved in tags when type changes.
+- **Three reclassification modes differ in scope and cost**: `reclassify_pending_batch` (Re-classify All) = one cheap type-only LLM call per doc with summary; `reclassify_unclassified_batch` = full analysis only for unclassified docs; `run_recluster` = local clustering + one LLM call per cluster to name it.
 - **`unclassified` vs `other`**: the LLM prompt no longer outputs `"other"` — it outputs `"unclassified"`. Old documents may still have `"other"`; all batch jobs and stats queries treat them identically.
 - **Vision can replace Analysis**: for capable providers (OpenAI/Gemini/OpenRouter) Step 3 uses `VISION_FULL_PROMPT` and returns the transcription **plus** every analysis field as one JSON. `indexer._apply_vision_fields()` writes them and sets `analysis_status="done"`, so Step 4 never runs — one API call instead of two. Only **Mistral OCR** (plain transcription) still triggers a separate Analysis step.
-- **Batch tasks use Gemini**: `reclassify_unclassified` and `reclassify_all` tasks now submit docs to the Gemini Batch API (same as `batch_analysis_gemini`), using `doc_scope` to select the right document set. The `AIProvider.supports_batch` property is `True` for `gemini` and `mistral`; the Tasks form filters providers by this flag.
 - **Sync is now hard-delete**: `/api/admin/sync` `db.delete()`s missing/phantom docs (the old `is_deleted` soft-delete is migrated away — sync also purges any leftover `is_deleted=True` rows). It refuses to run (HTTP 503) if `check_library_accessible()` fails, so an unmounted NAS can't empty the library.
 - **Log levels**: every `IndexingLog` row has `level` (`trace|debug|info|warning|error`). The `_log()` helpers default to `info`; pass `level=` to override. The Admin Log tab filters by minimum severity client-side.
