@@ -81,7 +81,7 @@ http://localhost:8001
 > connection target. On Windows, connecting to `0.0.0.0` fails silently.
 
 Click **Tesseract** or **EasyOCR** to probe the worker. The UI shows:
-- Pulsing green dot + "Сервис доступен" — worker is reachable
+- Pulsing green dot + "Service available" — worker is reachable
 - Green/red pill per engine — which engines are available
 
 ## Engine detection (`_probe`)
@@ -128,25 +128,25 @@ this endpoint appear. If the worker is down, only `tesseract` (in-process) shows
 
 See [lab-mode.md](lab-mode.md) for the full lab flow.
 
-## Запуск на dev-машине при k8s-деплое
+## Running the worker on a dev machine alongside a k8s deployment
 
-Если основной стек (`backend` + `frontend`) развёрнут в Kubernetes, compute-воркер
-можно запускать на локальной Windows-машине разработчика — это даёт доступ к EasyOCR
-без выделенной ноды в кластере.
+If the main stack (`backend` + `frontend`) is deployed in Kubernetes, the compute
+worker can be run on the local Windows dev machine — this gives access to EasyOCR
+without a dedicated node in the cluster.
 
-### 1. Запустить воркер
+### 1. Start the worker
 
 ```powershell
 npm run compute
 ```
 
-При старте в консоль выводится LAN-адрес, который нужно вставить в UI:
+On startup, the LAN address to paste into the UI is printed to the console:
 
 ```
   Compute worker → http://192.168.1.X:8001
 ```
 
-### 2. Открыть порт в Windows Firewall (один раз, от администратора)
+### 2. Open the port in Windows Firewall (once, as administrator)
 
 ```powershell
 netsh advfirewall firewall add rule `
@@ -154,25 +154,25 @@ netsh advfirewall firewall add rule `
   dir=in action=allow protocol=TCP localport=8001
 ```
 
-### 3. Узнать LAN-адрес машины
+### 3. Find the machine's LAN address
 
 ```powershell
 ipconfig | findstr "IPv4"
 ```
 
-Запомни адрес вида `192.168.1.X`.
+Note the address of the form `192.168.1.X`.
 
-### 4. Подключить в UI
+### 4. Connect in the UI
 
-Открой `http://my-documents-archive.lan` → **Admin → Indexing → Compute Worker**,
-вставь URL:
+Open `http://my-documents-archive.lan` → **Admin → Indexing → Compute Worker**,
+paste the URL:
 
 ```
 http://192.168.1.X:8001
 ```
 
-Статус проверяется автоматически через ~0,7 с после вставки — должен появиться
-зелёный индикатор. Нажми **Save** для сохранения.
+Status is checked automatically ~0.7 s after pasting — a green indicator should appear.
+Click **Save** to persist.
 
-> Если воркер не запущен, backend продолжает работу с Tesseract из образа — EasyOCR
-> просто не появляется в OCR Lab.
+> If the worker is not running, the backend continues working with Tesseract from the
+> image — EasyOCR simply does not appear in OCR Lab.
