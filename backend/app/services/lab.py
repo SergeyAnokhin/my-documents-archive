@@ -153,9 +153,9 @@ Your ENTIRE response must be the JSON object above and nothing else."""
 
 # ── First-page image ───────────────────────────────────────────────────────────
 
-def load_image(filepath: str) -> bytes:
+def load_image(filepath: str, max_size: int = 1024) -> bytes:
     """First page as resized JPEG bytes — the single image every method works on."""
-    return ai_vision.load_first_page(filepath)
+    return ai_vision.load_first_page(filepath, max_size=max_size)
 
 
 # ── Image info & manipulation ──────────────────────────────────────────────────

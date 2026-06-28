@@ -235,7 +235,8 @@ export type TaskType =
   | "batch_ocr_mistral"
   | "batch_ocr_gemini"
   | "batch_analysis_gemini"
-  | "cleanup_missing";
+  | "cleanup_missing"
+  | "compress_images";
 
 export interface Task {
   id: number;

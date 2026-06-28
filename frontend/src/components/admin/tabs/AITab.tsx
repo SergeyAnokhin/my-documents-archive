@@ -21,6 +21,7 @@ export function AITab() {
   const [ratings, setRatings] = useState<Record<string, ArenaRating>>({});
   const [visionEnabled, setVisionEnabled] = useState(false);
   const [togglingVision, setTogglingVision] = useState(false);
+  const [visionMaxSize, setVisionMaxSize] = useState("1024");
   const [updatingRatings, setUpdatingRatings] = useState(false);
   const [ratingsMsg, setRatingsMsg] = useState("");
   const [ioMsg, setIoMsg] = useState("");
@@ -31,7 +32,10 @@ export function AITab() {
   useEffect(() => {
     load();
     getAppSettings()
-      .then(s => setVisionEnabled(s["enable_ai_vision"] === "true"))
+      .then(s => {
+        setVisionEnabled(s["enable_ai_vision"] === "true");
+        if (s["vision_max_image_size"]) setVisionMaxSize(s["vision_max_image_size"]);
+      })
       .catch(() => {});
     getArenaRatings().then(setRatings).catch(() => {});
   }, []);
@@ -146,6 +150,29 @@ export function AITab() {
           />
           <span className="toggle-slider" />
         </label>
+      </div>
+
+      {/* Vision max image size */}
+      <div className="provider-item" style={{ marginBottom: 12 }}>
+        <div style={{ flex: 1 }}>
+          <span className="provider-name">{ai.visionMaxImageSize}</span>
+          <p className="text-xs text-muted" style={{ marginTop: 2 }}>{ai.visionMaxImageSizeHint}</p>
+        </div>
+        <input
+          type="number"
+          min="100"
+          max="4096"
+          value={visionMaxSize}
+          onChange={e => setVisionMaxSize(e.target.value)}
+          onBlur={() => {
+            const val = parseInt(visionMaxSize, 10);
+            if (val && val >= 100) {
+              updateAppSettings({ vision_max_image_size: String(val) }).catch(() => {});
+            }
+          }}
+          style={{ width: 80, textAlign: "right" }}
+          className="create-form-input"
+        />
       </div>
 
       {/* Analysis providers */}

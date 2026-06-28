@@ -270,6 +270,9 @@ export const getTaskCandidates = () =>
 export const getScopeCount = (taskType: string, scope: number) =>
   api.get<{ count: number }>(`/tasks/candidates/scope?task_type=${taskType}&scope=${scope}`);
 
+export const getCompressCandidates = (threshold: number) =>
+  api.get<{ count: number; total_images: number }>(`/tasks/candidates/compress?threshold=${threshold}`);
+
 export const resumeBatchTask = (id: number) =>
   api.post<{ message: string }>(`/tasks/${id}/resume-batch`);
 

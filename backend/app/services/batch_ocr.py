@@ -75,7 +75,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
     Flow (resume via config["resume_batch_job_id"]):
       Skips phases 1–4, jumps straight to polling an existing remote job.
     """
-    from .ai_vision import load_first_page, parse_mistral_ocr
+    from .ai_vision import load_first_page, parse_mistral_ocr, _get_max_image_size
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
@@ -129,6 +129,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
             scope = int(config.get("scope", 1))
             docs = _scope_filter(db.query(Document), scope).limit(limit).all()
             total = len(docs)
+            max_size = _get_max_image_size(db)
         finally:
             db.close()
 
@@ -150,7 +151,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
                 _log(task_id, f"Stopped during image loading after {i} document(s)")
                 return
             try:
-                img_bytes = load_first_page(doc.filepath)
+                img_bytes = load_first_page(doc.filepath, max_size=max_size)
                 b64 = base64.b64encode(img_bytes).decode()
                 custom_id = str(doc.id)
                 doc_id_map[custom_id] = doc.id
@@ -371,7 +372,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     Flow (resume via config["resume_batch_job_id"]):
       Skips phases 1–4, jumps straight to polling an existing remote job.
     """
-    from .ai_vision import load_first_page
+    from .ai_vision import load_first_page, _get_max_image_size
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
@@ -424,6 +425,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             scope = int(config.get("scope", 1))
             docs = _scope_filter(db.query(Document), scope).limit(limit).all()
             total = len(docs)
+            max_size = _get_max_image_size(db)
         finally:
             db.close()
 
@@ -445,7 +447,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                 _log(task_id, f"Stopped during image loading after {i} document(s)")
                 return
             try:
-                img_bytes = load_first_page(doc.filepath)
+                img_bytes = load_first_page(doc.filepath, max_size=max_size)
                 b64 = base64.b64encode(img_bytes).decode()
                 key = str(doc.id)
                 doc_id_map[key] = doc.id

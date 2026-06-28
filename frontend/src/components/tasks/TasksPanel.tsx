@@ -6,7 +6,7 @@ import { useT } from "../../i18n";
 import {
   listTasks, createTask, deleteTask, runTask, stopTask,
   stopAllTasks, getTaskLogs, updateTask, listProviders, getTaskCandidates, getScopeCount,
-  resumeBatchTask, getBatchResultUrl,
+  resumeBatchTask, getBatchResultUrl, getCompressCandidates,
 } from "../../api/documents";
 import type { AIProvider, Task, TaskLog, TaskType } from "../../types";
 import "./TasksPanel.css";
@@ -23,6 +23,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   batch_ocr_gemini:        "BATCH OCR",
   batch_analysis_gemini:   "BATCH AI",
   cleanup_missing:         "CLEANUP",
+  compress_images:         "COMPRESS",
 };
 
 const ALL_TYPES: TaskType[] = [
@@ -35,6 +36,7 @@ const ALL_TYPES: TaskType[] = [
   "batch_ocr_gemini",
   "batch_analysis_gemini",
   "cleanup_missing",
+  "compress_images",
 ];
 
 const TYPES_WITH_LIMIT: TaskType[] = [
@@ -436,6 +438,10 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [scope, setScope] = useState(1);
   const [scopeCount, setScopeCount] = useState<number | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
+  const [maxLongSide, setMaxLongSide] = useState("1024");
+  const [compressCount, setCompressCount] = useState<{ count: number; total_images: number } | null>(null);
+  const [compressLoading, setCompressLoading] = useState(false);
+  const compressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
   const isBatch = !!batchProviderType;
@@ -474,11 +480,31 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       .finally(() => setScopeLoading(false));
   }, [selectedType, scope]);
 
+  // Fetch compress candidate count with debounce when threshold changes
+  useEffect(() => {
+    if (selectedType !== "compress_images") return;
+    const threshold = parseInt(maxLongSide, 10);
+    if (!threshold || threshold < 1) return;
+    if (compressDebounceRef.current) clearTimeout(compressDebounceRef.current);
+    setCompressLoading(true);
+    compressDebounceRef.current = setTimeout(() => {
+      getCompressCandidates(threshold)
+        .then(data => setCompressCount(data))
+        .catch(() => setCompressCount(null))
+        .finally(() => setCompressLoading(false));
+    }, 600);
+    return () => {
+      if (compressDebounceRef.current) clearTimeout(compressDebounceRef.current);
+    };
+  }, [selectedType, maxLongSide]);
+
   const handleSelectType = (type: TaskType) => {
     setSelectedType(type);
     setTitle(t.tasks.types[type as keyof typeof t.tasks.types] ?? type);
     setScope(1);
     setScopeCount(null);
+    setMaxLongSide("1024");
+    setCompressCount(null);
     const providerType = BATCH_PROVIDER_TYPE[type];
     if (providerType) {
       setLimit("50");
@@ -500,6 +526,9 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       if (isBatch) {
         if (providerId) config.provider_id = parseInt(providerId, 10);
         config.poll_interval = parseInt(pollInterval, 10) || (batchProviderType ? BATCH_POLL_DEFAULTS[batchProviderType] : 30) || 30;
+      }
+      if (selectedType === "compress_images") {
+        config.max_long_side = parseInt(maxLongSide, 10) || 1024;
       }
       const task = await createTask({ task_type: selectedType, title: title.trim(), config });
       onCreated(task);
@@ -557,6 +586,29 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
               </span>
             )}
           </div>
+
+          {selectedType === "compress_images" && (
+            <div className="create-form-field">
+              <label className="create-form-label">{t.tasks.compressMaxSideLabel}</label>
+              <input
+                className="create-form-input"
+                type="number"
+                value={maxLongSide}
+                onChange={e => setMaxLongSide(e.target.value)}
+                min="100"
+                max="10000"
+              />
+              <span className="create-form-candidates">
+                {compressLoading
+                  ? t.tasks.candidatesLoading
+                  : compressCount === null
+                    ? t.tasks.candidatesLoading
+                    : t.tasks.compressCandidatesCount
+                        .replace("{{count}}", String(compressCount.count))
+                        .replace("{{total}}", String(compressCount.total_images))}
+              </span>
+            </div>
+          )}
 
           {hasScope && (
             <div className="create-form-field">

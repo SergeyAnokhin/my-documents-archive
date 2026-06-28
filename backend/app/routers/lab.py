@@ -57,13 +57,14 @@ async def _auto_analyze(text: str, db: Session) -> dict | None:
 
 
 def _doc_image(doc_id: int, db: Session) -> bytes:
+    from ..services.ai_vision import _get_max_image_size
     doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not Path(doc.filepath).exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
-        return lab.load_image(doc.filepath)
+        return lab.load_image(doc.filepath, max_size=_get_max_image_size(db))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot load image: {e}")
 

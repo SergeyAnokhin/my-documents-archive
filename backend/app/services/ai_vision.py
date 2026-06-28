@@ -100,7 +100,7 @@ async def describe_document(
         return None
 
     try:
-        img_bytes = load_first_page(filepath)
+        img_bytes = load_first_page(filepath, max_size=_get_max_image_size(db))
     except Exception as e:
         log.warning("Vision: cannot load image from %s: %s", filepath, e)
         return None
@@ -158,15 +158,25 @@ async def run_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = 
 
 # ── Image loading ─────────────────────────────────────────────────────────────
 
-def load_first_page(filepath: str) -> bytes:
-    """Return first document page as resized JPEG bytes (max 1024px)."""
+def _get_max_image_size(db) -> int:
+    """Read vision_max_image_size from AppSettings; default 1024."""
+    from ..models import AppSettings
+    try:
+        row = db.query(AppSettings).filter(AppSettings.key == "vision_max_image_size").first()
+        return int(row.value) if row else 1024
+    except (ValueError, TypeError, Exception):
+        return 1024
+
+
+def load_first_page(filepath: str, max_size: int = 1024) -> bytes:
+    """Return first document page as resized JPEG bytes (max_size on long side)."""
     path = Path(filepath)
     if path.suffix.lower() == ".pdf":
         img = _pdf_first_page(path)
     else:
         img = Image.open(filepath).convert("RGB")
 
-    img.thumbnail((1024, 1024), Image.LANCZOS)
+    img.thumbnail((max_size, max_size), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     return buf.getvalue()

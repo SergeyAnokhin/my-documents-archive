@@ -112,7 +112,16 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         "batch_ocr_gemini": batch_ocr_scope1,
         "batch_analysis_gemini": batch_analysis_count,
         "cleanup_missing": None,
+        "compress_images": None,
     }
+
+
+@router.get("/candidates/compress")
+def get_compress_count(threshold: int = 1024):
+    """Return how many image files have long side > threshold pixels."""
+    from ..services.image_compress import count_compress_candidates
+    over, total = count_compress_candidates(threshold)
+    return {"count": over, "total_images": total}
 
 
 @router.get("/candidates/scope")
@@ -241,6 +250,7 @@ from ..services.task_runtime import (  # noqa: E402
 )
 from ..services.batch_ocr import run_batch_ocr_gemini, run_batch_ocr_mistral  # noqa: E402
 from ..services.batch_analysis import run_batch_analysis_gemini  # noqa: E402
+from ..services.image_compress import run_compress_images  # noqa: E402
 
 
 async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
@@ -265,6 +275,8 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await run_batch_analysis_gemini(task_id, config)
         elif task_type == "cleanup_missing":
             await _cleanup_missing(task_id, config)
+        elif task_type == "compress_images":
+            await run_compress_images(task_id, config)
         else:
             _log(task_id, f"Unknown task type: {task_type}", "error")
             _finish(task_id, "error")
