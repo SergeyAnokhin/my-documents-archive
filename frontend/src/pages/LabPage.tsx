@@ -305,6 +305,8 @@ export function LabPage() {
     }));
   };
 
+  const hasTransformChange = outputScale !== 1 || !!cropRect || outputRotation !== 0 || (imageInfo?.can_adjust_quality && outputQuality !== 85);
+
   // ── Auto-preview on transform change (400 ms debounce) ───────────────────────
   useEffect(() => {
     if (!hasTransformChange || isPdf) {
@@ -412,8 +414,6 @@ export function LabPage() {
   const imgSrc = previewResult
     ? `data:image/jpeg;base64,${previewResult.image_b64}`
     : `${downloadUrl}&v=${imgVersion}`;
-
-  const hasTransformChange = outputScale !== 1 || !!cropRect || outputRotation !== 0 || (imageInfo?.can_adjust_quality && outputQuality !== 85);
 
   return (
     <div className="lab">

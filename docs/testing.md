@@ -18,6 +18,9 @@ the same Python env that runs the services — pytest must be importable there.
 Output is intentionally terse: pytest runs with `-q --tb=short` (baked into each
 `pytest.ini`), vitest with `--reporter=dot`. On success only totals print.
 
+The frontend suite runs `tsc --noEmit` before vitest so TypeScript errors are caught
+locally rather than first surfacing in a Docker build.
+
 ## What is covered
 
 | Suite | File | Pins |

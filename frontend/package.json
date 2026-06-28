@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run --reporter=dot"
+    "test": "tsc --noEmit && vitest run --reporter=dot"
   },
   "dependencies": {
     "react": "^18.3.1",
