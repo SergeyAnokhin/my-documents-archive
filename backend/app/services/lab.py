@@ -415,9 +415,9 @@ async def judge(
     try:
         if img_bytes is not None:
             prompt = f"{system}\n\n{user_msg}"
-            raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt)
+            raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt, json_mode=True)
         else:
-            raw, tin, tout, cost = await ai_analysis.run_text(provider, system, user_msg)
+            raw, tin, tout, cost = await ai_analysis.run_text(provider, system, user_msg, json_mode=True)
     except Exception as e:
         # Paid external service — log full error so issues are cheap to diagnose.
         log.error("Judge: %s API call failed: %s", provider_label, e)
@@ -429,7 +429,22 @@ async def judge(
         provider_label, ms, tin, tout, cost,
     )
 
-    result = _parse_json(raw)
+    try:
+        result = _parse_json(raw)
+    except (json.JSONDecodeError, ValueError):
+        # Model returned prose instead of JSON — show the raw text as the verdict summary.
+        log.warning("Judge: %s returned non-JSON, showing raw response as summary", provider_label)
+        return {
+            "rankings": [],
+            "best": "",
+            "summary": raw.strip(),
+            "corrected": "",
+            "fields": None,
+            "cost": cost,
+            "ms": ms,
+            "tokens_in": tin,
+            "tokens_out": tout,
+        }
     result["cost"] = cost
     result["ms"] = ms
     result["tokens_in"] = tin

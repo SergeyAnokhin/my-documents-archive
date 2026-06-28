@@ -145,15 +145,15 @@ def _parse_vision_full(raw: str) -> Optional[dict]:
         return None
 
 
-async def run_vision(provider, img_bytes: bytes, prompt: str) -> tuple[str, int, int, float]:
+async def run_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = False) -> tuple[str, int, int, float]:
     """Send an image + prompt to one vision provider. Returns (text, tokens_in, tokens_out, cost)."""
     ptype = provider.provider_type
     if ptype == "gemini":
-        return await _call_gemini(provider, img_bytes, prompt)
+        return await _call_gemini(provider, img_bytes, prompt, json_mode=json_mode)
     if ptype == "mistral":
         return await _call_mistral_ocr(provider, img_bytes)
     b64 = base64.b64encode(img_bytes).decode()
-    return await _call_openai_compat(provider, b64, prompt)
+    return await _call_openai_compat(provider, b64, prompt, json_mode=json_mode)
 
 
 # ── Image loading ─────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ def _get_providers(db: Session) -> list:
 
 # ── Provider calls ────────────────────────────────────────────────────────────
 
-async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
+async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT, json_mode: bool = False) -> tuple[str, int, int, float]:
     import openai
     extra = getattr(provider, "extra_params", None) or {}
     model = getattr(provider, "model", None) or VISION_DEFAULTS.get(provider.provider_type, "gpt-4o-mini")
@@ -231,6 +231,8 @@ async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -
     create_kwargs: dict = {"model": model, "max_tokens": int(extra.get("max_tokens", 2048))}
     if "temperature" in extra:
         create_kwargs["temperature"] = float(extra["temperature"])
+    if json_mode:
+        create_kwargs["response_format"] = {"type": "json_object"}
     resp = await client.chat.completions.create(
         **create_kwargs,
         messages=[{
@@ -298,7 +300,7 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
     return text, 0, 0, cost
 
 
-async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
+async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT, json_mode: bool = False) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     extra = getattr(provider, "extra_params", None) or {}
     model_name = getattr(provider, "model", None) or VISION_DEFAULTS["gemini"]
@@ -308,6 +310,8 @@ async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT) 
     gen_cfg: dict = {"max_output_tokens": int(extra.get("max_tokens", 2048))}
     if "temperature" in extra:
         gen_cfg["temperature"] = float(extra["temperature"])
+    if json_mode:
+        gen_cfg["response_mime_type"] = "application/json"
     resp = await asyncio.to_thread(
         gm.generate_content,
         [prompt, image_part],

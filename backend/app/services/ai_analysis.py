@@ -169,19 +169,19 @@ def _get_providers(db: Session) -> list:
 
 # ── Provider dispatch ──────────────────────────────────────────────────────────
 
-async def run_text(provider, system: str, user_msg: str) -> tuple[str, int, int, float]:
+async def run_text(provider, system: str, user_msg: str, json_mode: bool = False) -> tuple[str, int, int, float]:
     """Send a system + user prompt to one text provider. Returns (text, tokens_in, tokens_out, cost)."""
-    return await _call_provider(provider, user_msg, system)
+    return await _call_provider(provider, user_msg, system, json_mode=json_mode)
 
 
-async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
+async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
     """Return (raw_text, tokens_in, tokens_out, cost_usd)."""
     if provider.provider_type == "gemini":
-        return await _call_gemini(provider, user_msg, system)
-    return await _call_openai_compatible(provider, user_msg, system)
+        return await _call_gemini(provider, user_msg, system, json_mode=json_mode)
+    return await _call_openai_compatible(provider, user_msg, system, json_mode=json_mode)
 
 
-async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
+async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
     import openai
     model_defaults = {
         "openai":     "gpt-4o-mini",
@@ -209,7 +209,7 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
             {"role": "user",   "content": user_msg},
         ],
     }
-    if provider.provider_type == "openai":
+    if provider.provider_type == "openai" or json_mode:
         create_kwargs["response_format"] = {"type": "json_object"}
 
     resp = await client.chat.completions.create(**create_kwargs)
@@ -223,14 +223,17 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
     return text, tin, tout, cost
 
 
-async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
+async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
     import google.generativeai as genai
     model_name = getattr(provider, "model", None) or "gemini-2.5-flash"
     genai.configure(api_key=provider.api_key)
     gm = genai.GenerativeModel(model_name, system_instruction=system)
+    gen_cfg: dict = {"max_output_tokens": 1024}
+    if json_mode:
+        gen_cfg["response_mime_type"] = "application/json"
     resp = await asyncio.to_thread(
         gm.generate_content, user_msg,
-        generation_config={"max_output_tokens": 1024},
+        generation_config=gen_cfg,
     )
     um = getattr(resp, "usage_metadata", None)
     tin  = int(getattr(um, "prompt_token_count", 0) or 0)
