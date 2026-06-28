@@ -50,10 +50,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   // ── Zoom / Pan / Rotation ───────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [viewRotation, setViewRotation] = useState(0);
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
-  const viewRotationRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const didAutoFitRef = useRef(false);
@@ -61,6 +59,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
 
   // ── Crop mode (lifted here so reset can be triggered on doc change) ─────────
   const [cropMode, setCropMode] = useState(false);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Image editing ────────────────────────────────────────────────────────────
   const armAutoFit = useCallback(() => { didAutoFitRef.current = false; }, []);
@@ -80,10 +86,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     didAutoFitRef.current = false;
     zoomRef.current = 1;
     panRef.current = { x: 0, y: 0 };
-    viewRotationRef.current = 0;
     setZoom(1);
     setPan({ x: 0, y: 0 });
-    setViewRotation(0);
     setCropMode(false);
     setLocalTags(undefined);
     setLocalDate(undefined);
@@ -195,11 +199,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     if (!canvas || !img || img.naturalWidth === 0) return;
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
-    const rotated = viewRotationRef.current === 90 || viewRotationRef.current === 270;
-    const iw = rotated ? img.naturalHeight : img.naturalWidth;
-    const ih = rotated ? img.naturalWidth : img.naturalHeight;
-    const fitZoom = Math.max(0.05, Math.min((cw - 24) / iw, (ch - 24) / ih));
-    const fitPan = { x: (cw - iw * fitZoom) / 2, y: (ch - ih * fitZoom) / 2 };
+    const fitZoom = Math.max(0.05, Math.min((cw - 24) / img.naturalWidth, (ch - 24) / img.naturalHeight));
+    const fitPan = { x: (cw - img.naturalWidth * fitZoom) / 2, y: (ch - img.naturalHeight * fitZoom) / 2 };
     zoomRef.current = fitZoom;
     panRef.current = fitPan;
     setZoom(fitZoom);
@@ -209,20 +210,6 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const handleZoomReset = () => {
     didAutoFitRef.current = false;
     handleImgLoad();
-  };
-
-  const rotateCcw = () => {
-    const newR = (viewRotationRef.current - 90 + 360) % 360;
-    viewRotationRef.current = newR;
-    setViewRotation(newR);
-    handleZoomReset();
-  };
-
-  const rotateCw = () => {
-    const newR = (viewRotationRef.current + 90) % 360;
-    viewRotationRef.current = newR;
-    setViewRotation(newR);
-    handleZoomReset();
   };
 
   const zoomAround = (factor: number) => {
@@ -256,9 +243,35 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   // Show preview data when available (preview contains the transform applied to original)
   const imgSrc = resolveImgSrc(imageEdit.previewResult?.image_b64, rawImgSrc);
 
-  // During crop mode or when preview is shown, suppress view-only CSS rotation
-  // so crop coordinates match original image pixel space
-  const displayRotation = (cropMode || imageEdit.previewResult) ? 0 : viewRotation;
+  const onImage = activeTab === "preview" && !isPdf && !!rawImgSrc;
+
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (!doc) return;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (e.key === "ArrowLeft") { if (hasPrev) { e.preventDefault(); onPrev?.(); } }
+    else if (e.key === "ArrowRight") { if (hasNext) { e.preventDefault(); onNext?.(); } }
+    else if (onImage && (e.key === "+" || e.key === "=")) { e.preventDefault(); zoomAround(1.25); }
+    else if (onImage && (e.key === "-" || e.key === "_")) { e.preventDefault(); zoomAround(1 / 1.25); }
+    else if (onImage && e.key === " ") { e.preventDefault(); handleZoomReset(); }
+    else if (onImage && e.key === "ArrowUp") { e.preventDefault(); imageEdit.setOutputRotation(r => (r - 90 + 360) % 360); }
+    else if (onImage && e.key === "ArrowDown") { e.preventDefault(); imageEdit.setOutputRotation(r => (r + 90) % 360); }
+    else if (onImage && (e.key === "c" || e.key === "C")) { e.preventDefault(); setCropMode(m => !m); if (cropMode) imageEdit.setCropRect(null); }
+    else if (onImage && e.key === "1") { e.preventDefault(); imageEdit.setOutputScale(1); }
+    else if (onImage && e.key === "2") { e.preventDefault(); imageEdit.setOutputScale(0.75); }
+    else if (onImage && e.key === "3") { e.preventDefault(); imageEdit.setOutputScale(0.5); }
+    else if (onImage && e.key === "4") { e.preventDefault(); imageEdit.setOutputScale(0.25); }
+    else if (onImage && e.key === "5") { e.preventDefault(); imageEdit.setOutputScale(0.1); }
+    else if (e.key === "Escape") {
+      e.preventDefault();
+      if (cropMode) { setCropMode(false); imageEdit.setCropRect(null); }
+      else if (imageEdit.hasTransformChange || !!imageEdit.previewResult) { imageEdit.handleCancel(); }
+      else { onClose(); }
+    } else if (onImage && e.key === "Enter" && (imageEdit.hasTransformChange || !!imageEdit.previewResult) && !imageEdit.isApplying) {
+      e.preventDefault();
+      imageEdit.handleApply();
+    }
+  };
 
   const lab = t.lab;
 
@@ -279,16 +292,6 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
               </button>
               <button className="icon-btn" title="Fit to screen" onClick={handleZoomReset}>
                 <Maximize size={14} />
-              </button>
-              <span className="viewer-toolbar-sep" />
-              <button className="icon-btn" title="Rotate left (view only)" onClick={rotateCcw}>
-                <RotateCcw size={14} />
-              </button>
-              {viewRotation !== 0 && (
-                <span className="viewer-zoom-pct">{viewRotation}°</span>
-              )}
-              <button className="icon-btn" title="Rotate right (view only)" onClick={rotateCw}>
-                <RotateCw size={14} />
               </button>
               <span className="viewer-toolbar-sep" />
               <button
@@ -411,20 +414,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                 }}
               >
                 <div style={{ position: "relative", display: "inline-block" }}>
-                  <div style={{
-                    display: "inline-block",
-                    transformOrigin: "50% 50%",
-                    transform: displayRotation ? `rotate(${displayRotation}deg)` : undefined,
-                  }}>
-                    <img
-                      ref={imgRef}
-                      src={imgSrc}
-                      alt={doc.filename}
-                      className="viewer-doc-img"
-                      onLoad={handleImgLoad}
-                      draggable={false}
-                    />
-                  </div>
+                  <img
+                    ref={imgRef}
+                    src={imgSrc}
+                    alt={doc.filename}
+                    className="viewer-doc-img"
+                    onLoad={handleImgLoad}
+                    draggable={false}
+                  />
                   {cropMode && !imageEdit.previewResult && (
                     <div
                       className="viewer-crop-overlay"

@@ -278,6 +278,12 @@ export function LabPage() {
     else if (e.key === " ") { e.preventDefault(); handleZoomReset(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); imageEdit.setOutputRotation(r => (r - 90 + 360) % 360); }
     else if (e.key === "ArrowDown") { e.preventDefault(); imageEdit.setOutputRotation(r => (r + 90) % 360); }
+    else if (!isPdf && (e.key === "c" || e.key === "C")) { e.preventDefault(); setCropMode(m => !m); if (cropMode) imageEdit.setCropRect(null); }
+    else if (!isPdf && e.key === "1") { e.preventDefault(); imageEdit.setOutputScale(1); }
+    else if (!isPdf && e.key === "2") { e.preventDefault(); imageEdit.setOutputScale(0.75); }
+    else if (!isPdf && e.key === "3") { e.preventDefault(); imageEdit.setOutputScale(0.5); }
+    else if (!isPdf && e.key === "4") { e.preventDefault(); imageEdit.setOutputScale(0.25); }
+    else if (!isPdf && e.key === "5") { e.preventDefault(); imageEdit.setOutputScale(0.1); }
     else if (e.key === "Escape") {
       e.preventDefault();
       if (cropMode) { setCropMode(false); imageEdit.setCropRect(null); }
