@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -7,6 +8,11 @@ from .config import settings
 from .database import init_db
 from .routers import documents, upload, search, admin, indexing, lab
 from .routers.tasks import router as tasks_router
+
+
+class _SuppressHealthCheck(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET /api/health" not in record.getMessage()
 
 app = FastAPI(
     title="DocIntel API",
@@ -33,6 +39,7 @@ app.include_router(tasks_router)
 
 @app.on_event("startup")
 def on_startup():
+    logging.getLogger("uvicorn.access").addFilter(_SuppressHealthCheck())
     init_db()
     settings.thumbnails_dir.mkdir(parents=True, exist_ok=True)
 

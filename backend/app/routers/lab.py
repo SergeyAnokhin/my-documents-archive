@@ -7,10 +7,13 @@ and have a "premium" provider judge the results. See services/lab.py.
 """
 
 import base64
+import logging
 from datetime import datetime as _dt
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+
+log = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -194,7 +197,7 @@ async def preview_transform_endpoint(doc_id: int, body: LabTransformRequest, db:
     if not Path(doc.filepath).exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
-        jpeg_bytes, w, h = lab.preview_transform(doc.filepath, body.crop, body.scale, body.quality)
+        jpeg_bytes, w, h = lab.preview_transform(doc.filepath, body.crop, body.scale, body.quality, body.rotation)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Preview failed: {e}")
     return LabPreviewResult(
@@ -212,7 +215,7 @@ async def apply_transform_endpoint(doc_id: int, body: LabTransformRequest, db: S
     if not Path(doc.filepath).exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
-        new_w, new_h, new_size = lab.apply_transform(doc.filepath, body.crop, body.scale, body.quality)
+        new_w, new_h, new_size = lab.apply_transform(doc.filepath, body.crop, body.scale, body.quality, body.rotation)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Apply failed: {e}")
     doc.file_size = new_size
@@ -237,5 +240,12 @@ async def run_judge(body: LabJudgeRequest, db: Session = Depends(get_db)):
     try:
         result = await lab.judge(candidates, provider, db, img_bytes=img, language=body.language)
     except Exception as e:
+        log.error(
+            "Judge endpoint error: provider=%s (id=%d), doc_id=%d, "
+            "candidates=[%s], use_image=%s — %s",
+            provider.name, provider.id, body.doc_id,
+            ", ".join(c["label"] for c in candidates),
+            body.use_image, e,
+        )
         raise HTTPException(status_code=502, detail=f"Judge failed: {e}")
     return LabJudgeResult(**result)

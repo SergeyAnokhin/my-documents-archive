@@ -159,6 +159,13 @@
   letter-spacing: 0.3px;
   flex-shrink: 0;
 }
+.lab-preview-badge--loading {
+  animation: lab-badge-pulse 0.9s ease-in-out infinite;
+}
+@keyframes lab-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 .lab-preview-inline-tag {
   display: inline-block;
   background: #f59e0b;

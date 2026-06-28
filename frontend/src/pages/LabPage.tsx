@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, ZoomIn, ZoomOut, Maximize, Play, Scale,
-  Terminal, Scissors, Eye, Check,
+  Terminal, Scissors, Check, RotateCcw, RotateCw,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
@@ -57,6 +57,7 @@ export function LabPage() {
   const [imageInfo, setImageInfo] = useState<LabImageInfo | null>(null);
   const [outputScale, setOutputScale] = useState<number>(1);
   const [outputQuality, setOutputQuality] = useState<number>(85);
+  const [outputRotation, setOutputRotation] = useState<number>(0);
   const [cropMode, setCropMode] = useState(false);
   const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [previewResult, setPreviewResult] = useState<LabPreviewResult | null>(null);
@@ -68,15 +69,25 @@ export function LabPage() {
   const cropOverlayRef = useRef<HTMLDivElement>(null);
   const isCroppingRef = useRef(false);
   const cropStartRef = useRef<{ x: number; y: number } | null>(null);
+  const autoPreviewCtrl = useRef<AbortController | null>(null);
+  // Stable keyboard listener — updated every render, registered once
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   // ── Zoom / Pan (extracted) ─────────────────────────────────────────────────────
   const isPdf = doc?.mime_type === "application/pdf" || !!doc?.filename.toLowerCase().endsWith(".pdf");
   const {
-    zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, onCanvasMouseDown,
+    zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, armAutoFit, onCanvasMouseDown,
   } = useImageTransform({ canvasRef, imgRef, cropMode, isPdf, resetKey: id });
 
   // ── Panel resize ─────────────────────────────────────────────────────────────
   const { panelWidth, onResizerDown } = usePanelResize();
+
+  // ── Keyboard listener — stable registration, handler ref updated every render ─
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Floating text modal ──────────────────────────────────────────────────────
   const [expandedResult, setExpandedResult] = useState<LabResult | null>(null);
@@ -294,41 +305,81 @@ export function LabPage() {
     }));
   };
 
-  // ── Image transform handlers ──────────────────────────────────────────────────
-  const handlePreview = async () => {
-    setIsPreviewing(true);
-    try {
-      const params: LabTransformParams = {};
-      if (outputScale !== 1) params.scale = outputScale;
-      if (cropRect) params.crop = cropRect;
-      if (imageInfo?.can_adjust_quality && outputQuality !== 85) params.quality = outputQuality;
-      const result = await previewLabTransform(docId, params);
-      setPreviewResult(result);
-      addLog(`→ Preview: ${result.width}×${result.height} · ${formatFileSize(result.file_size)}`, "ok");
-    } catch (e) {
-      addLog(`✗ Preview: ${(e as Error).message}`, "err");
-    } finally {
+  // ── Auto-preview on transform change (400 ms debounce) ───────────────────────
+  useEffect(() => {
+    if (!hasTransformChange || isPdf) {
+      autoPreviewCtrl.current?.abort();
+      autoPreviewCtrl.current = null;
+      setPreviewResult(null);
       setIsPreviewing(false);
+      return;
     }
+    autoPreviewCtrl.current?.abort();
+    const ctrl = new AbortController();
+    autoPreviewCtrl.current = ctrl;
+    setIsPreviewing(true);
+    const params: LabTransformParams = {};
+    if (outputScale !== 1) params.scale = outputScale;
+    if (cropRect) params.crop = cropRect;
+    if (imageInfo?.can_adjust_quality && outputQuality !== 85) params.quality = outputQuality;
+    if (outputRotation) params.rotation = outputRotation;
+    const t = setTimeout(async () => {
+      if (ctrl.signal.aborted) return;
+      try {
+        const result = await previewLabTransform(docId, params);
+        if (!ctrl.signal.aborted) {
+          setPreviewResult(result);
+          armAutoFit();
+          addLog(`→ Preview: ${result.width}×${result.height} · ${formatFileSize(result.file_size)}`, "ok");
+        }
+      } catch (e) {
+        if (!ctrl.signal.aborted) addLog(`✗ Preview: ${(e as Error).message}`, "err");
+      } finally {
+        if (!ctrl.signal.aborted) {
+          setIsPreviewing(false);
+          autoPreviewCtrl.current = null;
+        }
+      }
+    }, 400);
+    return () => { clearTimeout(t); ctrl.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputRotation, outputScale, cropRect, outputQuality, docId, hasTransformChange, isPdf]);
+
+  // ── Image transform handlers ──────────────────────────────────────────────────
+  const handleCancel = () => {
+    autoPreviewCtrl.current?.abort();
+    autoPreviewCtrl.current = null;
+    setPreviewResult(null);
+    setIsPreviewing(false);
+    setOutputScale(1);
+    setOutputQuality(85);
+    setOutputRotation(0);
+    setCropRect(null);
+    setCropMode(false);
   };
 
   const handleApply = async () => {
     if (!window.confirm(lab.applyConfirm)) return;
+    autoPreviewCtrl.current?.abort();
+    autoPreviewCtrl.current = null;
     setIsApplying(true);
     try {
       const params: LabTransformParams = {};
       if (outputScale !== 1) params.scale = outputScale;
       if (cropRect) params.crop = cropRect;
       if (imageInfo?.can_adjust_quality && outputQuality !== 85) params.quality = outputQuality;
+      if (outputRotation) params.rotation = outputRotation;
       const result = await applyLabTransform(docId, params);
       setImageInfo(prev => prev ? { ...prev, width: result.width, height: result.height, file_size: result.file_size } : prev);
       setPreviewResult(null);
       setOutputScale(1);
       setOutputQuality(85);
+      setOutputRotation(0);
       setCropRect(null);
       setCropMode(false);
       setApplyDone(true);
       setImgVersion(v => v + 1);
+      armAutoFit();
       addLog(`✓ Applied: ${result.width}×${result.height} · ${formatFileSize(result.file_size)}`, "ok");
       setTimeout(() => setApplyDone(false), 2500);
     } catch (e) {
@@ -338,8 +389,23 @@ export function LabPage() {
     }
   };
 
-  const handleDiscardPreview = () => {
-    setPreviewResult(null);
+  // Update keyboard handler every render so it always closes over fresh state
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomAround(1.25); }
+    else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomAround(1 / 1.25); }
+    else if (e.key === " ") { e.preventDefault(); handleZoomReset(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); setOutputRotation(r => (r - 90 + 360) % 360); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); setOutputRotation(r => (r + 90) % 360); }
+    else if (e.key === "Escape") {
+      e.preventDefault();
+      if (cropMode) { setCropMode(false); setCropRect(null); }
+      else if (hasTransformChange || !!previewResult) { handleCancel(); }
+    } else if (e.key === "Enter" && (hasTransformChange || !!previewResult) && !isApplying) {
+      e.preventDefault();
+      handleApply();
+    }
   };
 
   const downloadUrl = `/api/documents/${docId}/download?inline=1`;
@@ -347,7 +413,7 @@ export function LabPage() {
     ? `data:image/jpeg;base64,${previewResult.image_b64}`
     : `${downloadUrl}&v=${imgVersion}`;
 
-  const hasTransformChange = outputScale !== 1 || !!cropRect || (imageInfo?.can_adjust_quality && outputQuality !== 85);
+  const hasTransformChange = outputScale !== 1 || !!cropRect || outputRotation !== 0 || (imageInfo?.can_adjust_quality && outputQuality !== 85);
 
   return (
     <div className="lab">
@@ -366,16 +432,16 @@ export function LabPage() {
         {/* Left — document */}
         <div className="lab-doc">
           <div className="lab-doc-toolbar">
-            <button className="icon-btn" title={lab.zoomOut} onClick={() => zoomAround(1 / 1.25)}>
+            <button className="icon-btn" title={`${lab.zoomOut} (−)`} onClick={() => zoomAround(1 / 1.25)}>
               <ZoomOut size={16} />
             </button>
             <span className="text-xs text-muted" style={{ minWidth: 42, textAlign: "center" }}>
               {Math.round(zoom * 100)}%
             </span>
-            <button className="icon-btn" title={lab.zoomIn} onClick={() => zoomAround(1.25)}>
+            <button className="icon-btn" title={`${lab.zoomIn} (+)`} onClick={() => zoomAround(1.25)}>
               <ZoomIn size={16} />
             </button>
-            <button className="icon-btn" title={lab.resetZoom} onClick={handleZoomReset}>
+            <button className="icon-btn" title={`${lab.resetZoom} (Space)`} onClick={handleZoomReset}>
               <Maximize size={16} />
             </button>
             {!isPdf && (
@@ -383,7 +449,7 @@ export function LabPage() {
                 <div className="lab-toolbar-sep" />
                 <button
                   className={`icon-btn${cropMode ? " active" : ""}`}
-                  title={cropMode ? lab.cropClear : lab.cropTool}
+                  title={cropMode ? lab.cropClear : `${lab.cropTool} — ${lab.cropHint}`}
                   onClick={() => { setCropMode(m => !m); if (cropMode) setCropRect(null); }}
                 >
                   <Scissors size={16} />
@@ -398,7 +464,10 @@ export function LabPage() {
                 }
               </span>
             )}
-            {previewResult && (
+            {isPreviewing && (
+              <span className="lab-preview-badge lab-preview-badge--loading">{lab.previewTag}</span>
+            )}
+            {previewResult && !isPreviewing && (
               <span className="lab-preview-badge">{lab.previewTag}</span>
             )}
           </div>
@@ -410,7 +479,6 @@ export function LabPage() {
                 className="lab-select2"
                 value={String(outputScale)}
                 onChange={e => setOutputScale(Number(e.target.value))}
-                disabled={!!previewResult}
               >
                 <option value="1">100% — {lab.original}</option>
                 <option value="0.75">75%</option>
@@ -426,45 +494,58 @@ export function LabPage() {
                     type="range" min="10" max="95" step="5"
                     value={outputQuality}
                     onChange={e => setOutputQuality(Number(e.target.value))}
-                    disabled={!!previewResult}
                     className="lab-slider2"
                   />
                   <span className="text-xs" style={{ minWidth: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{outputQuality}</span>
                 </>
               )}
+              <div className="lab-toolbar-sep" />
+              <button
+                className="icon-btn"
+                title={`${lab.rotateLeft} (←)`}
+                onClick={() => setOutputRotation(r => (r - 90 + 360) % 360)}
+              >
+                <RotateCcw size={15} />
+              </button>
+              {outputRotation !== 0 && (
+                <span className="text-xs text-muted" style={{ minWidth: 30, textAlign: "center" }}>
+                  {outputRotation}°
+                </span>
+              )}
+              <button
+                className="icon-btn"
+                title={`${lab.rotateRight} (→)`}
+                onClick={() => setOutputRotation(r => (r + 90) % 360)}
+              >
+                <RotateCw size={15} />
+              </button>
               {cropMode && cropRect && cropRect.w > 0 && (
                 <>
                   <div className="lab-toolbar-sep" />
                   <span className="text-xs text-muted">{lab.cropSelected}: {cropRect.w}×{cropRect.h}</span>
                 </>
               )}
-              <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-                {previewResult ? (
-                  <>
-                    <Button
-                      variant="primary" size="sm"
-                      icon={<Check size={13} />}
-                      loading={isApplying}
-                      onClick={handleApply}
-                    >
-                      {applyDone ? lab.applyDone : lab.applyBtn}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={handleDiscardPreview}>
-                      {lab.discardPreview}
-                    </Button>
-                  </>
-                ) : (
+              {(hasTransformChange || !!previewResult) && (
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                   <Button
-                    variant="secondary" size="sm"
-                    icon={<Eye size={13} />}
-                    loading={isPreviewing}
-                    disabled={!hasTransformChange}
-                    onClick={handlePreview}
+                    variant="ghost" size="sm"
+                    title={`${lab.cancelEdit} (Esc)`}
+                    onClick={handleCancel}
+                    disabled={isApplying}
                   >
-                    {lab.previewBtn}
+                    {lab.cancelEdit}
                   </Button>
-                )}
-              </div>
+                  <Button
+                    variant="primary" size="sm"
+                    icon={<Check size={13} />}
+                    loading={isApplying}
+                    title={`${applyDone ? lab.applyDone : lab.applyBtn} (Enter)`}
+                    onClick={handleApply}
+                  >
+                    {applyDone ? lab.applyDone : lab.applyBtn}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

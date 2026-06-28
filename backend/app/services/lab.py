@@ -197,7 +197,12 @@ def _open_doc_image(filepath: str) -> Image.Image:
     return Image.open(filepath).convert("RGB")
 
 
-def _apply_crop_scale(img: Image.Image, crop: Optional[dict], scale: Optional[float]) -> Image.Image:
+def _apply_transforms(
+    img: Image.Image,
+    crop: Optional[dict],
+    scale: Optional[float],
+    rotation: Optional[int],
+) -> Image.Image:
     if crop:
         x = max(0, int(crop.get("x", 0)))
         y = max(0, int(crop.get("y", 0)))
@@ -212,6 +217,9 @@ def _apply_crop_scale(img: Image.Image, crop: Optional[dict], scale: Optional[fl
         new_w = max(1, round(img.width * scale))
         new_h = max(1, round(img.height * scale))
         img = img.resize((new_w, new_h), Image.LANCZOS)
+    if rotation and rotation % 360 != 0:
+        # PIL rotates counter-clockwise; negate for clockwise user-facing rotation
+        img = img.rotate(-rotation % 360, expand=True)
     return img
 
 
@@ -220,10 +228,11 @@ def preview_transform(
     crop: Optional[dict],
     scale: Optional[float],
     quality: Optional[int],
+    rotation: Optional[int] = None,
 ) -> tuple[bytes, int, int]:
     """Return (jpeg_bytes, new_width, new_height) for a transform preview."""
     img = _open_doc_image(filepath)
-    img = _apply_crop_scale(img, crop, scale)
+    img = _apply_transforms(img, crop, scale, rotation)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=max(10, min(95, quality or 85)))
     return buf.getvalue(), img.width, img.height
@@ -234,6 +243,7 @@ def apply_transform(
     crop: Optional[dict],
     scale: Optional[float],
     quality: Optional[int],
+    rotation: Optional[int] = None,
 ) -> tuple[int, int, int]:
     """
     Apply transform permanently to the file.
@@ -248,7 +258,7 @@ def apply_transform(
         original_format = img_orig.format
         img = img_orig.convert("RGB")
 
-    img = _apply_crop_scale(img, crop, scale)
+    img = _apply_transforms(img, crop, scale, rotation)
 
     save_fmt = _SAVE_FMT.get(suffix, original_format or "JPEG")
     q = max(10, min(95, quality or 85))
@@ -392,14 +402,31 @@ async def judge(
     )
 
     system = _judge_system(img_bytes is not None, language)
+    provider_label = (
+        f"{getattr(provider, 'name', '?')} "
+        f"[{provider.provider_type}/{getattr(provider, 'model', None) or 'default'}]"
+    )
+    log.info(
+        "Judge: calling %s, candidates=%d, with_image=%s",
+        provider_label, len(candidates), img_bytes is not None,
+    )
     start = time.perf_counter()
-    if img_bytes is not None:
-        prompt = f"{system}\n\n{user_msg}"
-        raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt)
-    else:
-        raw, tin, tout, cost = await ai_analysis.run_text(provider, system, user_msg)
+    try:
+        if img_bytes is not None:
+            prompt = f"{system}\n\n{user_msg}"
+            raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt)
+        else:
+            raw, tin, tout, cost = await ai_analysis.run_text(provider, system, user_msg)
+    except Exception as e:
+        # Paid external service — log full error so issues are cheap to diagnose.
+        log.error("Judge: %s API call failed: %s", provider_label, e)
+        raise
     ms = int((time.perf_counter() - start) * 1000)
     _update_stats(db, provider, tin, tout, cost)
+    log.info(
+        "Judge: %s — %d ms, tokens in=%d out=%d, cost=$%.5f",
+        provider_label, ms, tin, tout, cost,
+    )
 
     result = _parse_json(raw)
     result["cost"] = cost
@@ -419,7 +446,16 @@ def _parse_json(raw: str) -> dict:
         lines = text.split("\n")
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
         text = "\n".join(lines[1:end])
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # Paid external service returned unparseable JSON — log the full raw
+        # response so it's easy to reproduce and fix without burning tokens again.
+        log.error(
+            "Judge: JSON parse failed — %s\nRaw response (%d chars):\n%.3000s",
+            e, len(raw), raw,
+        )
+        raise
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────────

@@ -201,6 +201,7 @@ export interface LabTransformParams {
   crop?: { x: number; y: number; w: number; h: number };
   scale?: number;
   quality?: number;
+  rotation?: number; // 0, 90, 180, 270 — clockwise degrees
 }
 
 export interface LabPreviewResult {

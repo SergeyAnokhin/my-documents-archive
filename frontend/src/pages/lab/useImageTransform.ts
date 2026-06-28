@@ -107,6 +107,11 @@ export function useImageTransform({ canvasRef, imgRef, cropMode, isPdf, resetKey
     handleImgLoad();
   }, [handleImgLoad]);
 
+  /** Call before changing imgSrc so the next onLoad auto-fits the new image. */
+  const armAutoFit = useCallback(() => {
+    didAutoFitRef.current = false;
+  }, []);
+
   const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     if (cropMode || isPdf || e.button !== 0) return;
     panStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: pan.x, panY: pan.y };
@@ -114,5 +119,5 @@ export function useImageTransform({ canvasRef, imgRef, cropMode, isPdf, resetKey
     e.preventDefault();
   }, [cropMode, isPdf, pan.x, pan.y, canvasRef]);
 
-  return { zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, onCanvasMouseDown };
+  return { zoom, pan, zoomRef, zoomAround, handleImgLoad, handleZoomReset, armAutoFit, onCanvasMouseDown };
 }

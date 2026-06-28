@@ -7,10 +7,10 @@ Path("logs").mkdir(exist_ok=True)
 
 
 class _SuppressTasksPoll(logging.Filter):
-    """Drop the high-frequency GET /api/tasks polling noise from access logs."""
+    """Drop high-frequency polling noise from access logs."""
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        return "GET /api/tasks" not in msg
+        return "GET /api/tasks" not in msg and "GET /api/health" not in msg
 
 _LOG_CONFIG = {
     "version": 1,

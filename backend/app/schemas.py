@@ -330,9 +330,10 @@ class LabImageInfo(BaseModel):
 
 
 class LabTransformRequest(BaseModel):
-    crop: Optional[dict] = None   # {x, y, w, h} in original image pixels
-    scale: Optional[float] = None # 0.1 … 1.0 (downscale factor)
-    quality: Optional[int] = None # 10 … 95
+    crop: Optional[dict] = None     # {x, y, w, h} in original image pixels
+    scale: Optional[float] = None   # 0.1 … 1.0 (downscale factor)
+    quality: Optional[int] = None   # 10 … 95
+    rotation: Optional[int] = None  # 0, 90, 180, 270 — clockwise degrees
 
 
 class LabPreviewResult(BaseModel):
