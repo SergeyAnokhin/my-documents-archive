@@ -168,6 +168,7 @@ export const refreshArenaRatings = () =>
 
 export const reclassifyAll = () => api.post("/admin/reclassify-all");
 export const reclassifyUnclassified = () => api.post("/admin/reclassify-unclassified");
+export const recluster = () => api.post("/admin/recluster");
 
 export const getAppSettings = () => api.get<Record<string, string>>("/admin/settings");
 export const updateAppSettings = (body: Record<string, string>) =>

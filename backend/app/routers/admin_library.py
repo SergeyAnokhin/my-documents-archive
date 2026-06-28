@@ -230,6 +230,20 @@ async def _run_reclassify_unclassified_bg(limit: int) -> None:
     logging.getLogger(__name__).info("Admin reclassify-unclassified complete: %s", result)
 
 
+@router.post("/recluster")
+async def recluster(background_tasks: BackgroundTasks):
+    """Cluster all analyzed documents by summary content, then name clusters via LLM."""
+    background_tasks.add_task(_run_recluster_bg)
+    return {"message": "Cluster-based recategorization queued"}
+
+
+async def _run_recluster_bg() -> None:
+    from ..services.recluster import run_recluster
+    import logging
+    result = await run_recluster()
+    logging.getLogger(__name__).info("Admin recluster complete: %s", result)
+
+
 # ── Log ───────────────────────────────────────────────────────────────────────
 
 _LEVEL_RANK = {"trace": 5, "debug": 10, "info": 20, "warning": 30, "error": 40}

@@ -96,11 +96,19 @@ def get_candidate_counts(db: Session = Depends(get_db)):
 
     batch_ocr_scope1 = _scope_filter(db.query(Document), 1).count()
 
+    recluster_count = base.filter(
+        Document.ocr_status == "done",
+        Document.analysis_status == "done",
+        Document.summary.isnot(None),
+        Document.summary != "",
+    ).count()
+
     return {
         "index_unindexed": pending,
         "sync_library": None,
         "reclassify_unclassified": reclassify_unclassified_count,
         "reclassify_all": reclassify_all_count,
+        "recluster": recluster_count,
         "batch_ocr_mistral": batch_ocr_scope1,
         "batch_ocr_gemini": batch_ocr_scope1,
         "batch_analysis_gemini": batch_analysis_count,
@@ -245,6 +253,8 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await _reclassify_unclassified(task_id, config)
         elif task_type == "reclassify_all":
             await _reclassify_all(task_id, config)
+        elif task_type == "recluster":
+            await _recluster(task_id, config)
         elif task_type == "batch_ocr_mistral":
             await run_batch_ocr_mistral(task_id, config)
         elif task_type == "batch_ocr_gemini":
@@ -378,6 +388,15 @@ async def _reclassify_all(task_id: int, config: dict) -> None:
     result = await reclassify_pending_batch(limit)
     _finish(task_id, "done", result if isinstance(result, dict) else {"result": str(result)})
     _log(task_id, f"Done — {result}")
+
+
+async def _recluster(task_id: int, config: dict) -> None:
+    from ..services.recluster import run_recluster
+
+    _log(task_id, "Starting: cluster-based recategorization of all analyzed documents")
+    result = await run_recluster(task_id=task_id)
+    _finish(task_id, "done", result)
+    _log(task_id, f"Done — {result.get('applied', 0)} documents in {result.get('clusters', 0)} clusters")
 
 
 async def _cleanup_missing(task_id: int, config: dict) -> None:

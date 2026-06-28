@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
-import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, getAppSettings, updateAppSettings, getWorkerStatus, updateTypeIcons } from "../../../api/documents";
+import { getStats, syncLibrary, reclassifyAll, reclassifyUnclassified, recluster, getAppSettings, updateAppSettings, getWorkerStatus, updateTypeIcons } from "../../../api/documents";
 import { setCustomTypeIcons } from "../../documents/typeIcons";
 import { api } from "../../../api/client";
 import type { IndexingStats, LabWorkerStatus } from "../../../types";
@@ -14,6 +14,7 @@ export function IndexingTab() {
   const [batching, setBatching] = useState(false);
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyingUnclassified, setReclassifyingUnclassified] = useState(false);
+  const [reclustering, setReclustering] = useState(false);
   const [updatingIcons, setUpdatingIcons] = useState(false);
   const [msg, setMsg] = useState("");
   const [syncResult, setSyncResult] = useState<{ added: number; removed: number } | null>(null);
@@ -119,6 +120,18 @@ export function IndexingTab() {
       flash(e instanceof Error ? e.message : t.error);
     } finally {
       setReclassifyingUnclassified(false);
+    }
+  };
+
+  const handleRecluster = async () => {
+    setReclustering(true);
+    try {
+      await recluster();
+      flash("Cluster-based recategorization started in background…");
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setReclustering(false);
     }
   };
 
@@ -239,6 +252,9 @@ export function IndexingTab() {
         </Button>
         <Button variant="secondary" loading={reclassifyingUnclassified} onClick={handleReclassifyUnclassified}>
           {ix.reclassifyUnclassifiedButton}
+        </Button>
+        <Button variant="secondary" loading={reclustering} onClick={handleRecluster}>
+          {ix.reclusterButton}
         </Button>
         <Button variant="secondary" loading={updatingIcons} onClick={handleUpdateIcons}>
           {ix.updateIconsButton}

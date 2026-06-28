@@ -229,6 +229,7 @@ export type TaskType =
   | "sync_library"
   | "reclassify_unclassified"
   | "reclassify_all"
+  | "recluster"
   | "batch_ocr_mistral"
   | "batch_ocr_gemini"
   | "batch_analysis_gemini"

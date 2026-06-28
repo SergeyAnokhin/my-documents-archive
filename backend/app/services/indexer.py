@@ -384,11 +384,20 @@ def _apply_analysis_result(doc: Document, result: AnalysisResult, db: Session) -
     touch status or api_cost columns — the caller owns those, since cost lands in
     `api_cost_vision` vs `api_cost_analysis` depending on which step produced it.
     """
+    old_type = doc.document_type
+    new_type = result.document_type
+
     doc.summary                   = result.summary
-    doc.document_type             = result.document_type
+    doc.document_type             = new_type
     doc.classification_confidence = result.document_type_confidence
     doc.classification_source     = "auto"
-    doc.tags               = result.tags
+
+    # Merge LLM tags with old type preserved (old type → tag when reclassifying)
+    new_tags = list(result.tags or [])
+    if old_type and old_type not in ("unclassified", "other") and old_type != new_type:
+        if old_type not in new_tags:
+            new_tags.append(old_type)
+    doc.tags               = new_tags
     doc.language           = result.language
     doc.organization       = result.organization
     doc.amount             = result.amount

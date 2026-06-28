@@ -47,7 +47,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
 | `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
 | `services/type_icon_suggestion.py` | Suggests Lucide icon names for custom document types via LLM. `suggest_icons_for_types(slugs, db)` → calls AI provider once per type, resolves conflicts (max 5 retries), saves results under AppSettings key `custom_type_icons`. `get_pending_custom_types(db)` returns types in the library that lack a custom icon. Exposed via `GET /api/admin/type-icons` and `POST /api/admin/update-type-icons`. |
-| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Batch ops: `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
+| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Preserves old `document_type` in tags when type changes during reclassification. Batch ops: `reclassify_pending_batch()` (unanalyzed docs); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag) |
+| `services/recluster.py` | Cluster-based recategorization: clean summaries (strip tags/names/dates) → embed (sentence-transformers) → auto-select k via silhouette score → k-means → LLM names each cluster (type slug + icon) → apply (old type preserved in tags). Entry point: `run_recluster(task_id=None)`. Endpoint: `POST /api/admin/recluster`. Task type: `recluster`. |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
 | `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
@@ -201,6 +202,7 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 | `sync_library` | Scan library + index new files |
 | `reclassify_unclassified` | AI classification for unclassified docs |
 | `reclassify_all` | Re-run AI analysis on all docs |
+| `recluster` | Cluster-based recategorization of all analyzed docs (silhouette k-selection + LLM naming) |
 | `batch_ocr_mistral` | Async batch OCR via Mistral Batch API (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
 | `batch_ocr_gemini` | Async batch OCR via Gemini Batch Mode (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
 
