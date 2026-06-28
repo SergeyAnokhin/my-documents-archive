@@ -207,6 +207,10 @@ class PatchTypeRequest(BaseModel):
     document_type: str
 
 
+class PatchDateRequest(BaseModel):
+    date: Optional[datetime] = None
+
+
 class IndexingStats(BaseModel):
     total: int
     indexed: int

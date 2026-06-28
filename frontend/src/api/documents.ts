@@ -49,6 +49,9 @@ export const deleteDocument = (id: number) => api.delete(`/documents/${id}`);
 export const updateTags = (id: number, tags: string[]) =>
   api.patch<Document>(`/documents/${id}/tags`, tags);
 
+export const clearDocumentDate = (id: number) =>
+  api.patch<Document>(`/documents/${id}/date`, { date: null });
+
 export const patchDocumentType = (id: number, document_type: string) =>
   api.patch<Document>(`/documents/${id}/type`, { document_type });
 

@@ -1,7 +1,14 @@
+import { X } from "lucide-react";
 import type { ExtractedFields } from "../../types";
 
 /** Compact chips summarising the structured fields extracted from a result. */
-export function FieldChips({ fields }: { fields: ExtractedFields }) {
+export function FieldChips({
+  fields,
+  onRemove,
+}: {
+  fields: ExtractedFields;
+  onRemove?: (key: string) => void;
+}) {
   const chips: { key: string; value: string }[] = [];
   if (fields.document_type) chips.push({ key: "type", value: fields.document_type.replace(/_/g, " ") });
   if (fields.document_date) chips.push({ key: "date", value: fields.document_date });
@@ -19,6 +26,15 @@ export function FieldChips({ fields }: { fields: ExtractedFields }) {
       {chips.map(c => (
         <span key={c.key} className={`lab-field-chip lab-field-chip--${c.key}`} title={c.key}>
           {c.value}
+          {onRemove && (
+            <button
+              className="lab-field-chip-remove"
+              onClick={() => onRemove(c.key)}
+              title="Remove"
+            >
+              <X size={9} />
+            </button>
+          )}
         </span>
       ))}
     </div>

@@ -177,6 +177,21 @@
   gap: var(--sp-1);
 }
 
+.tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.5;
+  line-height: 1;
+}
+.tag-remove:hover { opacity: 1; }
+
 .viewer-ocr-text {
   white-space: pre-wrap;
   word-break: break-word;

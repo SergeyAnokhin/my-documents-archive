@@ -183,6 +183,23 @@ export function LabPage() {
   const upsert = (r: LabResult) =>
     setResults(prev => [...prev.filter(p => p.label !== r.label), r]);
 
+  const handleFieldRemove = (resultId: string, fieldKey: string) => {
+    const keyMap: Record<string, string[]> = {
+      type: ["document_type"],
+      date: ["document_date"],
+      person: ["person_first_name", "person_last_name"],
+      org: ["organization"],
+      amount: ["amount", "amount_currency"],
+      lang: ["language"],
+    };
+    setResults(prev => prev.map(r => {
+      if (r.id !== resultId || !r.fields) return r;
+      const next = { ...r.fields };
+      for (const k of keyMap[fieldKey] ?? [fieldKey]) delete (next as Record<string, unknown>)[k];
+      return { ...r, fields: next };
+    }));
+  };
+
   // ── Crop overlay mousedown ────────────────────────────────────────────────────
   const onCropOverlayMouseDown = (e: React.MouseEvent) => {
     if (!cropMode || !cropOverlayRef.current) return;
@@ -398,8 +415,8 @@ export function LabPage() {
     if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomAround(1.25); }
     else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomAround(1 / 1.25); }
     else if (e.key === " ") { e.preventDefault(); handleZoomReset(); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setOutputRotation(r => (r - 90 + 360) % 360); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); setOutputRotation(r => (r + 90) % 360); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setOutputRotation(r => (r - 90 + 360) % 360); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setOutputRotation(r => (r + 90) % 360); }
     else if (e.key === "Escape") {
       e.preventDefault();
       if (cropMode) { setCropMode(false); setCropRect(null); }
@@ -707,6 +724,7 @@ export function LabPage() {
               onSave={handleSave}
               onExpand={r => { setExpandedResult(r); setModalPos({ x: 24, y: 80 }); }}
               onRemove={id => setResults(prev => prev.filter(x => x.id !== id))}
+              onFieldRemove={handleFieldRemove}
             />
           </section>
 

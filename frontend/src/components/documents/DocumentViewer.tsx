@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical, ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
-import { reclassifyDocument, reindexDocument } from "../../api/documents";
+import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
 import { TypePicker } from "./TypePicker";
 import "./DocumentViewer.css";
 
@@ -39,6 +39,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   // Local type state so badge updates immediately after save
   const [localType, setLocalType] = useState<string | undefined>(undefined);
   const [localManual, setLocalManual] = useState<boolean | undefined>(undefined);
+  const [localTags, setLocalTags] = useState<string[] | undefined>(undefined);
+  const [localDate, setLocalDate] = useState<string | undefined | null>(undefined);
 
   // ── Zoom / Pan / Rotation ───────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1);
@@ -53,7 +55,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
   const didAutoFitRef = useRef(false);
   const canvasPanStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
 
-  // Reset zoom/pan/rotation when switching documents
+  // Reset zoom/pan/rotation and local metadata when switching documents
   useEffect(() => {
     didAutoFitRef.current = false;
     zoomRef.current = 1;
@@ -62,6 +64,8 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setViewRotation(0);
+    setLocalTags(undefined);
+    setLocalDate(undefined);
   }, [doc?.id]);
 
   // Global pan tracking
@@ -116,6 +120,24 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
 
   const displayType = localType !== undefined ? localType : doc?.document_type;
   const displayManual = localManual !== undefined ? localManual : doc?.manually_classified;
+  const displayTags = localTags !== undefined ? localTags : (doc?.tags ?? []);
+  const displayDate = localDate !== undefined ? localDate : doc?.document_date;
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!doc) return;
+    const next = displayTags.filter(t => t !== tag);
+    setLocalTags(next);
+    try { await updateTags(doc.id, next); } catch { setLocalTags(displayTags); }
+  };
+
+  const handleRemoveDate = async () => {
+    if (!doc) return;
+    setLocalDate(null);
+    try {
+      const updated = await clearDocumentDate(doc.id);
+      setLocalDate(updated.document_date ?? null);
+    } catch { setLocalDate(displayDate); }
+  };
 
   const flashDev = (msg: string) => { setDevMsg(msg); setTimeout(() => setDevMsg(""), 4000); };
 
@@ -327,11 +349,18 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                   />
                 </div>
 
-                {doc.tags && doc.tags.length > 0 && (
+                {displayTags.length > 0 && (
                   <div className="viewer-meta-row">
                     <span className="viewer-meta-label"><Tag size={13}/> Tags</span>
                     <div className="viewer-tags">
-                      {doc.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}
+                      {displayTags.map((tag) => (
+                        <span key={tag} className="tag">
+                          {tag}
+                          <button className="tag-remove" onClick={() => handleRemoveTag(tag)} title="Remove tag">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -353,10 +382,15 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                     <span>{[doc.person_first_name, doc.person_last_name].filter(Boolean).join(" ")}</span>
                   </div>
                 )}
-                {doc.document_date && (
+                {displayDate && (
                   <div className="viewer-meta-row">
                     <span className="viewer-meta-label">Date</span>
-                    <span>{formatDate(doc.document_date)}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {formatDate(displayDate)}
+                      <button className="tag-remove" onClick={handleRemoveDate} title="Remove date">
+                        <X size={10} />
+                      </button>
+                    </span>
                   </div>
                 )}
                 {doc.amount != null && (

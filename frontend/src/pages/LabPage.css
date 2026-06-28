@@ -594,7 +594,24 @@
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
+.lab-field-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.5;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.lab-field-chip-remove:hover { opacity: 1; }
 .lab-field-chip--type { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
 .lab-field-chip--date { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 .lab-field-chip--person { background: #fef3c7; color: #92400e; border-color: #fde68a; }

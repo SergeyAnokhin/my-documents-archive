@@ -13,6 +13,7 @@ export function ResultsList({
   onSave,
   onExpand,
   onRemove,
+  onFieldRemove,
 }: {
   results: LabResult[];
   bestLabels: Set<string>;
@@ -21,6 +22,7 @@ export function ResultsList({
   onSave: (r: LabResult) => void;
   onExpand: (r: LabResult) => void;
   onRemove: (id: string) => void;
+  onFieldRemove?: (resultId: string, fieldKey: string) => void;
 }) {
   const { t } = useT();
   const lab = t.lab;
@@ -62,7 +64,10 @@ export function ResultsList({
               </button>
             </div>
             {r.fields && Object.keys(r.fields).length > 0 && (
-              <FieldChips fields={r.fields} />
+              <FieldChips
+                fields={r.fields}
+                onRemove={onFieldRemove ? (key) => onFieldRemove(r.id, key) : undefined}
+              />
             )}
             <pre className="lab-card-text">{r.text || "—"}</pre>
           </div>
