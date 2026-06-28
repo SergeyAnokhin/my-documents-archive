@@ -43,6 +43,10 @@ frontend:
 ingress:
   enabled: true
   className: traefik
-  host: my-documents-archive.lan
+  # nip.io resolves *.192.168.1.X.nip.io → 192.168.1.X via public DNS — no router config needed.
+  # Replace X with the last octet of your k3s node IP (kubectl get nodes -o wide).
+  host: my-documents-archive.192.168.1.97.nip.io
+  tls: true                # enables HTTPS via cert-manager; set false to keep HTTP only
+  certIssuer: home-ca      # ClusterIssuer defined in deploy/k8s/cert-manager/home-ca.yaml
   # DocIntel backend serves routes AT /api/... already, so DO NOT strip the prefix.
   stripApiPrefix: false

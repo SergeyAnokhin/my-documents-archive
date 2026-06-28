@@ -82,27 +82,27 @@ After a restore the user reloads the page.
 
 ## Human-only steps
 
-Все команды ниже выполняются **один раз** на машине с доступом к кластеру (`kubectl`).
-Общий контракт платформы — [k3s-platform-deployment.md §6](k3s-platform-deployment.md#6-human-only-checklist-cannot-be-done-by-the-agent).
+All commands below are executed **once** on a machine with cluster access (`kubectl`).
+Generic platform contract — [k3s-platform-deployment.md §6](k3s-platform-deployment.md#6-human-only-checklist-cannot-be-done-by-the-agent).
 
-### Шаг 1 — Первый билд и публичность пакетов GHCR
+### Step 1 — First build and making GHCR packages public
 
-1. Сделай любой коммит в `main` (например, пустой `git commit --allow-empty`) или
-   запусти workflow вручную: GitHub → Actions → **build-and-push** → Run workflow.
-2. Дождись зелёного результата — GitHub Actions создаст ветку `deploy` и
-   запушит образы в GHCR.
-3. Сделай оба образа публичными (иначе кластер не сможет их скачать без pull-secret):
-   - GitHub → репозиторий → **Packages** (правая колонка или вкладка)
-   - Открой `my-documents-archive/backend` → Package settings → **Change visibility → Public**
-   - Повтори для `my-documents-archive/frontend`
+1. Make any commit to `main` (e.g. an empty `git commit --allow-empty`) or
+   trigger the workflow manually: GitHub → Actions → **build-and-push** → Run workflow.
+2. Wait for a green result — GitHub Actions will create the `deploy` branch and
+   push images to GHCR.
+3. Make both images public (otherwise the cluster cannot pull them without a pull secret):
+   - GitHub → repository → **Packages** (right sidebar or tab)
+   - Open `my-documents-archive/backend` → Package settings → **Change visibility → Public**
+   - Repeat for `my-documents-archive/frontend`
 
-### Шаг 2 — Установка SMB CSI driver (если ещё не стоит)
+### Step 2 — Install SMB CSI driver (if not already installed)
 
 ```bash
-# Проверить, не установлен ли уже:
+# Check if already installed:
 kubectl -n kube-system get pods | grep csi-smb
 
-# Если нет — установить:
+# If not — install:
 helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
 helm repo update
 helm install csi-driver-smb csi-driver-smb/csi-driver-smb \
@@ -110,78 +110,168 @@ helm install csi-driver-smb csi-driver-smb/csi-driver-smb \
   --set controller.replicas=1
 ```
 
-### Шаг 3 — Создание namespace и секрета с NAS-кредами
+### Step 3 — Create namespace and NAS credentials secret
 
 ```bash
-# Namespace создаёт ArgoCD автоматически, но для секрета он нужен заранее:
+# ArgoCD creates the namespace automatically, but the secret needs it in advance:
 kubectl create namespace my-documents-archive
 
-# SMB-кред: пользователь и пароль из Synology (тот, что ты создал для шары my-documents-archive)
+# SMB credentials: username and password from Synology (created for the my-documents-archive share)
 kubectl create secret generic my-documents-archive-smb-creds \
   -n my-documents-archive \
   --from-literal=username=my-doc \
-  --from-literal=password=<ПАРОЛЬ_ИЗ_SYNOLOGY>
+  --from-literal=password=<SYNOLOGY_PASSWORD>
 ```
 
-> Пароль вводи прямо в терминале — никогда не сохраняй в файлах в репозитории.
+> Enter the password directly in the terminal — never save it in repository files.
 
-### Шаг 4 — Регистрация приложения в ArgoCD
+### Step 4 — Register the application in ArgoCD
 
 ```bash
 kubectl apply -f deploy/argocd/application.yaml
 
-# Подождать синхронизации (занимает ~1 минуту):
+# Wait for sync (~1 minute):
 kubectl -n argocd get application my-documents-archive
-# Ожидаемый результат: STATUS=Synced  HEALTH=Healthy
+# Expected result: STATUS=Synced  HEALTH=Healthy
 ```
 
-Или открой ArgoCD UI (обычно `https://<node-ip>:30443` или `https://argocd.local`)
-и проверь, что приложение `my-documents-archive` появилось и перешло в `Healthy`.
+Or open the ArgoCD UI (usually `https://<node-ip>:30443` or `https://argocd.local`)
+and verify that the `my-documents-archive` application appears and transitions to `Healthy`.
 
-### Шаг 5 — DNS / hosts
+### Step 5 — DNS and access from mobile devices
 
-На каждой машине, с которой хочешь открывать приложение, добавь строку в `hosts`
-(`C:\Windows\System32\drivers\etc\hosts` на Windows, `/etc/hosts` на Linux/Mac):
+**Default method — nip.io (no router configuration needed):**
+
+nip.io is a public DNS service: `anything.<IP>.nip.io` always resolves to `<IP>`
+via standard DNS. No hosts file or router configuration required.
+Works on phones, tablets, and any device.
+
+> **Why router DNS doesn't work on mobile:** Android 9+ and iOS 14+ use
+> DNS-over-HTTPS (Google/Cloudflare), bypassing the router's DNS. So even a correctly
+> configured router (`my-documents-archive.lan` → `192.168.1.97`) is ignored by phones.
+> nip.io solves this through public DNS.
+
+Cluster: `k3s` (192.168.1.97). Host is already set in `values.yaml`:
 
 ```
-192.168.1.X  my-documents-archive.lan
+my-documents-archive.192.168.1.97.nip.io   → DocIntel (this project)
+otherapp.192.168.1.97.nip.io               → another project (example)
 ```
 
-где `192.168.1.X` — IP любого узла кластера (Traefik слушает на всех нодах).
-Можно узнать: `kubectl get nodes -o wide`.
+Traefik routes them by Host header; same port (80 or 443).
 
-После этого открывай: **http://my-documents-archive.lan**
+Open from any device on the home WiFi:
+**http://my-documents-archive.192.168.1.97.nip.io**
+(or https:// after setting up cert-manager below)
 
-### Шаг 6 — Первичная синхронизация существующих документов
+> **nip.io limitation:** requires internet access for DNS resolution.
+> If WiFi has no internet — use a hosts file entry as a fallback.
 
-Watcher работает в режиме «только новые файлы»; существующие документы на NAS
-**не подберутся автоматически**. Чтобы проиндексировать то, что уже лежит на шаре:
+**Fallback — hosts file (PC/Mac only, does not work on mobile):**
 
-Открой UI → **Администрирование** → вкладка **Индексирование** → кнопка **Синхронизировать**.
+```
+# C:\Windows\System32\drivers\etc\hosts  (Windows)
+# /etc/hosts  (Linux/Mac)
+192.168.1.97  my-documents-archive.192.168.1.97.nip.io
+```
 
-### Проверка после деплоя
+### Step 5a — HTTPS with automatic certificate renewal (optional)
+
+After completing Step 5, HTTPS can be configured. Certificates are issued and renewed
+by **cert-manager** — no manual intervention ever needed.
+
+The approach: a local CA (root certificate) is created, installed on the device
+**once**, and cert-manager issues TLS certificates from it for all applications and
+renews them automatically (by default 30 days before expiry).
+
+#### 5a.1 — Install cert-manager
 
 ```bash
-# Поды Running?
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+kubectl -n cert-manager rollout status deploy/cert-manager   # wait ~1 min
+```
+
+#### 5a.2 — Create local CA
+
+```bash
+kubectl apply -f deploy/k8s/cert-manager/home-ca.yaml
+# Verify ClusterIssuer is ready:
+kubectl get clusterissuer home-ca
+```
+
+#### 5a.3 — Install CA certificate on device
+
+```bash
+# Export CA to file:
+kubectl get secret home-ca-secret -n cert-manager \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > home-ca.crt
+```
+
+- **iPhone:** send `home-ca.crt` by email or AirDrop →
+  Settings → General → VPN & Device Management → tap the profile → Install →
+  then Settings → General → About → Certificate Trust Settings →
+  enable "Home K3s CA".
+- **Android:** Settings → Security → Install certificate →
+  CA certificate → select `home-ca.crt`.
+
+#### 5a.4 — Enable TLS in values.yaml (already enabled by default)
+
+Confirm that `values.yaml` contains:
+```yaml
+ingress:
+  tls: true
+  certIssuer: home-ca
+```
+
+Push to `main` → ArgoCD picks it up → cert-manager issues the certificate (~30 sec).
+
+#### 5a.5 — Verify HTTPS
+
+```bash
+# Certificate issued?
+kubectl -n my-documents-archive get certificate
+# Expected: READY=True
+
+# TLS secret created?
+kubectl -n my-documents-archive get secret my-documents-archive-tls
+```
+
+Open `https://my-documents-archive.192.168.1.97.nip.io` on the phone — the padlock
+should be closed with no warnings.
+
+### Step 6 — Initial sync of existing documents
+
+The watcher runs in "new files only" mode; existing documents on the NAS
+**will not be picked up automatically**. To index files already on the share:
+
+Open UI → **Admin** → **Indexing** tab → click **Sync**.
+
+### Post-deploy verification
+
+```bash
+# Pods Running?
 kubectl -n my-documents-archive get pods -o wide
 
-# PVC примонтированы?
+# PVCs mounted?
 kubectl -n my-documents-archive get pvc
 
-# Ingress зарегистрирован?
+# Ingress registered?
 kubectl -n my-documents-archive get ingress
 
-# Логи backend:
+# Backend logs:
 kubectl -n my-documents-archive logs deploy/my-documents-archive-backend
 
-# Логи sidecar-бэкапа:
+# Backup sidecar logs:
 kubectl -n my-documents-archive logs deploy/my-documents-archive-backend -c db-backup
 ```
 
-| Симптом | Вероятная причина |
+| Symptom | Likely cause |
 |---|---|
-| `ImagePullBackOff` | Пакет GHCR ещё приватный — сделай публичным (Шаг 1) |
-| PVC `Pending` | SMB CSI driver не установлен, или IP/путь NAS неверный |
-| Нет доступа к NAS | Секрет с кредами не создан, или пароль неверный |
-| 404 на `/api/*` | Ingress не создан или Traefik перезапускается |
-| ArgoCD не синкается | Ветка `deploy` ещё не создана — запусти билд вручную (Шаг 1) |
+| `ImagePullBackOff` | GHCR package still private — make it public (Step 1) |
+| PVC `Pending` | SMB CSI driver not installed, or NAS IP/path is wrong |
+| No NAS access | Credentials secret not created, or password is wrong |
+| 404 on `/api/*` | Ingress not created or Traefik restarting |
+| ArgoCD not syncing | `deploy` branch not yet created — trigger build manually (Step 1) |
+| nip.io not resolving | No internet access on device; use hosts file as fallback |
+| HTTPS: certificate not issued (`READY=False`) | cert-manager not installed, or `home-ca.yaml` not applied |
+| HTTPS: browser shows warning | CA certificate (`home-ca.crt`) not installed on device (Step 5a.3) |

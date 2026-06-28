@@ -19,12 +19,21 @@ metadata:
   name: {{ $fullName }}
   labels:
     {{- include "app.labels" . | nindent 4 }}
-  {{- if .Values.ingress.stripApiPrefix }}
   annotations:
+    {{- if .Values.ingress.stripApiPrefix }}
     traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ $fullName }}-strip-api@kubernetescrd
-  {{- end }}
+    {{- end }}
+    {{- if .Values.ingress.tls }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.certIssuer | quote }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ $fullName }}-tls
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:

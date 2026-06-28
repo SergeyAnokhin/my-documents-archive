@@ -1,0 +1,49 @@
+# Home K3s CA — установить ОДИН РАЗ вручную (не через ArgoCD/Helm).
+#
+# Порядок:
+#   1. kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+#   2. kubectl -n cert-manager rollout status deploy/cert-manager
+#   3. kubectl apply -f deploy/k8s/cert-manager/home-ca.yaml
+#   4. Экспорт CA для установки на телефон:
+#      kubectl get secret home-ca-secret -n cert-manager \
+#        -o jsonpath='{.data.ca\.crt}' | base64 -d > home-ca.crt
+#
+# После этого cert-manager сам выпускает и обновляет TLS-сертификаты для всех
+# Ingress-ресурсов с аннотацией cert-manager.io/cluster-issuer: home-ca.
+
+# Шаг 1: bootstrap-issuer для создания самого CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+# Шаг 2: корневой CA-сертификат (10 лет, обновляется автоматически)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "Home K3s CA"
+  secretName: home-ca-secret
+  duration: 87600h   # 10 лет
+  renewBefore: 720h  # обновить за 30 дней до истечения
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# Шаг 3: ClusterIssuer для приложений — ссылается на CA выше
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: home-ca
+spec:
+  ca:
+    secretName: home-ca-secret
