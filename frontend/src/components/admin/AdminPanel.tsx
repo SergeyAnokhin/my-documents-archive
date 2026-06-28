@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { JSX } from "react";
 import { BarChart2, Settings, ScrollText, DatabaseBackup, Activity } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { useT } from "../../i18n";

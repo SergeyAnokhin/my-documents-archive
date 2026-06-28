@@ -12,6 +12,7 @@ import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
 import { TypePicker } from "./TypePicker";
 import { useImageEdit } from "../../hooks/useImageEdit";
+import { resolveImgSrc } from "./imgSrc";
 import "./DocumentViewer.css";
 
 interface Props {
@@ -253,9 +254,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
     : docUrl;
   const rawImgSrc = isImageMime ? baseImgUrl : thumbUrl;
   // Show preview data when available (preview contains the transform applied to original)
-  const imgSrc = imageEdit.previewResult
-    ? `data:image/jpeg;base64,${imageEdit.previewResult.image_b64}`
-    : rawImgSrc;
+  const imgSrc = resolveImgSrc(imageEdit.previewResult?.image_b64, rawImgSrc);
 
   // During crop mode or when preview is shown, suppress view-only CSS rotation
   // so crop coordinates match original image pixel space
