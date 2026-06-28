@@ -13,13 +13,6 @@ log = logging.getLogger(__name__)
 # Known pricing per 1M tokens (in, out) and capabilities
 # Prices approximate as of Q2 2025 — check provider docs for current rates
 KNOWN_MODELS: dict[str, dict] = {
-    # Anthropic
-    "claude-haiku-4-5-20251001":  {"name": "Claude Haiku 4.5",        "in": 0.80,   "out": 4.0,   "vision": True,  "ctx": 200_000},
-    "claude-sonnet-4-6":          {"name": "Claude Sonnet 4.6",        "in": 3.0,    "out": 15.0,  "vision": True,  "ctx": 200_000},
-    "claude-opus-4-8":            {"name": "Claude Opus 4.8",          "in": 15.0,   "out": 75.0,  "vision": True,  "ctx": 200_000},
-    "claude-3-5-haiku-20241022":  {"name": "Claude 3.5 Haiku",         "in": 0.80,   "out": 4.0,   "vision": True,  "ctx": 200_000},
-    "claude-3-5-sonnet-20241022": {"name": "Claude 3.5 Sonnet",        "in": 3.0,    "out": 15.0,  "vision": True,  "ctx": 200_000},
-    "claude-3-opus-20240229":     {"name": "Claude 3 Opus",            "in": 15.0,   "out": 75.0,  "vision": True,  "ctx": 200_000},
     # OpenAI
     "gpt-4o-mini":                {"name": "GPT-4o mini",              "in": 0.15,   "out": 0.60,  "vision": True,  "ctx": 128_000},
     "gpt-4o":                     {"name": "GPT-4o",                   "in": 2.50,   "out": 10.0,  "vision": True,  "ctx": 128_000},
@@ -125,8 +118,6 @@ async def fetch_models(
     try:
         if provider_type == "openrouter":
             return await _fetch_openrouter(api_key)
-        if provider_type == "anthropic":
-            return await _fetch_anthropic(api_key)
         if provider_type == "gemini":
             return await _fetch_gemini(api_key)
         if provider_type == "mistral":
@@ -184,17 +175,6 @@ async def _fetch_mistral(api_key: str) -> list[dict]:
         return result
     except Exception:
         return _mistral_ocr_models()
-
-
-async def _fetch_anthropic(api_key: str) -> list[dict]:
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(
-            "https://api.anthropic.com/v1/models",
-            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-        )
-        r.raise_for_status()
-    models = sorted(r.json().get("data", []), key=lambda m: m.get("created_at", ""), reverse=True)
-    return [_enrich(m["id"], m.get("display_name", "")) for m in models]
 
 
 async def _fetch_openai_compat(api_key: str, base_url: str, provider_type: str) -> list[dict]:

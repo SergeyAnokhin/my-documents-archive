@@ -90,9 +90,11 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | GET | `/api/admin/backups` | List DB backup snapshots `[{name, size, modified}]`, newest first. Surfaced in the advanced-mode Backup tab |
 | POST | `/api/admin/backups/restore` | Restore the DB from a snapshot. Body: `{name}`. Replaces the live DB (saves a `docintell.db.pre-restore` copy first); 400 on unknown/invalid name |
 
-`provider_type`: `"anthropic" | "openai" | "gemini" | "deepseek" | "openrouter" | "mistral"`
+`provider_type`: `"openai" | "gemini" | "deepseek" | "openrouter" | "mistral"`
 
-Default models per provider: Anthropic → `claude-haiku-4-5-20251001`, OpenAI → `gpt-4o-mini`, Gemini → `gemini-1.5-flash`, DeepSeek → `deepseek-chat`, OpenRouter → `openai/gpt-4o-mini`, Mistral → `mistral-ocr-latest`
+Default models per provider: OpenAI → `gpt-4o-mini`, Gemini → `gemini-2.5-flash`, DeepSeek → `deepseek-chat`, OpenRouter → `openai/gpt-4o-mini`, Mistral → `mistral-ocr-latest`
+
+`supports_batch` is `true` for `gemini` and `mistral` — they offer a batch API at ~50% discount. Provider objects include this field so the UI can filter to batch-capable providers when creating batch tasks.
 
 `mistral` is vision-only (dedicated OCR endpoint, per-page billing); use it in the Vision section. It transcribes the page verbatim into `vision_description`.
 

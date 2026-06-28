@@ -50,10 +50,8 @@ def test_apply_analysis_result_ignores_invalid_date():
 
 
 def test_is_unclassified_predicate():
-    # Rule (bug fix): reclassify_unclassified_batch only counts a doc as
-    # "classified" when its type is a real category. None / "unclassified" /
-    # "other" all mean still-unclassified — these are the three values the
-    # "classify unclassified" job retries and the stats counter keys on.
+    # Rule: _is_unclassified returns True only for None / "unclassified" / "other" —
+    # these are the three values the batch reclassify jobs target.
     assert _is_unclassified(Document(filename="a", filepath="/a", document_type=None))
     assert _is_unclassified(Document(filename="a", filepath="/a", document_type="unclassified"))
     assert _is_unclassified(Document(filename="a", filepath="/a", document_type="other"))

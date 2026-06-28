@@ -18,7 +18,7 @@ recording must not break the calling pipeline.
 |--------|---------|
 | `created_at` | timestamp (UTC), indexed |
 | `usage_type` | `analysis` · `vision` · `ocr` · `qa` · `suggest_types` · `icon_suggest` · `batch_analysis` · `batch_ocr` · `embedding` |
-| `provider_type` | `anthropic` · `openai` · `gemini` · `mistral` · … · `local` · `worker` |
+| `provider_type` | `openai` · `gemini` · `mistral` · `deepseek` · `openrouter` · `local` · `worker` |
 | `provider_name` | the `AIProvider.name` when known |
 | `model` | model id used |
 | `tokens_in` / `tokens_out` | token counts (0 for OCR/embedding) |

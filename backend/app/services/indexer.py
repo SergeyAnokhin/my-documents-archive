@@ -12,7 +12,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -257,37 +256,6 @@ async def index_pending_batch(limit: int = 50) -> dict:
         db.close()
 
 
-async def reclassify_pending_batch(limit: int = 100) -> dict:
-    """Re-run AI Analysis + Embedding on OCR-done docs not yet analyzed."""
-    db = SessionLocal()
-    try:
-        docs = (
-            db.query(Document)
-            .filter(
-                Document.is_deleted == False,
-                Document.ocr_status == "done",
-                Document.analysis_status != "done",
-            )
-            .limit(limit)
-            .all()
-        )
-        processed = errors = 0
-        for doc in docs:
-            try:
-                doc.analysis_status = "pending"
-                db.commit()
-                await _run_analysis(doc, db)
-                await _run_embedding(doc, db)
-                processed += 1
-            except Exception as e:
-                errors += 1
-                log.error("Reclassify batch: doc %s failed: %s", doc.id, e)
-
-        return {"processed": processed, "errors": errors}
-    finally:
-        db.close()
-
-
 # ── Re-classify single document ───────────────────────────────────────────────
 
 async def reclassify_document(document_id: int) -> None:
@@ -314,65 +282,6 @@ async def reclassify_document(document_id: int) -> None:
 
 def _is_unclassified(doc: Document) -> bool:
     return doc.document_type in (None, "unclassified", "other")
-
-
-async def reclassify_unclassified_batch(limit: int = 200) -> dict:
-    """Re-run AI Analysis on unclassified / 'other' docs that were not manually classified.
-
-    Reports *real* outcomes so the caller can tell whether anything actually
-    changed — a doc can stay unclassified because the LLM returns "unclassified"
-    again, because it has no OCR text, or because no analysis provider is set up.
-    """
-    db = SessionLocal()
-    try:
-        # If no analysis provider is configured, every doc would silently be
-        # "skipped" — surface that as an explicit, actionable result instead.
-        from .ai_analysis import _get_providers
-        if not _get_providers(db):
-            return {"candidates": 0, "classified": 0, "still_unclassified": 0,
-                    "skipped": 0, "errors": 0, "no_provider": True}
-
-        docs = (
-            db.query(Document)
-            .filter(
-                Document.is_deleted == False,
-                Document.ocr_status == "done",
-                Document.manually_classified != True,
-                or_(
-                    Document.document_type == "unclassified",
-                    Document.document_type == "other",
-                    Document.document_type.is_(None),
-                ),
-            )
-            .limit(limit)
-            .all()
-        )
-        candidates = len(docs)
-        classified = still_unclassified = skipped = errors = 0
-        for doc in docs:
-            try:
-                doc.analysis_status = "pending"
-                db.commit()
-                await _run_analysis(doc, db)
-                await _run_embedding(doc, db)
-                if doc.analysis_status == "skipped":
-                    skipped += 1
-                elif _is_unclassified(doc):
-                    still_unclassified += 1
-                else:
-                    classified += 1
-            except Exception as e:
-                errors += 1
-                log.error("Reclassify unclassified: doc %s failed: %s", doc.id, e)
-        return {
-            "candidates": candidates,
-            "classified": classified,
-            "still_unclassified": still_unclassified,
-            "skipped": skipped,
-            "errors": errors,
-        }
-    finally:
-        db.close()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -178,7 +178,10 @@ async def resume_batch_task(task_id: int, background_tasks: BackgroundTasks, db:
         raise HTTPException(404, "Task not found")
     if task.status == "running":
         return {"message": "Task already running"}
-    if task.task_type not in ("batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini"):
+    if task.task_type not in (
+        "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
+        "reclassify_unclassified", "reclassify_all",
+    ):
         raise HTTPException(400, "Only batch tasks support resume")
 
     batch_job_id = (task.result_summary or {}).get("batch_job_id")
@@ -358,36 +361,11 @@ async def _sync_library(task_id: int, config: dict) -> None:
 
 
 async def _reclassify_unclassified(task_id: int, config: dict) -> None:
-    from ..services.indexer import reclassify_unclassified_batch
-
-    limit = int(config.get("limit", 200))
-    _log(task_id, f"Starting: re-classify up to {limit} unclassified document(s)")
-    result = await reclassify_unclassified_batch(limit)
-
-    if result.get("no_provider"):
-        _log(task_id, "No analysis provider configured (need a provider with task "
-                      "'analysis' or 'both'). Nothing was classified.", "error")
-        _finish(task_id, "error", result)
-        return
-
-    _finish(task_id, "done", result)
-    _log(task_id, (
-        f"Done — {result.get('candidates', 0)} candidate(s): "
-        f"{result.get('classified', 0)} classified, "
-        f"{result.get('still_unclassified', 0)} still unclassified, "
-        f"{result.get('skipped', 0)} skipped (no text), "
-        f"{result.get('errors', 0)} error(s)"
-    ))
+    await run_batch_analysis_gemini(task_id, {**config, "doc_scope": "unclassified"})
 
 
 async def _reclassify_all(task_id: int, config: dict) -> None:
-    from ..services.indexer import reclassify_pending_batch
-
-    limit = int(config.get("limit", 200))
-    _log(task_id, f"Starting: re-classify up to {limit} document(s)")
-    result = await reclassify_pending_batch(limit)
-    _finish(task_id, "done", result if isinstance(result, dict) else {"result": str(result)})
-    _log(task_id, f"Done — {result}")
+    await run_batch_analysis_gemini(task_id, {**config, "doc_scope": "pending"})
 
 
 async def _recluster(task_id: int, config: dict) -> None:

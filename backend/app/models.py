@@ -92,10 +92,10 @@ class AIProvider(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(64), nullable=False)
-    provider_type = Column(String(32), nullable=False)  # "anthropic"|"openai"|"gemini"|"deepseek"|"openrouter"
+    provider_type = Column(String(32), nullable=False)  # "openai"|"gemini"|"deepseek"|"openrouter"|"mistral"
     api_key = Column(String(512), nullable=False)
     base_url = Column(String(512), nullable=True)    # custom OpenAI-compatible endpoint
-    model = Column(String(128), nullable=True)       # override default model (e.g. "claude-opus-4-8")
+    model = Column(String(128), nullable=True)       # override default model
     task_type = Column(String(16), default="both")   # "analysis" | "vision" | "both"
     sort_order = Column(Integer, default=0)          # lower = higher priority; tried first in failover chain
     key_name = Column(String(64), nullable=True)     # optional label for the API key (e.g. "Personal", "Work")
@@ -107,6 +107,11 @@ class AIProvider(Base):
     total_cost_usd = Column(Float, default=0.0)
     # Provider-specific fine-tuning options (e.g. image_policy for Mistral, temperature for chat)
     extra_params = Column(JSON, nullable=True)
+
+    @property
+    def supports_batch(self) -> bool:
+        """True when this provider has a batch API (50% discount, async processing)."""
+        return self.provider_type in {"gemini", "mistral"}
 
 
 class AppSettings(Base):
@@ -159,7 +164,7 @@ class AIUsage(Base):
     # What the call was for: analysis|vision|ocr|qa|suggest_types|icon_suggest|
     #                        batch_analysis|batch_ocr|embedding|judge
     usage_type = Column(String(32), index=True)
-    provider_type = Column(String(32), index=True)  # anthropic|openai|gemini|...|local|worker
+    provider_type = Column(String(32), index=True)  # openai|gemini|mistral|deepseek|openrouter|local|worker
     provider_name = Column(String(64), nullable=True)  # AIProvider.name when known
     model = Column(String(128), nullable=True)
     tokens_in = Column(Integer, default=0)

@@ -28,7 +28,7 @@ Both run on the local home network; all access is via browser.
          ↕ HTTP (optional)
 ┌──────────────────────────────────────────────┐
 │  AI Providers (cloud, per-document cost)     │
-│  Anthropic · OpenAI · Gemini · DeepSeek ·    │
+│  OpenAI · Gemini · DeepSeek · Mistral ·      │
 │  OpenRouter                                  │
 └──────────────────────────────────────────────┘
 ```
@@ -40,7 +40,7 @@ Step 1 — OCR         extract text (local Tesseract or external compute worker)
 Step 2 — Thumbnail   generate JPEG preview (Pillow / pdf2image)
 Step 3 — AI Vision   send first page to vision model (optional, toggle in Admin)
            └─ picks first vision-capable provider; skips if disabled or none
-           └─ capable models (Anthropic/OpenAI/Gemini/OpenRouter) use VISION_FULL_PROMPT
+           └─ capable models (OpenAI/Gemini/OpenRouter) use VISION_FULL_PROMPT
               and return text + ALL analysis fields as one JSON → Step 4 is skipped
            └─ Mistral OCR returns plain transcription only → Step 4 still runs
 Step 4 — AI Analysis summary + tags + type + language + org + amount

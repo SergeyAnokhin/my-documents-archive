@@ -96,6 +96,7 @@ export interface AIProvider {
   total_tokens_out: number;
   total_cost_usd: number;
   extra_params?: Record<string, unknown>;
+  supports_batch: boolean;
 }
 
 export interface ProviderModel {

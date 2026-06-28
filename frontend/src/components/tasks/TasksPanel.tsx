@@ -49,9 +49,11 @@ const TYPES_WITH_LIMIT: TaskType[] = [
 // Batch tasks that pick an async provider + poll interval, mapped to the
 // provider_type they require.
 const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
-  batch_ocr_mistral:     "mistral",
-  batch_ocr_gemini:      "gemini",
-  batch_analysis_gemini: "gemini",
+  reclassify_unclassified: "gemini",
+  reclassify_all:          "gemini",
+  batch_ocr_mistral:       "mistral",
+  batch_ocr_gemini:        "gemini",
+  batch_analysis_gemini:   "gemini",
 };
 
 // Default poll interval (seconds) per provider type.
@@ -66,9 +68,11 @@ const TYPES_WITH_SCOPE: TaskType[] = ["batch_ocr_mistral", "batch_ocr_gemini"];
 
 // External documentation links for task types that have official provider docs.
 const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
-  batch_ocr_mistral:     "https://docs.mistral.ai/capabilities/batch/",
-  batch_ocr_gemini:      "https://ai.google.dev/gemini-api/docs/batch-mode",
-  batch_analysis_gemini: "https://ai.google.dev/gemini-api/docs/batch-mode",
+  reclassify_unclassified: "https://ai.google.dev/gemini-api/docs/batch-mode",
+  reclassify_all:          "https://ai.google.dev/gemini-api/docs/batch-mode",
+  batch_ocr_mistral:       "https://docs.mistral.ai/capabilities/batch/",
+  batch_ocr_gemini:        "https://ai.google.dev/gemini-api/docs/batch-mode",
+  batch_analysis_gemini:   "https://ai.google.dev/gemini-api/docs/batch-mode",
 };
 
 // Links to provider batch consoles — shown while the task is running.
@@ -77,7 +81,10 @@ const BATCH_CONSOLE_URLS: Partial<Record<TaskType, string>> = {
 };
 
 // Batch task types that have a remote job and can be monitored / resumed
-const BATCH_TASK_TYPES: TaskType[] = ["batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini"];
+const BATCH_TASK_TYPES: TaskType[] = [
+  "reclassify_unclassified", "reclassify_all",
+  "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
+];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

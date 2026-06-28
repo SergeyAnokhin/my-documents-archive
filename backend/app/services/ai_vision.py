@@ -1,9 +1,9 @@
 """
 AI Vision — Step 3 of the indexing pipeline.
 
-For capable models (Anthropic/OpenAI/Gemini/OpenRouter): sends the first page image
-and asks for a full structured JSON (text + all analysis fields). If successful, the
-indexer skips Step 4 (AI Analysis) entirely.
+For capable models (OpenAI/Gemini/OpenRouter): sends the first page image and asks
+for a full structured JSON (text + all analysis fields). If successful, the indexer
+skips Step 4 (AI Analysis) entirely.
 
 For Mistral OCR: returns plain text transcription; indexer still runs Analysis.
 
@@ -67,10 +67,9 @@ Analyze this scanned document image. Return a single JSON object with these fiel
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
-VISION_CAPABLE = {"anthropic", "openai", "gemini", "openrouter", "mistral"}
+VISION_CAPABLE = {"openai", "gemini", "openrouter", "mistral"}
 
 VISION_DEFAULTS = {
-    "anthropic":  "claude-haiku-4-5-20251001",
     "openai":     "gpt-4o-mini",
     "gemini":     "gemini-2.5-flash",
     "openrouter": "openai/gpt-4o-mini",
@@ -149,9 +148,6 @@ def _parse_vision_full(raw: str) -> Optional[dict]:
 async def run_vision(provider, img_bytes: bytes, prompt: str) -> tuple[str, int, int, float]:
     """Send an image + prompt to one vision provider. Returns (text, tokens_in, tokens_out, cost)."""
     ptype = provider.provider_type
-    if ptype == "anthropic":
-        b64 = base64.b64encode(img_bytes).decode()
-        return await _call_anthropic(provider, b64, prompt)
     if ptype == "gemini":
         return await _call_gemini(provider, img_bytes, prompt)
     if ptype == "mistral":
@@ -206,10 +202,10 @@ def _get_providers(db: Session) -> list:
 
     result = []
     for ptype, key, url in [
-        ("openai",     settings.openai_api_key,      None),
-        ("gemini",     settings.gemini_api_key,      None),
-        ("openrouter", settings.openrouter_api_key,  "https://openrouter.ai/api/v1"),
-        ("mistral",    settings.mistral_api_key,     None),
+        ("openai",     settings.openai_api_key,     None),
+        ("gemini",     settings.gemini_api_key,     None),
+        ("openrouter", settings.openrouter_api_key, "https://openrouter.ai/api/v1"),
+        ("mistral",    settings.mistral_api_key,    None),
     ]:
         if key:
             result.append(SyntheticProvider(ptype, ptype, key, url))
@@ -217,32 +213,6 @@ def _get_providers(db: Session) -> list:
 
 
 # ── Provider calls ────────────────────────────────────────────────────────────
-
-async def _call_anthropic(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
-    import anthropic
-    extra = getattr(provider, "extra_params", None) or {}
-    model = getattr(provider, "model", None) or VISION_DEFAULTS["anthropic"]
-    max_tokens = int(extra.get("max_tokens", 2048))
-    kwargs: dict = {"model": model, "max_tokens": max_tokens}
-    if "temperature" in extra:
-        kwargs["temperature"] = float(extra["temperature"])
-    client = anthropic.AsyncAnthropic(api_key=provider.api_key)
-    resp = await client.messages.create(
-        **kwargs,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image",
-                 "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-                {"type": "text", "text": prompt},
-            ],
-        }],
-    )
-    tin  = resp.usage.input_tokens
-    tout = resp.usage.output_tokens
-    cost = estimate_cost(model, tin, tout)
-    return resp.content[0].text, tin, tout, cost
-
 
 async def _call_openai_compat(provider, b64: str, prompt: str = VISION_PROMPT) -> tuple[str, int, int, float]:
     import openai

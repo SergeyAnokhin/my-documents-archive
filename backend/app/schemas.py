@@ -133,6 +133,7 @@ class AIProviderOut(BaseModel):
     total_tokens_out: int = 0
     total_cost_usd: float = 0.0
     extra_params: Optional[Any] = None
+    supports_batch: bool = False
 
     model_config = {"from_attributes": True}
 

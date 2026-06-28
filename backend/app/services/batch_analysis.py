@@ -37,11 +37,16 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
       provider_id           — AIProvider id to use; falls back to first enabled Gemini
       poll_interval         — seconds between status polls (default 30)
       resume_batch_job_id   — if set, skip submission and resume polling this job
+      doc_scope             — which documents to include:
+                              "needs_analysis" (default) — has ocr_text, no analysis or unclassified
+                              "unclassified"  — ocr done, type is unclassified/other, not manually set
+                              "pending"       — ocr done, analysis_status != "done"
     """
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
     resume_job_id = config.get("resume_batch_job_id")
+    doc_scope = config.get("doc_scope", "needs_analysis")
 
     # ── 1. Resolve provider ───────────────────────────────────────────────────
     db = SessionLocal()
@@ -84,29 +89,61 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             db.close()
     else:
         # ── 2. Collect documents needing analysis ─────────────────────────────
-        # Covers two cases (skipping anything the user classified by hand):
-        #   a) never analyzed       (analysis_status != "done")
-        #   b) analyzed but unclassified / "other" / null type
         from sqlalchemy import or_
         db = SessionLocal()
         try:
-            docs = (
-                db.query(Document)
-                .filter(
-                    Document.is_deleted == False,
-                    Document.ocr_text.isnot(None),
-                    Document.ocr_text != "",
-                    Document.manually_classified != True,
-                    or_(
-                        Document.analysis_status != "done",
-                        Document.document_type == "unclassified",
-                        Document.document_type == "other",
-                        Document.document_type.is_(None),
-                    ),
+            base_q = db.query(Document).filter(Document.is_deleted == False)
+
+            if doc_scope == "unclassified":
+                # reclassify_unclassified: has ocr done, type is unclassified/other, not manually set
+                docs = (
+                    base_q
+                    .filter(
+                        Document.ocr_status == "done",
+                        Document.manually_classified != True,
+                        or_(
+                            Document.document_type == "unclassified",
+                            Document.document_type == "other",
+                            Document.document_type.is_(None),
+                        ),
+                        Document.ocr_text.isnot(None),
+                        Document.ocr_text != "",
+                    )
+                    .limit(limit)
+                    .all()
                 )
-                .limit(limit)
-                .all()
-            )
+            elif doc_scope == "pending":
+                # reclassify_all: ocr done but analysis not yet complete
+                docs = (
+                    base_q
+                    .filter(
+                        Document.ocr_status == "done",
+                        Document.analysis_status != "done",
+                        Document.ocr_text.isnot(None),
+                        Document.ocr_text != "",
+                    )
+                    .limit(limit)
+                    .all()
+                )
+            else:
+                # needs_analysis (default): has text, no analysis or unclassified, not manually set
+                docs = (
+                    base_q
+                    .filter(
+                        Document.ocr_text.isnot(None),
+                        Document.ocr_text != "",
+                        Document.manually_classified != True,
+                        or_(
+                            Document.analysis_status != "done",
+                            Document.document_type == "unclassified",
+                            Document.document_type == "other",
+                            Document.document_type.is_(None),
+                        ),
+                    )
+                    .limit(limit)
+                    .all()
+                )
+
             total = len(docs)
         finally:
             db.close()

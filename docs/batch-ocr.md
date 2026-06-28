@@ -1,22 +1,34 @@
-# Batch OCR (Mistral & Gemini)
+# Batch Tasks (Mistral & Gemini)
 
-Two task types run OCR over many pending documents **asynchronously** through a
-provider's batch API, which is billed at ~50 % of the interactive price. Both
-live in [`backend/app/routers/tasks.py`](../backend/app/routers/tasks.py) and are
-driven from the **Tasks** panel (advanced mode only). They share the same shape:
-submit a remote batch job, then poll until the provider finishes (hours, not
-seconds), and finally write the transcribed text into `Document.ocr_text`.
+Five task types run AI processing **asynchronously** through a provider's batch
+API, billed at ~50 % of the interactive price. All live in
+[`backend/app/routers/tasks.py`](../backend/app/routers/tasks.py) and are driven
+from the **Tasks** panel (advanced mode only).
 
-| Task type | Function | Provider API | Default model |
-|-----------|----------|--------------|---------------|
-| `batch_ocr_mistral` | `_batch_ocr_mistral` | Mistral Batch API, `/v1/ocr` endpoint | `mistral-ocr-latest` |
-| `batch_ocr_gemini`  | `_batch_ocr_gemini`  | Gemini Batch Mode, `:batchGenerateContent` | `gemini-2.5-flash` |
+## Task types
 
-> Mistral has a dedicated OCR endpoint, so the batch runs true OCR. Gemini has
-> **no** OCR endpoint — the batch sends each page to a vision model with a
-> verbatim-transcription prompt (`GEMINI_OCR_PROMPT`) and treats the returned
-> text as OCR. Both write to the same `ocr_text` / `ocr_status` / `ocr_model`
-> columns, so downstream indexing is identical.
+| Task type | Service | Provider API | Document scope |
+|-----------|---------|--------------|----------------|
+| `batch_ocr_mistral` | `batch_ocr.py` | Mistral Batch `/v1/ocr` | `ocr_status="pending"` |
+| `batch_ocr_gemini`  | `batch_ocr.py` | Gemini `:batchGenerateContent` | `ocr_status="pending"` |
+| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | has `ocr_text`, no analysis yet |
+| `reclassify_unclassified` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, type = unclassified/other, not manually set |
+| `reclassify_all` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, `analysis_status != "done"` |
+
+> Mistral has a dedicated OCR endpoint for true OCR. Gemini has **no** OCR
+> endpoint — the batch sends each page to a vision model with a
+> verbatim-transcription prompt and treats the returned text as OCR.
+>
+> `reclassify_unclassified` and `reclassify_all` were formerly synchronous tasks;
+> they now use the Gemini Batch API via `run_batch_analysis_gemini()` with a
+> `doc_scope` parameter selecting the appropriate document set. This makes them
+> 2× cheaper at the cost of async turnaround (up to 24 h).
+
+## Provider batch support
+
+`AIProvider.supports_batch` is a computed property (`True` for `gemini` and
+`mistral`). It is exposed in `AIProviderOut` so the Tasks UI can filter the
+provider picker to only batch-capable providers for batch tasks.
 
 ## Config (task `config` JSON)
 

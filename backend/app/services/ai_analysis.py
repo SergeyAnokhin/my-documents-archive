@@ -7,6 +7,8 @@ Called from indexer._run_analysis() after OCR completes.
 Provider priority: all enabled DB providers with task_type "analysis" or "both",
 sorted by sort_order ASC. Each is tried in turn; on error the next is attempted (failover).
 Falls back to env-var providers if no DB providers are configured.
+
+Supported provider_type values: openai, gemini, deepseek, openrouter, mistral.
 """
 
 import json
@@ -174,28 +176,9 @@ async def run_text(provider, system: str, user_msg: str) -> tuple[str, int, int,
 
 async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
     """Return (raw_text, tokens_in, tokens_out, cost_usd)."""
-    ptype = provider.provider_type
-    if ptype == "anthropic":
-        return await _call_anthropic(provider, user_msg, system)
-    if ptype == "gemini":
+    if provider.provider_type == "gemini":
         return await _call_gemini(provider, user_msg, system)
     return await _call_openai_compatible(provider, user_msg, system)
-
-
-async def _call_anthropic(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
-    import anthropic
-    model = getattr(provider, "model", None) or "claude-haiku-4-5-20251001"
-    client = anthropic.AsyncAnthropic(api_key=provider.api_key)
-    resp = await client.messages.create(
-        model=model,
-        max_tokens=1024,
-        system=system,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    tin  = resp.usage.input_tokens
-    tout = resp.usage.output_tokens
-    cost = estimate_cost(model, tin, tout)
-    return resp.content[0].text, tin, tout, cost
 
 
 async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM) -> tuple[str, int, int, float]:
