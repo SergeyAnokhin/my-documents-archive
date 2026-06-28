@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -281,33 +282,89 @@ async def reclassify_document(document_id: int) -> None:
 
 
 async def reclassify_pending_batch(limit: int = 200) -> dict:
-    """Re-run AI Analysis on docs that have OCR text but no completed analysis."""
+    """Re-classify documents that already have a summary — one LLM call per doc (type only).
+
+    Does NOT regenerate the summary, tags, or any other fields.
+    Documents without a summary are skipped and counted in the log.
+    """
     db = SessionLocal()
     try:
-        pending = (
+        skipped_no_summary = (
             db.query(Document)
             .filter(
                 Document.is_deleted == False,
-                Document.analysis_status != "done",
-                (Document.ocr_text != None) | (Document.vision_description != None),
+                or_(Document.summary.is_(None), Document.summary == ""),
+            )
+            .count()
+        )
+        if skipped_no_summary:
+            log.info("reclassify_all: skipping %d document(s) with no summary", skipped_no_summary)
+
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.summary.isnot(None),
+                Document.summary != "",
             )
             .limit(limit)
             .all()
         )
+
         processed = errors = 0
-        for doc in pending:
+        for doc in docs:
             try:
-                doc.analysis_status = "pending"
-                db.commit()
-                await _run_analysis(doc, db)
-                await _run_embedding(doc, db)
-                processed += 1
+                new_type = await _classify_from_summary(doc, db)
+                if new_type:
+                    _apply_type_only(doc, new_type)
+                    db.commit()
+                    processed += 1
             except Exception as e:
                 errors += 1
                 log.error("reclassify_pending_batch: doc %s failed: %s", doc.id, e)
-        return {"processed": processed, "errors": errors, "total_pending": len(pending)}
+
+        return {"processed": processed, "errors": errors, "skipped_no_summary": skipped_no_summary}
     finally:
         db.close()
+
+
+async def _classify_from_summary(doc: Document, db: Session) -> str | None:
+    """One LLM call: assign document_type from the existing summary. Returns type slug or None."""
+    from .ai_analysis import _get_providers, run_text
+    from .ai_common import DOCUMENT_TYPES_BLOCK, strip_code_fences
+    import json
+
+    providers = _get_providers(db)
+    if not providers:
+        return None
+
+    user_msg = (
+        f"Document summary:\n{doc.summary}\n\n"
+        "Choose the most appropriate document type from the list below, "
+        "or use 'unclassified' if nothing fits.\n\n"
+        f"{DOCUMENT_TYPES_BLOCK}\n\n"
+        'Reply with JSON only: {"type": "slug_name"}'
+    )
+
+    try:
+        text, _, _, _ = await run_text(providers[0], "You are a document type classifier.", user_msg)
+        data = json.loads(strip_code_fences(text))
+        return data.get("type", "unclassified")
+    except Exception as e:
+        log.warning("_classify_from_summary doc %s: %s", doc.id, e)
+        return None
+
+
+def _apply_type_only(doc: Document, new_type: str) -> None:
+    """Set document_type only. Preserves old type in tags if it was meaningful and changed."""
+    old_type = doc.document_type
+    if old_type and old_type not in ("unclassified", "other") and old_type != new_type:
+        existing = list(doc.tags or [])
+        if old_type not in existing:
+            existing.append(old_type)
+        doc.tags = existing
+    doc.document_type = new_type
+    doc.classification_source = "auto"
 
 
 async def reclassify_unclassified_batch(limit: int = 200) -> dict:

@@ -75,7 +75,6 @@ def get_candidate_counts(db: Session = Depends(get_db)):
 
     reclassify_all_count = base.filter(
         Document.ocr_status == "done",
-        Document.analysis_status != "done",
     ).count()
 
     reclassify_unclassified_count = base.filter(
