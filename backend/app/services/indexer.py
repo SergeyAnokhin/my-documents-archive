@@ -280,6 +280,67 @@ async def reclassify_document(document_id: int) -> None:
         db.close()
 
 
+async def reclassify_pending_batch(limit: int = 200) -> dict:
+    """Re-run AI Analysis on docs that have OCR text but no completed analysis."""
+    db = SessionLocal()
+    try:
+        pending = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.analysis_status != "done",
+                (Document.ocr_text != None) | (Document.vision_description != None),
+            )
+            .limit(limit)
+            .all()
+        )
+        processed = errors = 0
+        for doc in pending:
+            try:
+                doc.analysis_status = "pending"
+                db.commit()
+                await _run_analysis(doc, db)
+                await _run_embedding(doc, db)
+                processed += 1
+            except Exception as e:
+                errors += 1
+                log.error("reclassify_pending_batch: doc %s failed: %s", doc.id, e)
+        return {"processed": processed, "errors": errors, "total_pending": len(pending)}
+    finally:
+        db.close()
+
+
+async def reclassify_unclassified_batch(limit: int = 200) -> dict:
+    """Re-run AI Analysis on docs still typed as unclassified/other and not manually set."""
+    db = SessionLocal()
+    try:
+        candidates = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.manually_classified == False,
+                Document.document_type.in_(["unclassified", "other", None]),
+                (Document.ocr_text != None) | (Document.vision_description != None),
+            )
+            .limit(limit)
+            .all()
+        )
+        processed = errors = 0
+        for doc in candidates:
+            try:
+                doc.analysis_status = "pending"
+                db.commit()
+                await _run_analysis(doc, db)
+                await _run_embedding(doc, db)
+                processed += 1
+            except Exception as e:
+                errors += 1
+                log.error("reclassify_unclassified_batch: doc %s failed: %s", doc.id, e)
+        return {"processed": processed, "errors": errors, "total_candidates": len(candidates)}
+    finally:
+        db.close()
+
+
 def _is_unclassified(doc: Document) -> bool:
     return doc.document_type in (None, "unclassified", "other")
 
