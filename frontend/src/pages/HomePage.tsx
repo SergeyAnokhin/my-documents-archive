@@ -9,7 +9,7 @@ import { KeyboardHelp } from "../components/ui/KeyboardHelp";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
-import { searchDocuments, syncLibrary, askDocuments } from "../api/documents";
+import { searchDocuments, syncLibrary, askDocuments, getDocument } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
 
@@ -86,6 +86,20 @@ export function HomePage() {
     window.addEventListener("docintell:library-changed", handler);
     return () => window.removeEventListener("docintell:library-changed", handler);
   }, [doSearch, mode]);
+
+  // Refresh a single document's thumbnail after an image edit is applied
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: number }>).detail;
+      try {
+        const doc = await getDocument(id);
+        setResults(prev => prev.map(r => r.document.id === id ? { ...r, document: doc } : r));
+        setAiAnswer(prev => prev ? { ...prev, sources: prev.sources.map(d => d.id === id ? doc : d) } : prev);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("docintell:document-image-changed", handler);
+    return () => window.removeEventListener("docintell:document-image-changed", handler);
+  }, []);
 
   // Also re-search immediately when filters change (no debounce needed)
   useEffect(() => {

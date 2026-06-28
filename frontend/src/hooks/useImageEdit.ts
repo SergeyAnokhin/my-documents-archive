@@ -165,6 +165,7 @@ export function useImageEdit({
       setApplyDone(true);
       setImgVersion(v => v + 1);
       armAutoFit();
+      window.dispatchEvent(new CustomEvent("docintell:document-image-changed", { detail: { id: docId } }));
       onLog?.(`✓ Applied: ${result.width}×${result.height}`, "ok");
       setTimeout(() => setApplyDone(false), 2500);
     } catch (e) {
