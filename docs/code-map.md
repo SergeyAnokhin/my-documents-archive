@@ -136,14 +136,15 @@ Platform contract lives in [k3s-platform-deployment.md](k3s-platform-deployment.
 | `.dockerignore` | Excludes node_modules, `library/`, DBs, caches from build contexts |
 | `.github/workflows/build.yml` | CI: build backend+frontend → GHCR (tag=sha) → `yq` bump `values.yaml` → force-push `deploy` |
 | `deploy/argocd/application.yaml` | ArgoCD Application; tracks `deploy` branch, namespace `my-documents-archive` |
-| `deploy/helm/my-documents-archive/values.yaml` | Only file CI mutates (`image.*.tag`). NAS source, storage sizes, `stripApiPrefix: false` |
+| `deploy/helm/my-documents-archive/values.yaml` | Only file CI mutates (`image.*.tag`). NAS source, storage sizes, `stripApiPrefix: false`, `ingress.host` (nip.io), `ingress.tls`, `ingress.certIssuer` |
 | `deploy/helm/.../templates/backend-deployment.yaml` | Backend: `Recreate`, single replica. Nested mounts: SMB NAS at `/data/library`, local-path PVC overlays `/data/library/.docintell` (keeps SQLite/Chroma off CIFS) |
 | `deploy/helm/.../templates/smb-nas.yaml` | SMB CSI PV+PVC for the NAS document library (`//192.168.1.91/Data/my-documents-archive`) |
 | `deploy/helm/.../templates/state-pvc.yaml` | local-path PVC for derived state (DB, Chroma, thumbnails, HF cache) |
-| `deploy/helm/.../templates/ingress.yaml` | Traefik ingress: `/api`+`/thumbnails`→backend (no strip), `/`→frontend |
+| `deploy/helm/.../templates/ingress.yaml` | Traefik ingress: `/api`+`/thumbnails`→backend (no strip), `/`→frontend. Optional TLS via cert-manager (controlled by `ingress.tls`) |
 | `deploy/helm/.../templates/{frontend-deployment,*-service,_helpers}.yaml` | Frontend Deployment, Services, name/label/image helpers |
+| `deploy/k8s/cert-manager/home-ca.yaml` | One-time cluster resource: creates a local CA (10-year self-signed root) and exposes it as `ClusterIssuer: home-ca`. Apply manually before pushing TLS-enabled Helm values. Export CA cert and install on devices once. |
 
-**Human-only steps** (cluster access; see spec §6): first build to populate GHCR → make packages public → install SMB CSI driver → create `my-documents-archive-smb-creds` secret (keys `username`/`password`) → `kubectl apply` the ArgoCD Application → add `my-documents-archive.lan` to hosts/DNS. Backfill existing NAS docs via **Admin → Sync** (the watcher is non-recursive + new-files-only).
+**Human-only steps** (cluster access; see [deployment.md](deployment.md)): first build to populate GHCR → make packages public → install SMB CSI driver → create `my-documents-archive-smb-creds` secret → `kubectl apply` the ArgoCD Application → install cert-manager + apply `home-ca.yaml` → install `home-ca.crt` on devices. Access via `my-documents-archive.192.168.1.97.nip.io` (no router/hosts config needed). Backfill existing NAS docs via **Admin → Sync**.
 
 ## Key Data Flow
 

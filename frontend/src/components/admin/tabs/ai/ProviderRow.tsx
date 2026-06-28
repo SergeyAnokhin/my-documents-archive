@@ -132,9 +132,10 @@ export function ProviderRow({
           <button className="icon-btn" onClick={openSettings} title={ai.providerSettings} style={{ color: settingsOpen ? "var(--color-accent)" : undefined }}>
             <Settings size={13} />
           </button>
-          <button className="icon-btn" onClick={onToggle} title={provider.enabled ? t.enabled : t.disabled}>
-            <span className={`status-dot ${provider.enabled ? "done" : "pending"}`} />
-          </button>
+          <label className="toggle-switch" title={provider.enabled ? t.enabled : t.disabled} style={{ flexShrink: 0 }}>
+            <input type="checkbox" checked={provider.enabled} onChange={onToggle} />
+            <span className="toggle-slider" />
+          </label>
           <button className="icon-btn" onClick={onDelete} title={t.delete}>
             <Trash2 size={14} />
           </button>
