@@ -67,21 +67,17 @@ import reads a file and asks whether to replace or append.
 
 ⚠️ The exported file contains **API keys in plain text** — treat it as a secret.
 
-## Classification "done but still unclassified" — outcome reporting
+## Classification of unclassified documents
 
-The *Classify unclassified* job ([`indexer.reclassify_unclassified_batch`](../backend/app/services/indexer.py))
-used to report only `processed`, which counted every iterated doc regardless of result —
-so a doc could stay `unclassified` while the task turned green. It now reports real
-outcomes: `candidates`, `classified`, `still_unclassified`, `skipped` (no OCR text),
-`errors`, and `no_provider`. With **no analysis provider configured** the task finishes
-with status `error` and an explicit message instead of a silent success.
+Two paths exist depending on whether you want synchronous or async (batch) processing:
 
-A doc legitimately stays unclassified when the LLM returns `"unclassified"` again, when
-it has no OCR text, or when no analysis provider exists. For cheap bulk classification of
-the backlog, use the **Gemini Batch Analysis** task, whose selection now also covers
-already-analyzed-but-unclassified docs.
+| Path | How it works | When to use |
+|------|-------------|-------------|
+| `POST /api/admin/reclassify-unclassified` | Synchronous; calls `indexer.reclassify_unclassified_batch()` per doc. Returns `{processed, errors, total_candidates}`. | Small backlog, immediate feedback |
+| Task `reclassify_unclassified` (Tasks panel) | Delegates to `batch_analysis.run_batch_analysis_gemini()` with `doc_scope="unclassified"` — async Gemini Batch API (~50% cheaper). | Large backlog, willing to wait up to 24 h |
+| Task `reclassify_all` (Tasks panel) | Same batch path with `doc_scope="pending"` — targets OCR-done docs with incomplete analysis. | Bulk re-analysis after adding a new provider |
 
 The Admin → Indexing *Unclassified* stat counts OCR-done docs whose type is still
 `unclassified`/`other`/null and that weren't classified by hand — i.e. exactly the set the
-job retries (keyed on `document_type`, not `analysis_status`, so skipped/errored docs stay
+task retries (keyed on `document_type`, not `analysis_status`, so skipped/errored docs stay
 visible).

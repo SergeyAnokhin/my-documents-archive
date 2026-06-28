@@ -37,6 +37,7 @@ provider picker to only batch-capable providers for batch tasks.
 | `limit` | 50 | Max pending documents to include in one batch |
 | `provider_id` | (first enabled) | Which `AIProvider` row to use; must match the provider type |
 | `poll_interval` | 30 | Seconds between status checks while the job runs |
+| `doc_scope` | `needs_analysis` | Which documents to include (analysis tasks only): `needs_analysis` — has `ocr_text`, no analysis or unclassified; `unclassified` — `ocr_done`, type is `unclassified`/`other`, not manually set; `pending` — `ocr_done`, `analysis_status != "done"` |
 
 The Tasks panel loads only enabled providers whose `provider_type` matches the
 task (`mistral` for `batch_ocr_mistral`, `gemini` for `batch_ocr_gemini`). If no
@@ -94,6 +95,18 @@ only local polling stops. The job id is logged so it can be inspected manually.
   `GET .../download/v1beta/{file}:download?alt=media`
 - **JSONL request line**: `{"key": "<doc.id>", "request": {"contents": [{"parts": [{"inline_data": {"mime_type": "image/jpeg", "data": "<b64>"}}, {"text": GEMINI_OCR_PROMPT}]}], "generation_config": {"max_output_tokens": 8192}}}`
 - **Parsing**: each line is `{"key", "response": {"candidates": [{"content": {"parts": [{"text": ...}]}}], "usageMetadata": {...}}}` or `{"key", "error": {...}}`; text is the concatenated `parts[].text`. Token counts are summed into the result summary; **cost is not computed** for Gemini (consistent with the synchronous Gemini vision path).
+
+## Resume support
+
+`POST /api/tasks/{task_id}/resume-batch` restarts polling for a stopped or interrupted job without re-submitting it. Supported task types: `batch_ocr_mistral`, `batch_ocr_gemini`, `batch_analysis_gemini`, `reclassify_unclassified`, `reclassify_all`. The original `batch_job_id` is read from `Task.result_summary`.
+
+## Batch result download
+
+After a successful batch run the raw JSONL response is saved to `.docintell/batch_results/task_{id}.jsonl`. Retrieve it with:
+
+`GET /api/tasks/{task_id}/batch-result` → downloads `batch_result_task_{id}.jsonl` (application/octet-stream)
+
+Useful for debugging parse errors or auditing what the provider returned.
 
 ## Result summary fields
 
