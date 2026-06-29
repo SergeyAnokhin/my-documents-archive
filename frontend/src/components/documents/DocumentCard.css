@@ -206,6 +206,13 @@
   flex-shrink: 0;
 }
 
+/* Score chip overlaid on the grid thumbnail — bottom-left */
+.score-chip-thumb {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+}
+
 /* Document-type (class) icon badge, top-left of the grid thumbnail */
 .doc-grid-type-icon {
   position: absolute;

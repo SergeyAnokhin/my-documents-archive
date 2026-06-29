@@ -107,11 +107,15 @@ export function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterYear, filterLang]);
 
-  // Fetch embedded doc IDs when dev mode is active (for the vector badge)
+  // Fetch embedded doc IDs on mount and whenever a library change occurs
   useEffect(() => {
-    if (!devMode) return;
     fetchEmbeddedIds().then(data => setEmbeddedIds(new Set(data.ids))).catch(() => {});
-  }, [devMode]);
+  }, []);
+  useEffect(() => {
+    const handler = () => fetchEmbeddedIds().then(data => setEmbeddedIds(new Set(data.ids))).catch(() => {});
+    window.addEventListener("docintell:library-changed", handler);
+    return () => window.removeEventListener("docintell:library-changed", handler);
+  }, []);
 
   // ── AI ask ──────────────────────────────────────────────────────────────────
 
@@ -361,7 +365,7 @@ export function HomePage() {
         onNext={() => setViewerIdx((i) => (i !== null ? i + 1 : null))}
         hasPrev={viewerIdx !== null && viewerIdx > 0}
         hasNext={viewerIdx !== null && viewerIdx < results.length - 1}
-        isEmbedded={devMode && viewerDoc ? embeddedIds.has(viewerDoc.id) : undefined}
+        isEmbedded={viewerDoc ? embeddedIds.has(viewerDoc.id) : undefined}
       />
 
       {/* Document viewer — AI sources */}
@@ -372,7 +376,7 @@ export function HomePage() {
         onNext={() => setAiViewerIdx((i) => (i !== null ? i + 1 : null))}
         hasPrev={aiViewerIdx !== null && aiViewerIdx > 0}
         hasNext={aiViewerIdx !== null && aiAnswer !== null && aiViewerIdx < aiAnswer.sources.length - 1}
-        isEmbedded={devMode && aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
+        isEmbedded={aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
       />
 
       {/* Keyboard shortcuts help */}

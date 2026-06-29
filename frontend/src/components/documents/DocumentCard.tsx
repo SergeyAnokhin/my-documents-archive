@@ -68,10 +68,10 @@ function EmbeddedBadge({ className = "" }: { className?: string }) {
   );
 }
 
-function ScoreChip({ score }: { score: number }) {
+function ScoreChip({ score, className = "" }: { score: number; className?: string }) {
   const pct = Math.round(score * 100);
   return (
-    <span className="score-chip" title={`Semantic similarity: ${(score * 100).toFixed(1)}%`}>
+    <span className={`score-chip ${className}`} title={`Semantic similarity: ${(score * 100).toFixed(1)}%`}>
       {pct}%
     </span>
   );
@@ -134,7 +134,7 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
               {date && <span className="doc-date text-sm text-muted"><Calendar size={12} /> {date}</span>}
               {showScore && <ScoreChip score={score} />}
               <ProcessingBadge doc={doc} />
-              {devMode && isEmbedded && <EmbeddedBadge />}
+              {isEmbedded && <EmbeddedBadge />}
               {doc.document_type && <TypeIcon type={doc.document_type} size={27} className="doc-type-icon" />}
             </div>
           </div>
@@ -169,14 +169,14 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
       <div className="doc-grid-thumb">
         <Thumbnail doc={doc} thumbVersion={thumbVersion} />
         {doc.document_type && <TypeIcon type={doc.document_type} size={24} className="doc-grid-type-icon" />}
+        {showScore && <ScoreChip score={score} className="score-chip-thumb" />}
         <div className="doc-grid-badges">
-          {devMode && isEmbedded && <EmbeddedBadge className="doc-grid-emb" />}
+          {isEmbedded && <EmbeddedBadge className="doc-grid-emb" />}
           <ProcessingBadge doc={doc} className="doc-grid-status" />
         </div>
       </div>
       <div className="doc-grid-footer">
         <span className="doc-filename truncate text-sm">{doc.filename}</span>
-        {showScore && <ScoreChip score={score} />}
         {gridSize !== "sm" && date && (
           <span className="doc-date text-xs text-muted">{date}</span>
         )}
