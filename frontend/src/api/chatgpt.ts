@@ -1,5 +1,7 @@
 /**
  * ChatGPT OAuth API client.
+ * 
+ * NOTE: api.client.ts prepends /api automatically, so paths here are relative to /api.
  */
 import { api } from "./client";
 
@@ -30,12 +32,12 @@ export interface AuthStatusResponse {
 
 export const chatgptOAuth = {
   async startDeviceCode(): Promise<DeviceCodeResponse> {
-    const r = await api.post("/api/auth/chatgpt/device-code");
+    const r = await api.post("/auth/chatgpt/device-code");
     return r as DeviceCodeResponse;
   },
 
   async pollToken(device_code: string, provider_id: number): Promise<TokenPollResponse> {
-    const r = await api.post("/api/auth/chatgpt/token", {
+    const r = await api.post("/auth/chatgpt/token", {
       device_code,
       provider_id,
     });
@@ -43,16 +45,16 @@ export const chatgptOAuth = {
   },
 
   async getStatus(provider_id: number): Promise<AuthStatusResponse> {
-    const r = await api.get(`/api/auth/chatgpt/status?provider_id=${provider_id}`);
+    const r = await api.get(`/auth/chatgpt/status?provider_id=${provider_id}`);
     return r as AuthStatusResponse;
   },
 
   async refresh(provider_id: number): Promise<AuthStatusResponse> {
-    const r = await api.post(`/api/auth/chatgpt/refresh?provider_id=${provider_id}`, {});
+    const r = await api.post(`/auth/chatgpt/refresh?provider_id=${provider_id}`, {});
     return r as AuthStatusResponse;
   },
 
   async logout(provider_id: number): Promise<void> {
-    await api.delete(`/api/auth/chatgpt/logout/${provider_id}`);
+    await api.delete(`/auth/chatgpt/logout/${provider_id}`);
   },
 };
