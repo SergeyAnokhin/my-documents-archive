@@ -101,6 +101,38 @@
 }
 .ai-answer-body p:last-child { margin-bottom: 0; }
 
+.ai-answer-body ol,
+.ai-answer-body ul {
+  margin: 0 0 var(--sp-2);
+  padding-left: 1.5em;
+}
+.ai-answer-body li { margin-bottom: var(--sp-1); line-height: 1.7; }
+
+/* Inline citation superscript button */
+.ai-cite-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  background: color-mix(in srgb, #6366f1 12%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, #6366f1 35%, var(--color-border));
+  color: #6366f1;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  vertical-align: middle;
+  margin: 0 1px;
+  padding: 0 2px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.1s;
+}
+.ai-cite-ref:hover {
+  background: color-mix(in srgb, #6366f1 22%, var(--color-surface));
+}
+
 /* Source documents section */
 .ai-sources {
   border-top: 1px solid var(--color-border);

@@ -6,6 +6,67 @@ import { AskDebugModal } from "./AskDebugModal";
 import { useT } from "../../i18n";
 import "./AIAnswer.css";
 
+// ── Minimal markdown renderer ────────────────────────────────────────────────
+
+function renderInline(text: string, onCite: (i: number) => void): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|\[\d+\])/g).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    const citeMatch = part.match(/^\[(\d+)\]$/);
+    if (citeMatch) {
+      const n = parseInt(citeMatch[1]);
+      return (
+        <button key={i} className="ai-cite-ref" onClick={() => onCite(n - 1)} title={`Source ${n}`}>
+          {n}
+        </button>
+      );
+    }
+    return part || null;
+  });
+}
+
+function renderMarkdown(answer: string, onCite: (i: number) => void): React.ReactNode[] {
+  const lines = answer.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let listItems: React.ReactNode[] = [];
+  let listType: "ol" | "ul" | null = null;
+
+  function flushList() {
+    if (listItems.length === 0) return;
+    const key = `list-${nodes.length}`;
+    nodes.push(listType === "ol"
+      ? <ol key={key}>{listItems}</ol>
+      : <ul key={key}>{listItems}</ul>,
+    );
+    listItems = [];
+    listType = null;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { flushList(); continue; }
+
+    const numMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+
+    if (numMatch) {
+      if (listType === "ul") flushList();
+      listType = "ol";
+      listItems.push(<li key={listItems.length}>{renderInline(numMatch[2], onCite)}</li>);
+    } else if (bulletMatch) {
+      if (listType === "ol") flushList();
+      listType = "ul";
+      listItems.push(<li key={listItems.length}>{renderInline(bulletMatch[1], onCite)}</li>);
+    } else {
+      flushList();
+      nodes.push(<p key={`p-${nodes.length}`}>{renderInline(trimmed, onCite)}</p>);
+    }
+  }
+  flushList();
+  return nodes;
+}
+
 interface Props {
   answer: string;
   sources: Document[];
@@ -26,6 +87,10 @@ export function AIAnswer({ answer, sources, sourceSimilarities, cost, noProvider
   tokensIn, tokensOut, modelName, docsSent, devMode, debug, thumbVersions }: Props) {
   const { t } = useT();
   const [showDebug, setShowDebug] = useState(false);
+
+  const scrollToSource = (idx: number) => {
+    document.getElementById(`ai-source-${idx}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
 
   if (noProvider) {
     return (
@@ -85,9 +150,7 @@ export function AIAnswer({ answer, sources, sourceSimilarities, cost, noProvider
 
       {/* Answer body */}
       <div className="ai-answer-body">
-        {answer.split("\n").filter(Boolean).map((line, i) => (
-          <p key={i}>{line}</p>
-        ))}
+        {renderMarkdown(answer, scrollToSource)}
       </div>
 
       {/* Source documents */}
@@ -101,14 +164,15 @@ export function AIAnswer({ answer, sources, sourceSimilarities, cost, noProvider
             {sources.map((doc, i) => {
               const sim = sourceSimilarities?.[i];
               return (
-                <DocumentCard
-                  key={doc.id}
-                  doc={doc}
-                  mode="list"
-                  onClick={() => onDocClick(i)}
-                  thumbVersion={thumbVersions?.[doc.id]}
-                  score={sim != null && sim > 0 ? sim : undefined}
-                />
+                <div key={doc.id} id={`ai-source-${i}`}>
+                  <DocumentCard
+                    doc={doc}
+                    mode="list"
+                    onClick={() => onDocClick(i)}
+                    thumbVersion={thumbVersions?.[doc.id]}
+                    score={sim != null && sim > 0 ? sim : undefined}
+                  />
+                </div>
               );
             })}
           </div>

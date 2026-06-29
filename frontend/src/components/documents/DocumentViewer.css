@@ -6,7 +6,11 @@
 }
 
 @media (max-width: 768px) {
-  .viewer-layout { grid-template-columns: 1fr; height: auto; }
+  .viewer-layout { grid-template-columns: 1fr; height: auto; overflow-y: auto; }
+  .viewer-preview { min-height: 50vh; }
+  .viewer-zoom-toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  .viewer-edit-toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  .viewer-info { max-height: none; }
 }
 
 .viewer-preview {

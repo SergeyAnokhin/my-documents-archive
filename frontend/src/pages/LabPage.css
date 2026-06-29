@@ -667,7 +667,9 @@
 }
 
 @media (max-width: 900px) {
-  .lab-body { grid-template-columns: 1fr !important; grid-template-rows: 45vh 0 1fr; }
+  .lab-body { grid-template-columns: 1fr !important; grid-template-rows: 45vh 0 minmax(0, 1fr); }
   .lab-resizer { display: none; }
   .lab-doc { border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .lab-doc-toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  .lab-doc-toolbar2 { overflow-x: auto; flex-wrap: nowrap; }
 }
