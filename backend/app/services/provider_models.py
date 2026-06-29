@@ -277,24 +277,97 @@ async def _fetch_openrouter(api_key: str) -> list[dict]:
 
 
 async def _fetch_chatgpt_web(session_token: str) -> list[dict]:
-    """Return known ChatGPT subscription models.
+    """Fetch available Codex model IDs from ChatGPT backend.
 
-    Uses the hardcoded list from chatgpt_web.CHATGPT_WEB_MODELS
-    (same approach as Hermes Agent for Codex models).
-    Does NOT call the chatgpt.com API — the /backend-api/models
-    endpoint is unreliable with OAuth tokens and may return
-    stale/limited model lists.
+    Tries the live API first: chatgpt.com/backend-api/codex/models
+    Falls back to hardcoded DEFAULT_CODEX_MODELS (same as Hermes Agent).
     """
-    from .chatgpt_web import CHATGPT_WEB_MODELS
+    import httpx
+    
+    # Try live API
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+                headers={"Authorization": f"Bearer {session_token}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                entries = data.get("models", []) if isinstance(data, dict) else []
+                if entries:
+                    sortable = []
+                    for item in entries:
+                        if not isinstance(item, dict):
+                            continue
+                        slug = item.get("slug")
+                        if not isinstance(slug, str) or not slug.strip():
+                            continue
+                        visibility = item.get("visibility", "")
+                        if isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"}:
+                            continue
+                        priority = item.get("priority")
+                        rank = int(priority) if isinstance(priority, (int, float)) else 10_000
+                        sortable.append((rank, slug))
+                    sortable.sort(key=lambda x: (x[0], x[1]))
+                    api_models = [slug for _, slug in sortable]
+                    if api_models:
+                        return [
+                            {"id": mid, "name": _codex_display_name(mid),
+                             "supports_vision": _codex_supports_vision(mid),
+                             "context_length": _codex_context(mid),
+                             "price_in": 0.0, "price_out": 0.0, "is_free": True}
+                            for mid in api_models
+                        ]
+    except Exception:
+        pass  # fall through to hardcoded list
+
+    # Fallback: hardcoded Codex models (same as Hermes Agent codex_models.py)
+    from .chatgpt_web import DEFAULT_CODEX_MODELS
     return [
         {
-            "id": m["id"],
-            "name": m["name"],
-            "supports_vision": m["vision"],
-            "context_length": m["ctx"],
+            "id": mid,
+            "name": _codex_display_name(mid),
+            "supports_vision": _codex_supports_vision(mid),
+            "context_length": _codex_context(mid),
             "price_in": 0.0,
             "price_out": 0.0,
             "is_free": True,
         }
-        for m in CHATGPT_WEB_MODELS
+        for mid in DEFAULT_CODEX_MODELS
     ]
+
+
+def _codex_display_name(model_id: str) -> str:
+    names = {
+        "gpt-5.5": "GPT-5.5",
+        "gpt-5.5-pro": "GPT-5.5 Pro",
+        "gpt-5.4": "GPT-5.4",
+        "gpt-5.4-mini": "GPT-5.4 Mini",
+        "gpt-5.4-nano": "GPT-5.4 Nano",
+        "gpt-5.3-codex": "GPT-5.3 Codex",
+        "gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
+        "gpt-5.2-codex": "GPT-5.2 Codex",
+        "gpt-5.1-codex-max": "GPT-5.1 Codex Max",
+        "gpt-5.1-codex-mini": "GPT-5.1 Codex Mini",
+        "gpt-5-codex": "GPT-5 Codex",
+        "gpt-5-mini": "GPT-5 Mini",
+        "gpt-5-nano": "GPT-5 Nano",
+    }
+    return names.get(model_id, model_id)
+
+
+def _codex_supports_vision(model_id: str) -> bool:
+    # All GPT-5.x models support vision
+    return True
+
+
+def _codex_context(model_id: str) -> int:
+    # Codex backend caps context at 272K for most GPT-5.x models
+    small = {"gpt-5.3-codex-spark", "gpt-5.1-codex-mini"}
+    if model_id in small:
+        return 128_000
+    if model_id in {"gpt-5.5", "gpt-5.5-pro", "gpt-5.4", "gpt-5.4-mini",
+                    "gpt-5.4-nano", "gpt-5.3-codex", "gpt-5.2-codex",
+                    "gpt-5.1-codex-max", "gpt-5-codex", "gpt-5-mini", "gpt-5-nano"}:
+        return 272_000
+    return 128_000

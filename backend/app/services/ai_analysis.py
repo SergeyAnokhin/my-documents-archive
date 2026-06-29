@@ -190,7 +190,7 @@ async def _call_chatgpt_web(provider, user_msg: str, system: str = ANALYSIS_SYST
     from .chatgpt_web import chat_completion, ensure_fresh_token
     import asyncio
     
-    model = getattr(provider, "model", None) or "gpt-4o-mini"
+    model = getattr(provider, "model", None) or "gpt-5.4"
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_msg},

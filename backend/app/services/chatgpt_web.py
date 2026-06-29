@@ -38,6 +38,17 @@ DEVICE_CALLBACK_URL = f"{CODEX_OAUTH_ISSUER}/deviceauth/callback"
 CHATGPT_HOST = "https://chatgpt.com"
 
 # ── Known ChatGPT Web models ────────────────────────────────────────────────
+
+# Default Codex models — same as Hermes Agent (hermes_cli/codex_models.py)
+DEFAULT_CODEX_MODELS = [
+    "gpt-5.5",
+    "gpt-5.4-mini",
+    "gpt-5.4",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+]
+
+# Legacy list (kept for backward compat, unused by provider_models)
 CHATGPT_WEB_MODELS = [
     {"id": "gpt-4.1",        "name": "GPT-4.1",              "vision": True,  "ctx": 1_000_000},
     {"id": "gpt-4.1-mini",   "name": "GPT-4.1 Mini",         "vision": True,  "ctx": 1_000_000},
@@ -424,38 +435,48 @@ async def vision_completion(
 
 
 async def list_models(access_token: str) -> list[dict]:
+    """Return available Codex models from live API or fallback.
+
+    Uses same endpoint as Hermes Agent:
+    chatgpt.com/backend-api/codex/models?client_version=1.0.0
+    """
     if not access_token:
-        return _fallback_models()
+        return _fallback_codex_models()
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(
-                f"{CHATGPT_HOST}/backend-api/models",
-                headers=_browser_headers(access_token),
+                f"{CHATGPT_HOST}/backend-api/codex/models?client_version=1.0.0",
+                headers={"Authorization": f"Bearer {access_token}"},
             )
             if r.status_code != 200:
-                return _fallback_models()
+                return _fallback_codex_models()
             data = r.json()
-            models = data.get("models") or data
-            if not isinstance(models, list):
-                return _fallback_models()
-            result = []
-            for m in models:
-                mid = m.get("slug") or m.get("id") or m.get("title", "")
-                if not mid:
+            entries = data.get("models", []) if isinstance(data, dict) else []
+            if not entries:
+                return _fallback_codex_models()
+            sortable = []
+            for item in entries:
+                if not isinstance(item, dict):
                     continue
-                known = _find_known(mid)
-                result.append({
-                    "id": mid,
-                    "name": m.get("title") or known.get("name", mid),
-                    "supports_vision": known.get("vision", _guess_vision(m)),
-                    "context_length": known.get("ctx"),
-                    "price_in": 0.0,
-                    "price_out": 0.0,
-                    "is_free": True,
-                })
-            return result if result else _fallback_models()
+                slug = item.get("slug")
+                if not isinstance(slug, str) or not slug.strip():
+                    continue
+                visibility = item.get("visibility", "")
+                if isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"}:
+                    continue
+                priority = item.get("priority")
+                rank = int(priority) if isinstance(priority, (int, float)) else 10_000
+                sortable.append((rank, slug))
+            sortable.sort(key=lambda x: (x[0], x[1]))
+            result = [
+                {"id": slug, "name": slug,
+                 "supports_vision": True, "context_length": 272_000,
+                 "price_in": 0.0, "price_out": 0.0, "is_free": True}
+                for _, slug in sortable
+            ]
+            return result if result else _fallback_codex_models()
     except Exception:
-        return _fallback_models()
+        return _fallback_codex_models()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -589,6 +610,16 @@ def _guess_vision(model: dict) -> bool:
     if any(k in slug for k in ("gpt-4o", "gpt-4.1", "gpt-4.5", "o3", "o4")):
         return True
     return False
+
+
+def _fallback_codex_models() -> list[dict]:
+    """Fallback Codex model list (same as Hermes Agent DEFAULT_CODEX_MODELS)."""
+    return [
+        {"id": mid, "name": mid,
+         "supports_vision": True, "context_length": 272_000,
+         "price_in": 0.0, "price_out": 0.0, "is_free": True}
+        for mid in DEFAULT_CODEX_MODELS
+    ]
 
 
 def _fallback_models() -> list[dict]:
