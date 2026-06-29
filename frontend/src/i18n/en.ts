@@ -328,10 +328,15 @@ export const en = {
     allStatuses: "All statuses",
     quality: "Quality",
     allDocuments: "All documents",
+    qualityNoOcr: "No OCR",
     qualityNoEmbedding: "No embedding",
+    qualityNoAnalysis: "No analysis",
     qualityNoSummary: "No summary",
     qualityNoTags: "No tags",
+    qualityNoCategory: "No category",
     qualityComplete: "Complete",
+    qualityDispatch: "Send to queue",
+    qualityDispatched: "Dispatched {{n}} documents",
   },
 
   // OCR Tuning

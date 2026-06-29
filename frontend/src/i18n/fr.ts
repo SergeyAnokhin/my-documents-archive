@@ -322,10 +322,15 @@ export const fr: Translations = {
     allStatuses: "Tous les statuts",
     quality: "Qualité",
     allDocuments: "Tous les documents",
+    qualityNoOcr: "Sans OCR",
     qualityNoEmbedding: "Sans embedding",
+    qualityNoAnalysis: "Sans analyse",
     qualityNoSummary: "Sans résumé",
     qualityNoTags: "Sans tags",
+    qualityNoCategory: "Sans catégorie",
     qualityComplete: "Complets",
+    qualityDispatch: "Envoyer en file",
+    qualityDispatched: "{{n}} documents envoyés",
   },
 
   lab: {

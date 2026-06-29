@@ -5,6 +5,7 @@ import "./FilterDropdown.css";
 export interface DropdownOption {
   value: string;
   label: string;
+  count?: number;
 }
 
 interface Props {
@@ -71,8 +72,15 @@ export function FilterDropdown({ label, clearLabel, options, value, onSelect }: 
                 className={`fdd-item${value === opt.value ? " fdd-item--selected" : ""}`}
                 onClick={() => pick(opt.value)}
               >
-                <span>{opt.label}</span>
-                {value === opt.value && <Check size={12} />}
+                <span className="fdd-item-label">{opt.label}</span>
+                <span className="fdd-item-right">
+                  {opt.count !== undefined && (
+                    <span className={`fdd-count${opt.count > 0 ? " fdd-count--nonzero" : ""}`}>
+                      {opt.count}
+                    </span>
+                  )}
+                  {value === opt.value && <Check size={12} />}
+                </span>
               </button>
             ))}
           </div>

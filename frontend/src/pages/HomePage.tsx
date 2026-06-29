@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2 } from "lucide-react";
+import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2, SendHorizonal } from "lucide-react";
 import { SearchBar } from "../components/search/SearchBar";
 import { AIAnswer } from "../components/search/AIAnswer";
 import { DocumentCard } from "../components/documents/DocumentCard";
@@ -11,7 +11,7 @@ import { FilterDropdown } from "../components/search/FilterDropdown";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { useAdvancedMode } from "../contexts/AdvancedModeContext";
-import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds } from "../api/documents";
+import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts, dispatchQuality } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
 
@@ -32,6 +32,10 @@ export function HomePage() {
   const [filterLang, setFilterLang] = useState<string | null>(null);
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterQuality, setFilterQuality] = useState<string | null>(null);
+
+  // Quality counts for the filter dropdown
+  const [qualityCounts, setQualityCounts] = useState<Record<string, number>>({});
+  const [dispatching, setDispatching] = useState(false);
 
   // AI ask state
   const [aiAnswer, setAiAnswer] = useState<AIAnswerResponse | null>(null);
@@ -122,6 +126,16 @@ export function HomePage() {
     return () => window.removeEventListener("docintell:library-changed", handler);
   }, []);
 
+  // Fetch quality counts on mount and whenever the library changes
+  useEffect(() => {
+    fetchQualityCounts().then(setQualityCounts).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const handler = () => fetchQualityCounts().then(setQualityCounts).catch(() => {});
+    window.addEventListener("docintell:library-changed", handler);
+    return () => window.removeEventListener("docintell:library-changed", handler);
+  }, []);
+
   // ── AI ask ──────────────────────────────────────────────────────────────────
 
   const doAsk = useCallback(async () => {
@@ -163,6 +177,24 @@ export function HomePage() {
   const handleSubmit = () => {
     if (mode === "ask") doAsk();
     else doSearch();
+  };
+
+  // ── Dispatch quality filter docs to processing queue ──────────────────────
+
+  const handleDispatch = async () => {
+    if (!filterQuality || dispatching) return;
+    setDispatching(true);
+    try {
+      const res = await dispatchQuality(filterQuality);
+      const msg = t.filters.qualityDispatched.replace("{{n}}", String(res.dispatched));
+      // Refresh counts after dispatch
+      fetchQualityCounts().then(setQualityCounts).catch(() => {});
+      alert(msg);
+    } catch {
+      /* ignore */
+    } finally {
+      setDispatching(false);
+    }
   };
 
   // ── Sync ────────────────────────────────────────────────────────────────────
@@ -245,18 +277,34 @@ export function HomePage() {
                 {total > 0 ? `${total} documents` : ""}
               </span>
               {advancedMode && (
-                <FilterDropdown
-                  label={t.filters.quality}
-                  clearLabel={t.filters.allDocuments}
-                  options={[
-                    { value: "no_embedding", label: t.filters.qualityNoEmbedding },
-                    { value: "no_summary",   label: t.filters.qualityNoSummary },
-                    { value: "no_tags",      label: t.filters.qualityNoTags },
-                    { value: "complete",     label: t.filters.qualityComplete },
-                  ]}
-                  value={filterQuality}
-                  onSelect={setFilterQuality}
-                />
+                <>
+                  <FilterDropdown
+                    label={t.filters.quality}
+                    clearLabel={t.filters.allDocuments}
+                    options={[
+                      { value: "no_ocr",       label: t.filters.qualityNoOcr,       count: qualityCounts["no_ocr"] },
+                      { value: "no_embedding", label: t.filters.qualityNoEmbedding, count: qualityCounts["no_embedding"] },
+                      { value: "no_analysis",  label: t.filters.qualityNoAnalysis,  count: qualityCounts["no_analysis"] },
+                      { value: "no_summary",   label: t.filters.qualityNoSummary,   count: qualityCounts["no_summary"] },
+                      { value: "no_tags",      label: t.filters.qualityNoTags,      count: qualityCounts["no_tags"] },
+                      { value: "no_category",  label: t.filters.qualityNoCategory,  count: qualityCounts["no_category"] },
+                      { value: "complete",     label: t.filters.qualityComplete },
+                    ]}
+                    value={filterQuality}
+                    onSelect={setFilterQuality}
+                  />
+                  {filterQuality && filterQuality !== "complete" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<SendHorizonal size={13} />}
+                      loading={dispatching}
+                      onClick={handleDispatch}
+                    >
+                      {t.filters.qualityDispatch}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
             <div className="toolbar-right">

@@ -225,6 +225,19 @@ async def _run_embedding(doc: Document, db: Session) -> None:
         log.warning("Embedding failed for doc %s: %s", doc.id, e)
 
 
+async def embed_document_by_id(document_id: int) -> None:
+    """Public wrapper: embed a single document without re-running analysis."""
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            return
+        await _run_embedding(doc, db)
+        db.commit()
+    finally:
+        db.close()
+
+
 # ── Batch processing ──────────────────────────────────────────────────────────
 
 async def index_pending_batch(limit: int = 50) -> dict:

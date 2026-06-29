@@ -79,6 +79,12 @@ export const searchDocuments = (params: Record<string, unknown> = {}) => {
 export const fetchEmbeddedIds = () =>
   api.get<{ ids: number[] }>("/search/embedded-ids");
 
+export const fetchQualityCounts = () =>
+  api.get<Record<string, number>>("/search/quality-counts");
+
+export const dispatchQuality = (quality: string) =>
+  api.post<{ dispatched: number; operation: string }>("/indexing/dispatch-quality", { quality });
+
 export const askDocuments = (
   query: string,
   language: string,

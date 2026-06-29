@@ -103,11 +103,29 @@ def search_documents(
             base = base.filter(~Document.id.in_(emb_ids))
         except Exception:
             pass
+    elif quality == "no_ocr":
+        base = base.filter(
+            or_(
+                Document.ocr_status != "done",
+                Document.ocr_text == None,
+                Document.ocr_text == "",
+            )
+        )
+    elif quality == "no_analysis":
+        base = base.filter(Document.analysis_status != "done")
     elif quality == "no_summary":
         base = base.filter(or_(Document.summary == None, Document.summary == ""))
     elif quality == "no_tags":
         base = base.filter(
             or_(Document.tags == None, Document.tags.cast(String) == "[]")
+        )
+    elif quality == "no_category":
+        base = base.filter(
+            or_(
+                Document.document_type == None,
+                Document.document_type == "unclassified",
+                Document.document_type == "other",
+            )
         )
     elif quality == "complete":
         base = base.filter(
@@ -300,6 +318,54 @@ def get_embedded_ids():
     """Return the set of document IDs that have embeddings in ChromaDB."""
     from ..services.embeddings import embedded_ids
     return {"ids": sorted(embedded_ids())}
+
+
+@router.get("/quality-counts")
+def get_quality_counts(db: Session = Depends(get_db)):
+    """Return document counts for each quality filter (for display in the dropdown)."""
+    base = db.query(Document).filter(Document.is_deleted == False)
+
+    no_ocr = base.filter(
+        or_(
+            Document.ocr_status != "done",
+            Document.ocr_text == None,
+            Document.ocr_text == "",
+        )
+    ).count()
+
+    no_analysis = base.filter(Document.analysis_status != "done").count()
+
+    no_summary = base.filter(
+        or_(Document.summary == None, Document.summary == "")
+    ).count()
+
+    no_tags = base.filter(
+        or_(Document.tags == None, Document.tags.cast(String) == "[]")
+    ).count()
+
+    no_category = base.filter(
+        or_(
+            Document.document_type == None,
+            Document.document_type == "unclassified",
+            Document.document_type == "other",
+        )
+    ).count()
+
+    try:
+        from ..services.embeddings import embedded_ids as get_embedded_ids
+        emb_ids = get_embedded_ids()
+        no_embedding = base.filter(~Document.id.in_(emb_ids)).count()
+    except Exception:
+        no_embedding = 0
+
+    return {
+        "no_ocr": no_ocr,
+        "no_embedding": no_embedding,
+        "no_analysis": no_analysis,
+        "no_summary": no_summary,
+        "no_tags": no_tags,
+        "no_category": no_category,
+    }
 
 
 # ── Depth configuration ────────────────────────────────────────────────────────

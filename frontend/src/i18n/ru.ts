@@ -322,10 +322,15 @@ export const ru: Translations = {
     allStatuses: "Все статусы",
     quality: "Качество",
     allDocuments: "Все документы",
+    qualityNoOcr: "Без OCR",
     qualityNoEmbedding: "Без эмбеддинга",
-    qualityNoSummary: "Без анализа",
+    qualityNoAnalysis: "Без анализа",
+    qualityNoSummary: "Без самари",
     qualityNoTags: "Без тегов",
+    qualityNoCategory: "Без категории",
     qualityComplete: "Полные",
+    qualityDispatch: "Отправить в задачи",
+    qualityDispatched: "Отправлено {{n}} документов",
   },
 
   lab: {
