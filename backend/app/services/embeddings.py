@@ -82,6 +82,15 @@ def collection_count() -> int:
         return 0
 
 
+def embedded_ids() -> set[int]:
+    """Return the set of document IDs that currently have an embedding."""
+    try:
+        got = _get_collection().get(include=[])  # ids only — no vectors/documents
+        return {int(i) for i in got.get("ids", [])}
+    except Exception:
+        return set()
+
+
 # ── Lazy init ─────────────────────────────────────────────────────────────────
 
 def _get_model():

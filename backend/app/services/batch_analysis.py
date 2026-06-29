@@ -373,6 +373,9 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     doc.document_date = None
                 doc.analysis_status = "done"
                 db.commit()
+                # Re-embed now that the summary exists so semantic search/ask sees it.
+                from .indexer import _run_embedding
+                await _run_embedding(doc, db)
                 processed += 1
                 doc_type = doc.document_type or "unclassified"
                 tags_str = ", ".join((doc.tags or [])[:5])

@@ -34,6 +34,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   batch_ocr_mistral:       "BATCH OCR",
   batch_ocr_gemini:        "BATCH OCR",
   batch_analysis_gemini:   "BATCH AI",
+  embed_missing:           "EMBED",
   cleanup_missing:         "CLEANUP",
   compress_images:         "COMPRESS",
 };
@@ -47,6 +48,7 @@ const ALL_TYPES: TaskType[] = [
   "batch_ocr_mistral",
   "batch_ocr_gemini",
   "batch_analysis_gemini",
+  "embed_missing",
   "cleanup_missing",
   "compress_images",
 ];

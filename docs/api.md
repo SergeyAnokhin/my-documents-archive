@@ -121,7 +121,9 @@ Advanced-mode-only job queue. See [batch-ocr.md](batch-ocr.md) for batch task de
 | GET | `/api/tasks/{id}/batch-result` | Download raw JSONL results file saved during last batch run |
 | GET | `/api/tasks/{id}/logs` | Task log entries. Param: `limit` (default 200) |
 
-Task types: `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini`
+Task types: `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `embed_missing` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini` · `cleanup_missing` · `compress_images`
+
+`embed_missing` scans the whole archive for analyzed docs (summary present) that lack a ChromaDB embedding and builds the vectors locally (free, no AI provider). Candidate count is logged at start. Embeddings are also generated automatically after every analysis completion (indexer pipeline, reclassify, Gemini batch analysis, Mistral/Gemini batch OCR+analysis, and Lab save).
 
 ## Indexing
 

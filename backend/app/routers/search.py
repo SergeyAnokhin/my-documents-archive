@@ -439,7 +439,9 @@ async def ask_documents(
 
     model_name = provider.model or provider.name
     total_ms = (time.perf_counter() - t0) * 1000
-    log.info("✅ [ask] done  total_ms=%.0f  answer_chars=%d", total_ms, len(answer or ""))
+    log.info("✅ [ask] done  total_ms=%.0f  provider=%s  type=%s  model=%s  depth=%d  docs_sent=%d  tokens=%d/%d  cost=$%.5f  answer_chars=%d",
+             total_ms, provider.name, provider.provider_type, model_name, depth, len(docs),
+             tokens_in, tokens_out, cost, len(answer or ""))
 
     if dbg is not None:
         dbg.context_chars = len(context)

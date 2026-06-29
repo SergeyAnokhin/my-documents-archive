@@ -102,12 +102,27 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         Document.summary != "",
     ).count()
 
+    # Analyzed docs (summary present) that don't yet have an embedding vector.
+    try:
+        from ..services.embeddings import embedded_ids
+        analyzed_ids = {
+            r[0] for r in base.filter(
+                Document.analysis_status == "done",
+                Document.summary.isnot(None),
+                Document.summary != "",
+            ).with_entities(Document.id).all()
+        }
+        embed_missing_count = len(analyzed_ids - embedded_ids())
+    except Exception:
+        embed_missing_count = None
+
     return {
         "index_unindexed": pending,
         "sync_library": None,
         "reclassify_unclassified": reclassify_unclassified_count,
         "reclassify_all": reclassify_all_count,
         "recluster": recluster_count,
+        "embed_missing": embed_missing_count,
         "batch_ocr_mistral": batch_ocr_scope1,
         "batch_ocr_gemini": batch_ocr_scope1,
         "batch_analysis_gemini": batch_analysis_count,
@@ -269,6 +284,8 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await _reclassify_all(task_id, config)
         elif task_type == "recluster":
             await _recluster(task_id, config)
+        elif task_type == "embed_missing":
+            await _embed_missing(task_id, config)
         elif task_type == "batch_ocr_mistral":
             await run_batch_ocr_mistral(task_id, config)
         elif task_type == "batch_ocr_gemini":
@@ -392,6 +409,59 @@ async def _recluster(task_id: int, config: dict) -> None:
     result = await run_recluster(task_id=task_id)
     _finish(task_id, "done", result)
     _log(task_id, f"Done — {result.get('applied', 0)} documents in {result.get('clusters', 0)} clusters")
+
+
+async def _embed_missing(task_id: int, config: dict) -> None:
+    """Embed every analyzed document (summary present) that has no embedding yet.
+
+    Scans the whole archive — not just freshly-added docs — so it backfills the
+    vector index after it was reset or for documents analyzed before embeddings
+    existed. Logs the candidate count up front.
+    """
+    from ..services.indexer import _run_embedding
+    from ..services.embeddings import embedded_ids
+
+    _log(task_id, "Starting: embed analyzed documents that are missing embeddings")
+
+    db = SessionLocal()
+    try:
+        existing = embedded_ids()
+        analyzed = (
+            db.query(Document)
+            .filter(
+                Document.is_deleted == False,
+                Document.analysis_status == "done",
+                Document.summary.isnot(None),
+                Document.summary != "",
+            )
+            .all()
+        )
+        missing = [d for d in analyzed if d.id not in existing]
+        total = len(missing)
+        _log(task_id,
+             f"Candidates: {total} analyzed document(s) missing embeddings "
+             f"({len(analyzed)} analyzed total, {len(existing)} already embedded)")
+        _set_progress(task_id, 0, total)
+
+        processed = errors = 0
+        for i, doc in enumerate(missing):
+            if _is_stopped(task_id):
+                _log(task_id, f"Stopped after {i} document(s)")
+                return
+            try:
+                await _run_embedding(doc, db)
+                db.commit()
+                processed += 1
+                _log(task_id, f"✓ {doc.filename}")
+            except Exception as exc:
+                errors += 1
+                _log(task_id, f"✗ {doc.filename}: {exc}", "error")
+            _set_progress(task_id, i + 1, total)
+    finally:
+        db.close()
+
+    _finish(task_id, "done", {"processed": processed, "errors": errors, "candidates": total})
+    _log(task_id, f"Done — embedded {processed} document(s), {errors} error(s)")
 
 
 async def _cleanup_missing(task_id: int, config: dict) -> None:

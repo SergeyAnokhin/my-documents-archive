@@ -174,6 +174,9 @@ async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
         doc.analysis_status = "done"
 
     db.commit()
+    # Re-embed with the saved OCR text / fields so semantic search & ask reflect the edit.
+    from ..services.indexer import _run_embedding
+    await _run_embedding(doc, db)
     return LabSaveResult(ok=True, doc_id=doc.id)
 
 

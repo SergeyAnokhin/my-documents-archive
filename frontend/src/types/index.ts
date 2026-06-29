@@ -235,6 +235,7 @@ export type TaskType =
   | "batch_ocr_mistral"
   | "batch_ocr_gemini"
   | "batch_analysis_gemini"
+  | "embed_missing"
   | "cleanup_missing"
   | "compress_images";
 

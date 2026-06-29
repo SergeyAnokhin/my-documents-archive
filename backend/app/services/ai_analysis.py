@@ -220,6 +220,9 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
         tin  = resp.usage.prompt_tokens
         tout = resp.usage.completion_tokens
         cost = estimate_cost(model, tin, tout)
+    log.info("🤖 [ai] type=%s model=%s max_tokens=%s json=%s base=%s → %d/%d tok  $%.5f",
+             provider.provider_type, model, create_kwargs["max_tokens"],
+             "response_format" in create_kwargs, base_url or "default", tin, tout, cost)
     return text, tin, tout, cost
 
 
@@ -239,6 +242,8 @@ async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, j
     tin  = int(getattr(um, "prompt_token_count", 0) or 0)
     tout = int(getattr(um, "candidates_token_count", 0) or 0)
     cost = estimate_cost(model_name, tin, tout)
+    log.info("🤖 [ai] type=gemini model=%s max_output_tokens=%s json=%s → %d/%d tok  $%.5f",
+             model_name, gen_cfg["max_output_tokens"], json_mode, tin, tout, cost)
     return resp.text, tin, tout, cost
 
 

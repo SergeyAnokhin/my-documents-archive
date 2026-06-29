@@ -685,6 +685,9 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         doc.analysis_status = "done"
                         doc.analysis_model = f"{model} (batch)"
                         db.commit()
+                        # Re-embed now that summary + OCR text exist.
+                        from .indexer import _run_embedding
+                        await _run_embedding(doc, db)
                         _log(task_id, f"✓ OCR + analysis saved for doc {doc_id}")
                         processed += 1
                     else:
