@@ -374,7 +374,10 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 doc.analysis_status = "done"
                 db.commit()
                 processed += 1
-                _log(task_id, f"✓ {doc.filename}")
+                doc_type = doc.document_type or "unclassified"
+                tags_str = ", ".join((doc.tags or [])[:5])
+                suffix = f" [{tags_str}]" if tags_str else ""
+                _log(task_id, f"✓ {doc.filename} → {doc_type}{suffix}")
 
             except Exception as exc:
                 db.rollback()

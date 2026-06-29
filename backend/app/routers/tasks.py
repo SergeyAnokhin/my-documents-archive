@@ -230,13 +230,15 @@ def download_batch_result(task_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{task_id}/logs", response_model=List[TaskLogOut])
 def get_task_logs(task_id: int, limit: int = 200, db: Session = Depends(get_db)):
-    return (
+    # Fetch the last `limit` rows (most recent), then return in chronological order.
+    rows = (
         db.query(TaskLog)
         .filter(TaskLog.task_id == task_id)
-        .order_by(TaskLog.created_at.asc())
+        .order_by(TaskLog.created_at.desc())
         .limit(limit)
         .all()
     )
+    return list(reversed(rows))
 
 
 # ── Background runners ────────────────────────────────────────────────────────
@@ -310,7 +312,11 @@ async def _index_unindexed(task_id: int, config: dict) -> None:
                 return
             try:
                 await index_document(doc.id)
-                _log(task_id, f"✓ {doc.filename}")
+                db.refresh(doc)
+                doc_type = doc.document_type or "unclassified"
+                tags_str = ", ".join((doc.tags or [])[:5])
+                suffix = f" [{tags_str}]" if tags_str else ""
+                _log(task_id, f"✓ {doc.filename} → {doc_type}{suffix}")
             except Exception as exc:
                 _log(task_id, f"✗ {doc.filename}: {exc}", "error")
             _set_progress(task_id, i + 1, total)

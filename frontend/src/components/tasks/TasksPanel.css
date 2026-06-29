@@ -238,6 +238,21 @@
   border-top: 1px solid var(--color-border-soft);
 }
 
+.task-footer-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.task-timing {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: .75rem;
+  color: var(--color-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .task-card-actions {
   display: flex;
   align-items: center;
@@ -447,6 +462,13 @@
 }
 
 /* ── Logs modal ──────────────────────────────────────────────────────────── */
+
+.logs-count-header {
+  text-align: right;
+  padding: 0 var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--color-border-soft);
+  margin-bottom: var(--sp-1);
+}
 
 .logs-container {
   display: flex;

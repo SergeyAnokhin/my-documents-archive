@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Square, Play, ScrollText, Trash2, X, GripVertical, ChevronLeft, Layers, Download } from "lucide-react";
+import { Plus, Square, Play, ScrollText, Trash2, X, GripVertical, ChevronLeft, Layers, Download, Clock } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
@@ -10,6 +10,18 @@ import {
 } from "../../api/documents";
 import type { AIProvider, Task, TaskLog, TaskType } from "../../types";
 import "./TasksPanel.css";
+
+// ── Duration formatter ────────────────────────────────────────────────────────
+
+function formatDuration(ms: number, h: string, m: string, s: string): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  const secs = sec % 60;
+  if (hours > 0) return `${hours}${h} ${mins}${m}`;
+  if (mins > 0) return `${mins}${m} ${secs}${s}`;
+  return `${secs}${s}`;
+}
 
 // ── Task type short labels ────────────────────────────────────────────────────
 
@@ -106,6 +118,7 @@ export function TasksPanel({ open, onClose }: Props) {
   const [logsTask, setLogsTask] = useState<Task | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -134,6 +147,14 @@ export function TasksPanel({ open, onClose }: Props) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
   }, [tasks, load]);
+
+  // Tick every second to update elapsed time on running tasks
+  useEffect(() => {
+    const hasRunning = tasks.some(tk => tk.status === "running");
+    if (!hasRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [tasks]);
 
   const handleRun = async (task: Task) => {
     await runTask(task.id);
@@ -226,6 +247,7 @@ export function TasksPanel({ open, onClose }: Props) {
                 key={task.id}
                 task={task}
                 t={t}
+                now={now}
                 isDragging={draggedId === task.id}
                 isDragOver={dragOverId === task.id}
                 onRun={() => handleRun(task)}
@@ -276,6 +298,7 @@ export function TasksPanel({ open, onClose }: Props) {
 interface CardProps {
   task: Task;
   t: ReturnType<typeof useT>["t"];
+  now: number;
   isDragging: boolean;
   isDragOver: boolean;
   onRun: () => void;
@@ -289,7 +312,7 @@ interface CardProps {
 }
 
 function TaskCard({
-  task, t, isDragging, isDragOver,
+  task, t, now, isDragging, isDragOver,
   onRun, onStop, onDelete, onLogs,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: CardProps) {
@@ -309,6 +332,19 @@ function TaskCard({
   const resultEntries = task.result_summary
     ? Object.entries(task.result_summary).filter(([k]) => k !== "batch_job_id" && k !== "phase")
     : [];
+
+  const elapsedMs = (() => {
+    if (!task.started_at) return null;
+    const start = new Date(task.started_at + "Z").getTime();
+    if (task.status === "running") return now - start;
+    if (task.finished_at) return new Date(task.finished_at + "Z").getTime() - start;
+    return null;
+  })();
+
+  const dur = t.tasks;
+  const durationStr = elapsedMs !== null
+    ? formatDuration(elapsedMs, dur.durationHour, dur.durationMin, dur.durationSec)
+    : null;
 
   return (
     <div
@@ -361,7 +397,7 @@ function TaskCard({
       )}
 
       {/* Result summary (skip internal phase/job_id fields) */}
-      {task.status === "done" && resultEntries.length > 0 && (
+      {task.status === "done" && (resultEntries.length > 0 || durationStr !== null) && (
         <div className="task-result">
           {resultEntries.map(([k, v]) => (
             <span key={k} className="task-result-item text-xs text-muted">
@@ -369,6 +405,12 @@ function TaskCard({
               <span>{String(v)}</span>
             </span>
           ))}
+          {durationStr !== null && (
+            <span className="task-result-item text-xs text-muted">
+              <span className="task-result-key">{t.tasks.durationLabel}</span>
+              <span>{durationStr}</span>
+            </span>
+          )}
         </div>
       )}
 
@@ -393,10 +435,18 @@ function TaskCard({
 
       {/* Footer */}
       <div className="task-card-footer">
-        <button className="task-btn-ghost" onClick={onLogs} title={t.tasks.logs}>
-          <ScrollText size={14} />
-          <span>{t.tasks.logs}</span>
-        </button>
+        <div className="task-footer-left">
+          <button className="task-btn-ghost" onClick={onLogs} title={t.tasks.logs}>
+            <ScrollText size={14} />
+            <span>{t.tasks.logs}</span>
+          </button>
+          {task.status === "running" && durationStr !== null && (
+            <span className="task-timing">
+              <Clock size={11} />
+              {durationStr}
+            </span>
+          )}
+        </div>
         <div className="task-card-actions">
           <button className="task-btn-ghost task-btn-danger" onClick={onDelete} title={t.tasks.deleteTask}>
             <Trash2 size={14} />
@@ -751,6 +801,11 @@ function TaskLogsModal({ task, t, onClose }: LogsModalProps) {
 
   return (
     <Modal open onClose={onClose} title={`${t.tasks.logsTitle} — ${task.title}`} size="lg">
+      {!loading && logs.length > 0 && (
+        <div className="logs-count-header text-xs text-muted">
+          {t.tasks.logsLastN.replace("{{count}}", String(logs.length))}
+        </div>
+      )}
       <div className="logs-container">
         {loading ? (
           <div className="logs-empty text-muted">{t.loading}</div>

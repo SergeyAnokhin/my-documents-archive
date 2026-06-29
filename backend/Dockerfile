@@ -28,4 +28,4 @@ COPY backend/ ./
 
 EXPOSE 8000
 # LIBRARY_PATH / HF_HOME are injected by the Deployment, not baked here.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "/app/log_config.json"]

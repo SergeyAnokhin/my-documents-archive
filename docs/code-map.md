@@ -42,6 +42,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/ai_common.py` | Shared AI-provider helpers, de-duplicated from analysis+vision: `strip_code_fences()`, `parse_llm_json()` (tolerates trailing commas + markdown fences — used by batch analysis), `update_provider_stats()`, `SyntheticProvider` (env-var provider stand-in), `DOCUMENT_TYPES_BLOCK` (canonical type taxonomy). |
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model. For capable models (OpenAI/Gemini/OpenRouter) uses `VISION_FULL_PROMPT` — returns structured JSON (text + all analysis fields) in one call, so the indexer skips Step 4 entirely. For **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing) returns plain transcription — Analysis still runs. Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
+| `log_filters.py` | `SuppressNoisyPaths` logging filter (drops `/api/tasks` + `/api/health` from access log); referenced by `log_config.json` |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
 | `services/pricing.py` | `estimate_cost(model, tokens_in, tokens_out)` — static per-token price table for all known providers (OpenAI, Gemini, DeepSeek, Mistral, OpenRouter). Returns 0.0 for unknown models. |
 | `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
@@ -129,7 +130,8 @@ Platform contract lives in [k3s-platform-deployment.md](k3s-platform-deployment.
 
 | File | Responsibility |
 |------|---------------|
-| `backend/Dockerfile` | Backend image: Python + Tesseract(rus+fra+eng) + poppler + libmagic. Context = repo root |
+| `backend/Dockerfile` | Backend image: Python + Tesseract(rus+fra+eng) + poppler + libmagic. Context = repo root. CMD passes `--log-config /app/log_config.json` |
+| `backend/log_config.json` | Uvicorn logging config for k8s: `HH:MM:SS.mmm` timestamps, `huggingface_hub` suppressed to ERROR, noisy-path filter for access log |
 | `backend/backup.py` | DB-backup sidecar: every 5 min (if DB changed) writes a consistent `sqlite3.backup()` copy to the NAS root, rotating the 2 newest (`docintell.db.backup.1/.2`) |
 | `frontend/Dockerfile` | Frontend image: Vite build → nginx static. Context = repo root |
 | `frontend/nginx.conf` | nginx SPA history fallback (`/api`,`/thumbnails` routed by ingress, not here) |
