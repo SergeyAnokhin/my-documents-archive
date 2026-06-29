@@ -46,7 +46,8 @@ export function AddProviderForm({
   const [saving, setSaving] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
 
-  const showBaseUrl = ["openai", "mistral"].includes(form.provider_type);
+  const showBaseUrl = ["openai", "mistral", "openai_web"].includes(form.provider_type);
+  const isChatGPTWeb = form.provider_type === "openai_web";
 
   const handleFetchModels = async () => {
     setLoadingModels(true);
@@ -117,7 +118,7 @@ export function AddProviderForm({
         </select>
         <input
           className="admin-input"
-          placeholder={ai.apiKey}
+          placeholder={isChatGPTWeb ? "Session Token (from browser cookies)" : ai.apiKey}
           type="password"
           value={form.api_key}
           onChange={e => setForm(f => ({ ...f, api_key: e.target.value, name: f.model ? autoName(f.provider_type, f.model, f.key_name || defaultKeyName(e.target.value)) : "" }))}
@@ -132,6 +133,26 @@ export function AddProviderForm({
           }}
         />
       </div>
+
+      {/* ChatGPT Web: instructions */}
+      {isChatGPTWeb && (
+        <div style={{
+          fontSize: 12, color: "var(--color-ink-muted)",
+          background: "var(--color-tag)", borderRadius: 6,
+          padding: "10px 12px", marginTop: 4, lineHeight: 1.6,
+        }}>
+          <strong style={{ color: "var(--color-accent)" }}>How to get your session token:</strong><br />
+          1. Open <a href="https://chatgpt.com" target="_blank" rel="noopener" style={{ color: "var(--color-accent)" }}>chatgpt.com</a> and log in<br />
+          2. Press <code style={{ background: "var(--color-surface)", padding: "1px 4px", borderRadius: 3 }}>F12</code> → Application → Cookies → <code style={{ background: "var(--color-surface)", padding: "1px 4px", borderRadius: 3 }}>chatgpt.com</code><br />
+          3. Find <code style={{ background: "var(--color-surface)", padding: "1px 4px", borderRadius: 3 }}>__Secure-next-auth.session-token</code> and copy its value<br />
+          4. Paste it in the API Key field below<br />
+          <br />
+          ⚠️ Your session token gives full access to your ChatGPT account.<br />
+          It is stored locally in your app's database and never sent anywhere else.<br />
+          The token expires after ~1 month; you'll need to re-enter it then.<br />
+          Using your ChatGPT subscription in third-party apps may violate OpenAI's Terms of Service.
+        </div>
+      )}
 
       {/* Optional base URL */}
       {showBaseUrl && (

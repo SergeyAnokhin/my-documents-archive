@@ -235,6 +235,8 @@ export const fr: Translations = {
       providerName: "Nom (généré automatiquement si vide)",
       providerType: "Fournisseur",
       apiKey: "Clé API",
+      sessionToken: "Jeton de session",
+      sessionTokenHint: "Collez le cookie __Secure-next-auth.session-token de chatgpt.com",
       modelName: "Modèle",
       enableVision: "Activer l'IA Vision",
       visionHint: "Envoie l'image du document au modèle vision avant l'analyse. Améliore la précision sur les mises en page complexes.",

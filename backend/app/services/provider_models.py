@@ -128,6 +128,8 @@ async def fetch_models(
         if provider_type == "openai":
             url = base_url or "https://api.openai.com/v1"
             return await _fetch_openai_compat(api_key, url, provider_type)
+        if provider_type == "openai_web":
+            return await _fetch_chatgpt_web(api_key)
     except Exception as e:
         log.warning("fetch_models(%s) failed: %s", provider_type, e)
     return []
@@ -272,3 +274,9 @@ async def _fetch_openrouter(api_key: str) -> list[dict]:
     # Free first, then cheapest
     result.sort(key=lambda x: (not x["is_free"], x["price_in"] or 0))
     return result
+
+
+async def _fetch_chatgpt_web(session_token: str) -> list[dict]:
+    """Fetch available models from ChatGPT Web API using session token."""
+    from .chatgpt_web import list_models
+    return await list_models(session_token)

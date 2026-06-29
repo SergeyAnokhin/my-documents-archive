@@ -180,7 +180,26 @@ async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM,
     """Return (raw_text, tokens_in, tokens_out, cost_usd)."""
     if provider.provider_type == "gemini":
         return await _call_gemini(provider, user_msg, system, json_mode=json_mode)
+    if provider.provider_type == "openai_web":
+        return await _call_chatgpt_web(provider, user_msg, system, json_mode=json_mode)
     return await _call_openai_compatible(provider, user_msg, system, json_mode=json_mode)
+
+
+async def _call_chatgpt_web(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
+    """Call ChatGPT Web API using session token."""
+    from .chatgpt_web import chat_completion
+    model = getattr(provider, "model", None) or "gpt-4o-mini"
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_msg},
+    ]
+    return await chat_completion(
+        session_token=provider.api_key,
+        messages=messages,
+        model=model,
+        max_tokens=1024,
+        json_mode=json_mode,
+    )
 
 
 async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:

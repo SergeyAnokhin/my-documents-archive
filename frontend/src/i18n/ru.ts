@@ -235,6 +235,8 @@ export const ru: Translations = {
       providerName: "Название (генерируется автоматически)",
       providerType: "Провайдер",
       apiKey: "API-ключ",
+      sessionToken: "Токен сессии",
+      sessionTokenHint: "Вставьте куку __Secure-next-auth.session-token с chatgpt.com",
       modelName: "Модель",
       enableVision: "AI Vision",
       visionHint: "Отправляет изображение документа в vision-модель перед анализом. Улучшает точность для сложных документов.",

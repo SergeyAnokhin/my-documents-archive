@@ -5,6 +5,7 @@ import type { ArenaRating } from "../../../../types";
 
 export const PROVIDER_TYPES = [
   { value: "openai",     label: "OpenAI" },
+  { value: "openai_web", label: "ChatGPT Web" },
   { value: "gemini",     label: "Google Gemini" },
   { value: "deepseek",   label: "DeepSeek" },
   { value: "openrouter", label: "OpenRouter" },
