@@ -126,7 +126,7 @@ async def describe_document(
 
             data = _parse_vision_full(text)
             if data and "text" in data:
-                transcription = str(data.pop("text") or "").strip() or text
+                transcription = str(data.pop("text") or "").strip()
                 return transcription, coerce_analysis_fields(data), cost
 
             # Model returned plain text (unexpected) — treat as description only.

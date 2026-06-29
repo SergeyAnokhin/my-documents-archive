@@ -484,8 +484,13 @@ async def _embed_missing(task_id: int, config: dict) -> None:
 
 
 async def _fix_quality(task_id: int, config: dict) -> None:
-    """Process documents that have a specific quality gap (no OCR, no embedding, etc.)."""
-    from ..services.indexer import index_document, reclassify_document, embed_document_by_id
+    """Process documents that have a specific quality gap.
+
+    Analysis gaps (no_analysis/no_summary/no_tags/no_category) are sent to
+    Gemini Batch API via run_batch_analysis_gemini with an explicit doc_ids list.
+    OCR and embedding gaps are handled sequentially as before.
+    """
+    from ..services.indexer import index_document, embed_document_by_id
     from sqlalchemy import or_, String
 
     quality = config.get("quality_filter", "")
@@ -507,13 +512,13 @@ async def _fix_quality(task_id: int, config: dict) -> None:
             operation = "embedding"
         elif quality == "no_analysis":
             docs = base.filter(Document.analysis_status != "done").all()
-            operation = "reclassify"
+            operation = "batch_analysis"
         elif quality == "no_summary":
             docs = base.filter(or_(Document.summary == None, Document.summary == "")).all()
-            operation = "reclassify"
+            operation = "batch_analysis"
         elif quality == "no_tags":
             docs = base.filter(or_(Document.tags == None, Document.tags.cast(String) == "[]")).all()
-            operation = "reclassify"
+            operation = "batch_analysis"
         elif quality == "no_category":
             docs = base.filter(
                 or_(
@@ -522,7 +527,7 @@ async def _fix_quality(task_id: int, config: dict) -> None:
                     Document.document_type == "other",
                 )
             ).all()
-            operation = "reclassify"
+            operation = "batch_analysis"
         else:
             _log(task_id, f"Unknown quality_filter: {quality!r}", "error")
             _finish(task_id, "error")
@@ -531,28 +536,37 @@ async def _fix_quality(task_id: int, config: dict) -> None:
         total = len(docs)
         _log(task_id, f"Found {total} document(s) with gap: {quality!r}")
         _set_progress(task_id, 0, total)
-
-        processed = errors = 0
-        for i, doc in enumerate(docs):
-            if _is_stopped(task_id):
-                _log(task_id, f"Stopped after {i} document(s)")
-                return
-            try:
-                if operation == "ocr":
-                    await index_document(doc.id, True)
-                elif operation == "embedding":
-                    await embed_document_by_id(doc.id)
-                else:
-                    await reclassify_document(doc.id)
-                processed += 1
-                db.expire(doc)
-                _log(task_id, f"✓ {doc.filename}")
-            except Exception as exc:
-                errors += 1
-                _log(task_id, f"✗ {doc.filename}: {exc}", "error")
-            _set_progress(task_id, i + 1, total)
+        doc_ids = [d.id for d in docs]
+        doc_names = {d.id: d.filename for d in docs}
     finally:
         db.close()
+
+    if operation == "batch_analysis":
+        if not doc_ids:
+            _log(task_id, "No documents to process")
+            _finish(task_id, "done", {"processed": 0})
+            return
+        _log(task_id, f"Delegating {len(doc_ids)} document(s) to Gemini Batch Analysis…")
+        await run_batch_analysis_gemini(task_id, {**config, "doc_ids": doc_ids})
+        return
+
+    processed = errors = 0
+    for i, doc_id in enumerate(doc_ids):
+        if _is_stopped(task_id):
+            _log(task_id, f"Stopped after {i} document(s)")
+            return
+        fname = doc_names.get(doc_id, str(doc_id))
+        try:
+            if operation == "ocr":
+                await index_document(doc_id, True)
+            else:
+                await embed_document_by_id(doc_id)
+            processed += 1
+            _log(task_id, f"✓ {fname}")
+        except Exception as exc:
+            errors += 1
+            _log(task_id, f"✗ {fname}: {exc}", "error")
+        _set_progress(task_id, i + 1, total)
 
     _finish(task_id, "done", {"processed": processed, "errors": errors})
     _log(task_id, f"Done — {processed} document(s) processed, {errors} error(s)")

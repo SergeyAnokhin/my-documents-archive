@@ -41,12 +41,14 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                               "needs_analysis" (default) — has ocr_text, no analysis or unclassified
                               "unclassified"  — ocr done, type is unclassified/other, not manually set
                               "pending"       — ocr done, analysis_status != "done"
+      doc_ids               — explicit list of document IDs to process (overrides doc_scope)
     """
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
     resume_job_id = config.get("resume_batch_job_id")
     doc_scope = config.get("doc_scope", "needs_analysis")
+    doc_ids_filter = config.get("doc_ids")  # list[int] | None
 
     # ── 1. Resolve provider ───────────────────────────────────────────────────
     db = SessionLocal()
@@ -94,7 +96,17 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         try:
             base_q = db.query(Document).filter(Document.is_deleted == False)
 
-            if doc_scope == "unclassified":
+            if doc_ids_filter is not None:
+                docs = (
+                    base_q
+                    .filter(
+                        Document.id.in_(doc_ids_filter),
+                        Document.ocr_text.isnot(None),
+                        Document.ocr_text != "",
+                    )
+                    .all()
+                )
+            elif doc_scope == "unclassified":
                 # reclassify_unclassified: has ocr done, type is unclassified/other, not manually set
                 docs = (
                     base_q
