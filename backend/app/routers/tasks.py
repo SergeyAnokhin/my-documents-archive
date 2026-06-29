@@ -102,17 +102,20 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         Document.summary != "",
     ).count()
 
-    # Analyzed docs (summary present) that don't yet have an embedding vector.
+    # Docs that can be embedded (have summary OR ocr_text) but aren't in ChromaDB yet.
+    # Must match the same criterion as _run_embedding in services/indexer.py.
     try:
+        from sqlalchemy import and_
         from ..services.embeddings import embedded_ids
-        analyzed_ids = {
+        embeddable_ids = {
             r[0] for r in base.filter(
-                Document.analysis_status == "done",
-                Document.summary.isnot(None),
-                Document.summary != "",
+                or_(
+                    and_(Document.summary.isnot(None), Document.summary != ""),
+                    and_(Document.ocr_text.isnot(None), Document.ocr_text != ""),
+                )
             ).with_entities(Document.id).all()
         }
-        embed_missing_count = len(analyzed_ids - embedded_ids())
+        embed_missing_count = len(embeddable_ids - embedded_ids())
     except Exception:
         embed_missing_count = None
 
@@ -424,31 +427,35 @@ async def _embed_missing(task_id: int, config: dict) -> None:
     from ..services.embeddings import embedded_ids
 
     force = bool(config.get("force", False))
-    _log(task_id, "Starting: " + ("force-recomputing all embeddings" if force else "embedding analyzed documents that are missing embeddings"))
+    _log(task_id, "Starting: " + ("force-recomputing all embeddings" if force else "embedding documents that are missing embeddings"))
 
     db = SessionLocal()
     try:
+        from sqlalchemy import and_, or_
         existing = embedded_ids()
-        analyzed = (
+        # Mirror the criterion from _run_embedding in services/indexer.py:
+        # a document can be embedded if it has a summary OR ocr_text.
+        embeddable = (
             db.query(Document)
             .filter(
                 Document.is_deleted == False,
-                Document.analysis_status == "done",
-                Document.summary.isnot(None),
-                Document.summary != "",
+                or_(
+                    and_(Document.summary.isnot(None), Document.summary != ""),
+                    and_(Document.ocr_text.isnot(None), Document.ocr_text != ""),
+                ),
             )
             .all()
         )
         if force:
-            missing = analyzed
+            missing = embeddable
             _log(task_id,
-                 f"Force mode: re-embedding all {len(missing)} analyzed document(s) "
+                 f"Force mode: re-embedding all {len(missing)} embeddable document(s) "
                  f"({len(existing)} already had embeddings)")
         else:
-            missing = [d for d in analyzed if d.id not in existing]
+            missing = [d for d in embeddable if d.id not in existing]
             _log(task_id,
-                 f"Candidates: {len(missing)} analyzed document(s) missing embeddings "
-                 f"({len(analyzed)} analyzed total, {len(existing)} already embedded)")
+                 f"Candidates: {len(missing)} document(s) missing embeddings "
+                 f"({len(embeddable)} embeddable total, {len(existing)} already embedded)")
         total = len(missing)
         _set_progress(task_id, 0, total)
 
