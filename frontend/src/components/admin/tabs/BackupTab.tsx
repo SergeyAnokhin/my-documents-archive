@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { RefreshCw, RotateCcw, HardDriveDownload } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
-import { listBackups, restoreBackup } from "../../../api/documents";
+import { listBackups, createBackup, restoreBackup } from "../../../api/documents";
 import type { BackupInfo } from "../../../types";
 
 function fmtSize(bytes: number): string {
@@ -16,6 +16,7 @@ export function BackupTab() {
   const b = t.admin.backup;
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -26,6 +27,19 @@ export function BackupTab() {
   useEffect(() => { load(); }, []);
 
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 5000); };
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const res = await createBackup();
+      flash(res.created);
+      load();
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleRestore = async (name: string) => {
     if (!window.confirm(b.confirm.replace("{{name}}", name))) return;
@@ -48,6 +62,9 @@ export function BackupTab() {
       <div className="admin-actions" style={{ marginBottom: 12 }}>
         <Button variant="secondary" icon={<RefreshCw size={15} />} loading={loading} onClick={load}>
           {b.refresh}
+        </Button>
+        <Button variant="primary" icon={<HardDriveDownload size={15} />} loading={creating} disabled={restoring !== null} onClick={handleCreate}>
+          {b.create}
         </Button>
       </div>
 

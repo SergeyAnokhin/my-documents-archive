@@ -198,6 +198,7 @@ export const updateTypeIcons = () =>
   api.post<{ updated: number; icons: Record<string, string> }>("/admin/update-type-icons");
 
 export const listBackups = () => api.get<BackupInfo[]>("/admin/backups");
+export const createBackup = () => api.post<{ created: string }>("/admin/backups");
 export const restoreBackup = (name: string) =>
   api.post<{ restored: string }>("/admin/backups/restore", { name });
 

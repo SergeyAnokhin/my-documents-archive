@@ -178,6 +178,7 @@ export const fr: Translations = {
       title: "Sauvegardes de la base",
       hint: "Instantanés automatiques de la base de données, conservés sur le NAS. La restauration remplace la base actuelle par l'instantané choisi (une copie est sauvegardée au préalable).",
       refresh: "Actualiser",
+      create: "Créer une sauvegarde",
       restore: "Restaurer",
       empty: "Aucune sauvegarde trouvée pour l'instant.",
       confirm: "Restaurer la base depuis « {{name}} » ? La base actuelle sera remplacée.",

@@ -54,6 +54,31 @@ def _sqlite_copy(src: Path, dst: Path) -> None:
         s.close()
 
 
+def create_backup() -> dict:
+    d = _backup_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    db_path = Path(settings.db_path)
+    if not db_path.exists():
+        raise FileNotFoundError("Database file not found")
+
+    keep = max(1, int(os.environ.get("BACKUP_KEEP", "2")))
+    tmp = d / f"{PREFIX}.tmp"
+    if tmp.exists():
+        tmp.unlink()
+
+    _sqlite_copy(db_path, tmp)
+
+    oldest = d / f"{PREFIX}.{keep}"
+    if oldest.exists():
+        oldest.unlink()
+    for i in range(keep - 1, 0, -1):
+        cur = d / f"{PREFIX}.{i}"
+        if cur.exists():
+            cur.rename(d / f"{PREFIX}.{i + 1}")
+    tmp.rename(d / f"{PREFIX}.1")
+    return {"created": f"{PREFIX}.1"}
+
+
 def restore_backup(name: str) -> dict:
     d = _backup_dir()
     src = (d / name).resolve()

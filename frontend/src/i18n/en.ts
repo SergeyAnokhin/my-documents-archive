@@ -183,6 +183,7 @@ export const en = {
       title: "Database Backups",
       hint: "Automatic snapshots of the database, kept on the NAS. Restore replaces the current database with the selected snapshot (a pre-restore copy is saved first).",
       refresh: "Refresh",
+      create: "Create backup",
       restore: "Restore",
       empty: "No backups found yet.",
       confirm: "Restore the database from \"{{name}}\"? The current database will be replaced.",
