@@ -81,6 +81,7 @@ interface Props {
   doc: Document;
   highlight?: string;
   onClick: () => void;
+  onTagClick?: (value: string) => void;
   mode: "list" | "grid";
   gridSize?: "sm" | "md" | "lg" | "xl";
   thumbVersion?: number;
@@ -117,7 +118,7 @@ function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number
   );
 }
 
-export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
+export function DocumentCard({ doc, highlight, onClick, onTagClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
   const date = formatDate(doc.document_date || doc.added_at);
   const showScore = score !== undefined && score > 0;
 
@@ -139,7 +140,13 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
             </div>
           </div>
           {doc.document_type && (
-            <span className="tag">{doc.document_type}</span>
+            <span
+              className={`tag${onTagClick ? " tag-clickable" : ""}`}
+              onClick={onTagClick ? (e) => { e.stopPropagation(); onTagClick(doc.document_type!); } : undefined}
+              title={onTagClick ? `Search: ${doc.document_type}` : undefined}
+            >
+              {doc.document_type}
+            </span>
           )}
           {(highlight || doc.summary) && (
             <p className="doc-snippet text-sm text-muted">
@@ -149,7 +156,14 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
           {doc.tags && doc.tags.length > 0 && (
             <div className="doc-tags">
               {doc.tags.slice(0, 5).map((tag) => (
-                <span key={tag} className="tag"><Tag size={10} />{tag}</span>
+                <span
+                  key={tag}
+                  className={`tag${onTagClick ? " tag-clickable" : ""}`}
+                  onClick={onTagClick ? (e) => { e.stopPropagation(); onTagClick(tag); } : undefined}
+                  title={onTagClick ? `Search: ${tag}` : undefined}
+                >
+                  <Tag size={10} />{tag}
+                </span>
               ))}
             </div>
           )}

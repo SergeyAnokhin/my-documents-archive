@@ -65,6 +65,8 @@ Analyze this scanned document image. Return a single JSON object with these fiel
 "document_date": most significant date in YYYY-MM-DD format, or null
 "short_title": 2-5 word filename slug, lowercase_with_underscores, no extension, max 40 chars
 
+If the document contains no readable text (it is a photograph, illustration, or artwork), describe the visual content in "text" (subjects, scene, setting, notable elements) and use "photo" as the document_type. Derive the summary, tags, and other fields from that visual description.
+
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
 VISION_CAPABLE = {"openai", "gemini", "openrouter", "mistral"}

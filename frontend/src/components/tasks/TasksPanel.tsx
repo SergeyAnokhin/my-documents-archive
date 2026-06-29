@@ -32,8 +32,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   reclassify_all:          "RECLASSIFY",
   recluster:               "RECLUSTER",
   batch_ocr_mistral:       "BATCH OCR",
-  batch_ocr_gemini:        "BATCH OCR",
-  batch_analysis_gemini:   "BATCH AI",
+  batch_ocr_gemini:        "BATCH AI",
   embed_missing:           "EMBED",
   fix_quality:             "FIX",
   cleanup_missing:         "CLEANUP",
@@ -48,7 +47,6 @@ const ALL_TYPES: TaskType[] = [
   "recluster",
   "batch_ocr_mistral",
   "batch_ocr_gemini",
-  "batch_analysis_gemini",
   "embed_missing",
   "cleanup_missing",
   "compress_images",
@@ -60,7 +58,6 @@ const TYPES_WITH_LIMIT: TaskType[] = [
   "reclassify_all",
   "batch_ocr_mistral",
   "batch_ocr_gemini",
-  "batch_analysis_gemini",
 ];
 
 // Batch tasks that pick an async provider + poll interval, mapped to the
@@ -70,7 +67,6 @@ const BATCH_PROVIDER_TYPE: Partial<Record<TaskType, string>> = {
   reclassify_all:          "gemini",
   batch_ocr_mistral:       "mistral",
   batch_ocr_gemini:        "gemini",
-  batch_analysis_gemini:   "gemini",
 };
 
 // Default poll interval (seconds) per provider type.
@@ -92,7 +88,6 @@ const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
   reclassify_all:          "https://ai.google.dev/gemini-api/docs/batch-mode",
   batch_ocr_mistral:       "https://docs.mistral.ai/capabilities/batch/",
   batch_ocr_gemini:        "https://ai.google.dev/gemini-api/docs/batch-mode",
-  batch_analysis_gemini:   "https://ai.google.dev/gemini-api/docs/batch-mode",
 };
 
 // Links to provider batch consoles — shown while the task is running.
@@ -103,7 +98,7 @@ const BATCH_CONSOLE_URLS: Partial<Record<TaskType, string>> = {
 // Batch task types that have a remote job and can be monitored / resumed
 const BATCH_TASK_TYPES: TaskType[] = [
   "reclassify_unclassified", "reclassify_all",
-  "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
+  "batch_ocr_mistral", "batch_ocr_gemini",
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -133,6 +128,7 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
   const [logsTask, setLogsTask] = useState<Task | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const [startingId, setStartingId] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -179,8 +175,13 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
   }, [tasks]);
 
   const handleRun = async (task: Task) => {
-    await runTask(task.id);
-    await load();
+    setStartingId(task.id);
+    try {
+      await runTask(task.id);
+      await load();
+    } finally {
+      setStartingId(null);
+    }
   };
 
   const handleStop = async (task: Task) => {
@@ -278,6 +279,7 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
                 now={now}
                 isDragging={draggedId === task.id}
                 isDragOver={dragOverId === task.id}
+                isStarting={startingId === task.id}
                 onRun={() => handleRun(task)}
                 onStop={() => handleStop(task)}
                 onDelete={() => handleDelete(task)}
@@ -333,6 +335,7 @@ interface CardProps {
   now: number;
   isDragging: boolean;
   isDragOver: boolean;
+  isStarting: boolean;
   onRun: () => void;
   onStop: () => void;
   onDelete: () => void;
@@ -344,7 +347,7 @@ interface CardProps {
 }
 
 function TaskCard({
-  task, t, now, isDragging, isDragOver,
+  task, t, now, isDragging, isDragOver, isStarting,
   onRun, onStop, onDelete, onLogs,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: CardProps) {
@@ -494,9 +497,9 @@ function TaskCard({
               <span>{t.tasks.stop}</span>
             </button>
           ) : (
-            <button className="task-btn task-btn--run" onClick={onRun}>
-              <Play size={13} />
-              <span>{task.status === "stopped" ? t.tasks.resume : t.tasks.run}</span>
+            <button className="task-btn task-btn--run" onClick={onRun} disabled={isStarting}>
+              {isStarting ? <span className="task-btn-spinner" /> : <Play size={13} />}
+              <span>{isStarting ? "…" : task.status === "stopped" ? t.tasks.resume : t.tasks.run}</span>
             </button>
           )}
         </div>

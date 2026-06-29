@@ -64,6 +64,8 @@ You are a document analysis assistant. Analyze the document text and return a JS
 - "document_date": the most significant date found in the document in YYYY-MM-DD format, or null if absent
 - "short_title": 2-5 word filename slug, lowercase_with_underscores, no extension, max 40 chars (e.g. "passport_ivanov_2024", "lease_agreement_paris", "tax_return_2023")
 
+If the input contains only "(no text available)", the document is likely a photograph or scan with no extractable text. In that case set document_type to "photo", write a brief summary noting the document contains no readable text, and assign suitable tags.
+
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
 SUGGEST_TYPES_SYSTEM = """\

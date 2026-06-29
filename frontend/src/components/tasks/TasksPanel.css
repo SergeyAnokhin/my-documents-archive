@@ -319,6 +319,16 @@
   cursor: not-allowed;
 }
 
+.task-btn-spinner {
+  width: 13px; height: 13px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: task-btn-spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes task-btn-spin { to { transform: rotate(360deg); } }
+
 /* ── Create task modal ────────────────────────────────────────────────────── */
 
 .create-type-grid {

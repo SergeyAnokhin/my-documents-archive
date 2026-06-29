@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical,
-  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints,
+  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints, Search,
 } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
@@ -10,7 +10,7 @@ import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
-import { TypePicker } from "./TypePicker";
+import { TypePicker, formatTypeName } from "./TypePicker";
 import { useImageEdit } from "../../hooks/useImageEdit";
 import { resolveImgSrc } from "./imgSrc";
 import "./DocumentViewer.css";
@@ -23,6 +23,7 @@ interface Props {
   hasPrev?: boolean;
   hasNext?: boolean;
   isEmbedded?: boolean;
+  onTagClick?: (value: string) => void;
 }
 
 function formatDate(iso?: string) {
@@ -34,7 +35,7 @@ function formatDate(iso?: string) {
 
 // ── Main viewer ─────────────────────────────────────────────────────────────
 
-export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext, isEmbedded }: Props) {
+export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext, isEmbedded, onTagClick }: Props) {
   const { t } = useT();
   const navigate = useNavigate();
   const { advancedMode } = useAdvancedMode();
@@ -501,12 +502,24 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
 
                 <div className="viewer-meta-row">
                   <span className="viewer-meta-label">Type</span>
-                  <TypePicker
-                    docId={doc.id}
-                    currentType={displayType}
-                    isManual={displayManual}
-                    onSaved={(t) => { setLocalType(t); setLocalManual(true); }}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <TypePicker
+                      docId={doc.id}
+                      currentType={displayType}
+                      isManual={displayManual}
+                      onSaved={(t) => { setLocalType(t); setLocalManual(true); }}
+                    />
+                    {onTagClick && displayType && displayType !== "unclassified" && displayType !== "other" && (
+                      <button
+                        className="icon-btn"
+                        style={{ width: 24, height: 24, flexShrink: 0 }}
+                        onClick={() => onTagClick(displayType)}
+                        title={`Search: ${formatTypeName(displayType)}`}
+                      >
+                        <Search size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {displayTags.length > 0 && (
@@ -514,9 +527,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                     <span className="viewer-meta-label"><Tag size={13}/> Tags</span>
                     <div className="viewer-tags">
                       {displayTags.map((tag) => (
-                        <span key={tag} className="tag">
+                        <span
+                          key={tag}
+                          className={`tag${onTagClick ? " tag-clickable" : ""}`}
+                          onClick={onTagClick ? () => onTagClick(tag) : undefined}
+                          title={onTagClick ? `Search: ${tag}` : undefined}
+                        >
                           {tag}
-                          <button className="tag-remove" onClick={() => handleRemoveTag(tag)} title="Remove tag">
+                          <button className="tag-remove" onClick={(e) => { e.stopPropagation(); handleRemoveTag(tag); }} title="Remove tag">
                             <X size={10} />
                           </button>
                         </span>

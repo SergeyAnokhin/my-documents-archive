@@ -202,6 +202,15 @@ export function HomePage() {
     );
   };
 
+  // ── Tag / category search ────────────────────────────────────────────────────
+
+  const handleTagSearch = (value: string) => {
+    setViewerIdx(null);
+    setAiViewerIdx(null);
+    if (mode === "ask") setMode("search");
+    setQuery(value);
+  };
+
   // ── Sync ────────────────────────────────────────────────────────────────────
 
   const handleSync = async () => {
@@ -403,6 +412,7 @@ export function HomePage() {
                   highlight={r.highlight}
                   mode="list"
                   onClick={() => setViewerIdx(i)}
+                  onTagClick={handleTagSearch}
                   thumbVersion={thumbVersions[r.document.id]}
                   devMode={devMode}
                   isEmbedded={embeddedIds.has(r.document.id)}
@@ -419,6 +429,7 @@ export function HomePage() {
                   mode="grid"
                   gridSize={gridSize}
                   onClick={() => setViewerIdx(i)}
+                  onTagClick={handleTagSearch}
                   thumbVersion={thumbVersions[r.document.id]}
                   devMode={devMode}
                   isEmbedded={embeddedIds.has(r.document.id)}
@@ -439,6 +450,7 @@ export function HomePage() {
         hasPrev={viewerIdx !== null && viewerIdx > 0}
         hasNext={viewerIdx !== null && viewerIdx < results.length - 1}
         isEmbedded={viewerDoc ? embeddedIds.has(viewerDoc.id) : undefined}
+        onTagClick={handleTagSearch}
       />
 
       {/* Document viewer — AI sources */}
@@ -450,6 +462,7 @@ export function HomePage() {
         hasPrev={aiViewerIdx !== null && aiViewerIdx > 0}
         hasNext={aiViewerIdx !== null && aiAnswer !== null && aiViewerIdx < aiAnswer.sources.length - 1}
         isEmbedded={aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
+        onTagClick={handleTagSearch}
       />
 
       {/* Keyboard shortcuts help */}
