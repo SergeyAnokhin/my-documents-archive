@@ -9,6 +9,7 @@ atomic ``os.replace`` over the live DB — and a ``docintell.db.pre-restore``
 safety snapshot is taken first, so a restore is reversible.
 """
 import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,20 +63,25 @@ def create_backup() -> dict:
         raise FileNotFoundError("Database file not found")
 
     keep = max(1, int(os.environ.get("BACKUP_KEEP", "2")))
-    tmp = d / f"{PREFIX}.tmp"
-    if tmp.exists():
-        tmp.unlink()
 
-    _sqlite_copy(db_path, tmp)
-
-    oldest = d / f"{PREFIX}.{keep}"
-    if oldest.exists():
-        oldest.unlink()
-    for i in range(keep - 1, 0, -1):
-        cur = d / f"{PREFIX}.{i}"
-        if cur.exists():
-            cur.rename(d / f"{PREFIX}.{i + 1}")
-    tmp.rename(d / f"{PREFIX}.1")
+    # Write to a local tmp (state PVC) first — SQLite file locking fails on SMB mounts.
+    # After the consistent copy is done, move it to the NAS destination as a plain file.
+    local_tmp = db_path.parent / f"{PREFIX}.creating"
+    if local_tmp.exists():
+        local_tmp.unlink()
+    try:
+        _sqlite_copy(db_path, local_tmp)
+        oldest = d / f"{PREFIX}.{keep}"
+        if oldest.exists():
+            oldest.unlink()
+        for i in range(keep - 1, 0, -1):
+            cur = d / f"{PREFIX}.{i}"
+            if cur.exists():
+                cur.rename(d / f"{PREFIX}.{i + 1}")
+        shutil.copy2(local_tmp, d / f"{PREFIX}.1")
+    finally:
+        if local_tmp.exists():
+            local_tmp.unlink()
     return {"created": f"{PREFIX}.1"}
 
 

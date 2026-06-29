@@ -68,7 +68,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             ).order_by(AIProvider.sort_order).first()
 
         if not provider:
-            _log(task_id, "No Gemini provider configured — add one in AI Settings", "error")
+            _log(task_id, "❌ No Gemini provider configured — add one in AI Settings", "error")
             _finish(task_id, "error")
             return
 
@@ -82,7 +82,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
     if resume_job_id:
         # ── Resume path: skip submission, reconnect to existing job ──────────
         batch_job_name = resume_job_id
-        _log(task_id, f"Resuming existing Gemini analysis batch job: {batch_job_name}")
+        _log(task_id, f"🔄 Resuming existing Gemini analysis batch job: {batch_job_name}")
         db = SessionLocal()
         try:
             all_ids = db.query(Document.id).filter(Document.is_deleted == False).all()
@@ -154,11 +154,12 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             db.close()
 
         if total == 0:
-            _log(task_id, "No documents found with OCR text pending analysis")
+            _log(task_id, "📭 No documents found with OCR text pending analysis")
             _finish(task_id, "done", {"processed": 0})
             return
 
-        _log(task_id, f"Found {total} document(s) for analysis — model: {model}")
+        _log(task_id, f"📋 Found {total} document(s) for analysis — model: {model}")
+        _log(task_id, "📝 Mode: text-only — extracted OCR text is sent, no images")
         _set_progress(task_id, 0, total)
 
         # ── 3. Build JSONL (text-only requests) ──────────────────────────────
@@ -168,8 +169,9 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         for doc in docs:
             text_snippet = ((doc.ocr_text or "").strip() or (doc.vision_description or "").strip())[:4000]
             if not text_snippet:
-                _log(task_id, f"⚠ {doc.filename}: no text to analyze, skipping")
+                _log(task_id, f"⚠️ {doc.filename}: no text to analyze, skipping")
                 continue
+            _log(task_id, f"📄 {doc.filename}: {len(text_snippet)} chars (text-only, no image)")
             user_msg = f"OCR Text:\n{text_snippet}"
             key = str(doc.id)
             doc_id_map[key] = doc.id
@@ -187,7 +189,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         jsonl_bytes = ("\n".join(jsonl_lines)).encode()
 
         # ── 4. Upload JSONL ───────────────────────────────────────────────────
-        _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+        _log(task_id, f"📤 Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
         async with httpx.AsyncClient(timeout=180) as client:
             start_resp = await client.post(
                 f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
@@ -204,7 +206,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             start_resp.raise_for_status()
             upload_url = start_resp.headers.get("x-goog-upload-url")
             if not upload_url:
-                _log(task_id, "Gemini did not return an upload URL", "error")
+                _log(task_id, "❌ Gemini did not return an upload URL", "error")
                 _finish(task_id, "error")
                 return
 
@@ -220,7 +222,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             upload_resp.raise_for_status()
             input_file_name = upload_resp.json()["file"]["name"]
 
-        _log(task_id, f"Uploaded input file: {input_file_name}")
+        _log(task_id, f"☁️ Uploaded input file: {input_file_name}")
 
         # ── 5. Create batch job ──────────────────────────────────────────────
         async with httpx.AsyncClient(timeout=60) as client:
@@ -238,7 +240,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             batch_data = batch_resp.json()
 
         batch_job_name = batch_data["name"]
-        _log(task_id, f"Batch job created: {batch_job_name}")
+        _log(task_id, f"🚀 Batch job created: {batch_job_name}")
 
         db = SessionLocal()
         try:
@@ -254,7 +256,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             db.close()
 
     # ── 6. Poll until complete ────────────────────────────────────────────────
-    _log(task_id, f"Job submitted. Polling every {poll_interval}s…")
+    _log(task_id, f"⏳ Job submitted. Polling every {poll_interval}s…")
 
     job_data: dict = {}
     while True:
@@ -274,13 +276,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
 
         meta = job_data.get("metadata") or {}
         job_status = meta.get("state") or job_data.get("state") or "JOB_STATE_UNSPECIFIED"
-        _log(task_id, f"Status: {job_status}")
+        _log(task_id, f"⏳ Status: {job_status}")
 
         if job_status == "JOB_STATE_SUCCEEDED" or job_data.get("done"):
             break
         if job_status in ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
             err = (job_data.get("error") or {}).get("message", job_status)
-            _log(task_id, f"Batch job ended: {job_status} — {err}", "error")
+            _log(task_id, f"❌ Batch job ended: {job_status} — {err}", "error")
             _finish(task_id, "error", {"batch_job_id": batch_job_name, "status": job_status})
             return
 
@@ -292,11 +294,11 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         or (job_data.get("dest") or {}).get("fileName")
     )
     if not output_file_name:
-        _log(task_id, "Batch completed but no responses file found", "error")
+        _log(task_id, "❌ Batch completed but no responses file found", "error")
         _finish(task_id, "error")
         return
 
-    _log(task_id, f"Downloading results from {output_file_name}…")
+    _log(task_id, f"📥 Downloading results from {output_file_name}…")
     async with httpx.AsyncClient(timeout=180) as client:
         results_resp = await client.get(
             f"{GEMINI_BATCH_BASE}/download/v1beta/{output_file_name}:download",
@@ -312,12 +314,12 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         _batch_dir = _cfg.docintell_dir / "batch_results"
         _batch_dir.mkdir(parents=True, exist_ok=True)
         (_batch_dir / f"task_{task_id}.jsonl").write_text(results_text, encoding="utf-8")
-        _log(task_id, f"Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
+        _log(task_id, f"💾 Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
     except Exception as _save_exc:
-        _log(task_id, f"Could not save raw results file: {_save_exc}", "warning")
+        _log(task_id, f"⚠️ Could not save raw results file: {_save_exc}", "warning")
 
     # ── 8. Save analysis to documents ────────────────────────────────────────
-    _log(task_id, "Saving analysis results…")
+    _log(task_id, "💾 Saving analysis results…")
     processed = 0
     failed_count = 0
     tokens_in = 0
@@ -338,7 +340,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
 
                 if result_obj.get("error"):
                     err_msg = result_obj["error"].get("message", "Unknown error")
-                    _log(task_id, f"✗ Doc {doc_id}: {err_msg}", "error")
+                    _log(task_id, f"❌ Doc {doc_id}: {err_msg}", "error")
                     failed_count += 1
                     continue
 
@@ -388,12 +390,12 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 doc_type = doc.document_type or "unclassified"
                 tags_str = ", ".join((doc.tags or [])[:5])
                 suffix = f" [{tags_str}]" if tags_str else ""
-                _log(task_id, f"✓ {doc.filename} → {doc_type}{suffix}")
+                _log(task_id, f"✅ {doc.filename} → {doc_type}{suffix}")
 
             except Exception as exc:
                 db.rollback()
                 text_preview = (text[:400].replace("\n", " ")) if "text" in dir() else ""
-                _log(task_id, f"✗ Doc key '{key}': {exc}", "error")
+                _log(task_id, f"❌ Doc key '{key}': {exc}", "error")
                 if text_preview:
                     _log(task_id, f"  Model response preview: {text_preview}", "error")
                 failed_count += 1
@@ -414,4 +416,4 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         detail=f"{processed} docs, {failed_count} failed",
     )
     _finish(task_id, "done", summary)
-    _log(task_id, f"Done — {processed} analyzed, {failed_count} failed")
+    _log(task_id, f"✅ Done — {processed} analyzed, {failed_count} failed")
