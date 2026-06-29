@@ -44,6 +44,16 @@ def search_similar(query: str, n_results: int = 50) -> list[int]:
     Return up to n_results document IDs ordered by cosine similarity to query.
     Returns empty list if collection is empty or model unavailable.
     """
+    return [doc_id for doc_id, _ in search_similar_scored(query, n_results)]
+
+
+def search_similar_scored(query: str, n_results: int = 50) -> list[tuple[int, float]]:
+    """
+    Like search_similar, but also returns each match's cosine *distance*
+    (0.0 = identical, 2.0 = opposite; similarity = 1 - distance).
+    Ordered closest-first. Returns [] if collection is empty or model unavailable.
+    Used by the /ask retrieval logging to show why a document ranked where it did.
+    """
     try:
         model = _get_model()
         coll  = _get_collection()
@@ -53,7 +63,12 @@ def search_similar(query: str, n_results: int = 50) -> list[int]:
         n = min(n_results, count)
         vector = model.encode(query, normalize_embeddings=True).tolist()
         results = coll.query(query_embeddings=[vector], n_results=n)
-        return [int(mid) for mid in results["ids"][0]]
+        ids   = results["ids"][0]
+        dists = (results.get("distances") or [[None] * len(ids)])[0]
+        return [
+            (int(mid), float(dist) if dist is not None else None)
+            for mid, dist in zip(ids, dists)
+        ]
     except Exception as e:
         log.warning("Semantic search failed: %s", e)
         return []

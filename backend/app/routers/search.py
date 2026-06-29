@@ -153,6 +153,14 @@ def _semantic_ids(query: str, n: int) -> list[int]:
         return []
 
 
+def _semantic_scored(query: str, n: int) -> list[tuple[int, float]]:
+    try:
+        from ..services.embeddings import search_similar_scored
+        return search_similar_scored(query, n_results=n)
+    except Exception:
+        return []
+
+
 def _fulltext_ids(base_query, query: str) -> set[int]:
     phrases, words = _parse_query(query)
     q = _apply_text_filter(base_query, phrases, words)
@@ -295,7 +303,9 @@ async def ask_documents(
 
     # ── Hybrid retrieval: semantic + fulltext always merged ────────────────
     t1 = time.perf_counter()
-    sem_ids = _semantic_ids(query, cfg["n_retrieve"] * 2)
+    sem_scored = _semantic_scored(query, cfg["n_retrieve"] * 2)
+    sem_ids   = [sid for sid, _ in sem_scored]
+    sem_dist  = {sid: dist for sid, dist in sem_scored}
     log.debug("🧠 [ask] step=semantic  ids=%d  ms=%.0f", len(sem_ids), (time.perf_counter() - t1) * 1000)
 
     t2 = time.perf_counter()
@@ -321,6 +331,16 @@ async def ask_documents(
     docs = docs_all[:cfg["n_send"]]
     log.debug("📂 [ask] selected docs (%d): %s", len(docs),
               [(d.id, d.filename[:40]) for d in docs])
+
+    # ── Retrieval report (INFO) ────────────────────────────────────────────
+    # The single most useful diagnostic: for the whole candidate pool, show each
+    # doc's similarity score, where it came from, and whether it survived the
+    # n_retrieve / n_send cuts. This is what reveals *why* a relevant document
+    # (e.g. a visa) was dropped before ever reaching the LLM.
+    _log_retrieval(base, query_variants, merged, sem_dist, ft_ids,
+                   sent_ids={d.id for d in docs},
+                   retrieved_ids={d.id for d in docs_all},
+                   cfg=cfg)
 
     source_docs = [DocumentOut.model_validate(d) for d in docs]
 
@@ -414,6 +434,56 @@ async def ask_documents(
         docs_sent=len(docs),
         depth=depth,
     )
+
+
+def _log_retrieval(
+    base_query,
+    query_variants: list[str],
+    merged: list[int],
+    sem_dist: dict[int, float],
+    ft_ids: set[int],
+    sent_ids: set[int],
+    retrieved_ids: set[int],
+    cfg: dict,
+) -> None:
+    """Emit a human-readable INFO table of the ask retrieval pool.
+
+    One line per candidate document, ordered by merge rank, showing:
+      status  — SENT→LLM (in context) · retrieved (in pool, cut before LLM) · dropped (cut from pool)
+      sim     — cosine similarity (1 - distance); higher = closer. "ft-only" = no embedding hit.
+      src     — sem · ft · sem+ft  (which retriever surfaced it)
+    The cut points are n_retrieve (pool→retrieved) and n_send (retrieved→LLM).
+    """
+    if not merged:
+        log.info("🔎 [ask] retrieval  pool=0  (no semantic or fulltext matches; "
+                 "answering from newest docs)  variants=%s", query_variants)
+        return
+
+    # filename lookup for the whole candidate pool, one query
+    fname = dict(
+        base_query.filter(Document.id.in_(set(merged)))
+        .with_entities(Document.id, Document.filename)
+        .all()
+    )
+
+    lines = [
+        "🔎 [ask] retrieval  semantic=%d  fulltext=%d  variants=%s  → retrieve top %d, send top %d"
+        % (len(sem_dist), len(ft_ids), query_variants, cfg["n_retrieve"], cfg["n_send"]),
+    ]
+    for rank, did in enumerate(merged, 1):
+        if did in sent_ids:
+            status = "SENT→LLM"
+        elif did in retrieved_ids:
+            status = "retrieved"
+        else:
+            status = "dropped"
+        dist = sem_dist.get(did)
+        sim = f"{1 - dist:5.3f}" if dist is not None else "ft-only"
+        src = "sem+ft" if (did in sem_dist and did in ft_ids) else ("sem" if did in sem_dist else "ft")
+        lines.append(
+            f"   #{rank:<2} {status:<9} sim={sim:<7} src={src:<6} id={did:<5} {fname.get(did, '?')[:50]}"
+        )
+    log.info("\n".join(lines))
 
 
 def _log_ask(
