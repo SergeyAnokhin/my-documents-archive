@@ -99,7 +99,9 @@ def search_documents(
     # ── Semantic / hybrid ──────────────────────────────────────────────────
     if mode in ("semantic", "hybrid") and query:
         t1 = time.perf_counter()
-        sem_ids = _semantic_ids(query, page_size * 4)
+        sem_scored_list = _semantic_scored(query, page_size * 4)
+        sem_ids = [sid for sid, _ in sem_scored_list]
+        sem_score_map = {sid: 1.0 - dist for sid, dist in sem_scored_list}
         log.debug("🧠 [search] semantic  ids=%d  ms=%.0f", len(sem_ids), (time.perf_counter() - t1) * 1000)
 
         if mode == "hybrid":
@@ -124,7 +126,7 @@ def search_documents(
             docs  = docs_all[(page - 1) * page_size: page * page_size]
             log.info("✅ [search] done  mode=%s  query=%r  results=%d  ms=%.0f",
                      mode, query[:60], total, (time.perf_counter() - t0) * 1000)
-            return _build_response(docs, total, page, page_size, mode, query)
+            return _build_response(docs, total, page, page_size, mode, query, sem_score_map)
         # Fall through to fulltext if no embeddings yet
 
     # ── Full-text (default + fallback) ─────────────────────────────────────
@@ -200,11 +202,12 @@ def _build_response(
     page_size: int,
     mode: str,
     query: str,
+    score_map: Optional[dict[int, float]] = None,
 ) -> SearchResponse:
     results = [
         SearchResult(
             document=DocumentOut.model_validate(d),
-            score=1.0,
+            score=score_map.get(d.id, 0.0) if score_map else 0.0,
             highlight=_highlight(d.ocr_text or d.summary, query),
         )
         for d in docs
@@ -265,6 +268,13 @@ def _expand_fulltext_query(query: str) -> list[str]:
     if translit_query.lower() != query.lower():
         variants.append(translit_query)
     return variants
+
+
+@router.get("/embedded-ids")
+def get_embedded_ids():
+    """Return the set of document IDs that have embeddings in ChromaDB."""
+    from ..services.embeddings import embedded_ids
+    return {"ids": sorted(embedded_ids())}
 
 
 # ── Depth configuration ────────────────────────────────────────────────────────

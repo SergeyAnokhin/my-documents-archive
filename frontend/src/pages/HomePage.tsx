@@ -9,7 +9,7 @@ import { KeyboardHelp } from "../components/ui/KeyboardHelp";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
-import { searchDocuments, syncLibrary, askDocuments } from "../api/documents";
+import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
 
@@ -35,6 +35,7 @@ export function HomePage() {
   const [aiViewerIdx, setAiViewerIdx] = useState<number | null>(null);
   const [depth, setDepth] = useState(2);
   const [devMode, setDevMode] = useState(false);
+  const [embeddedIds, setEmbeddedIds] = useState<Set<number>>(new Set());
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -105,6 +106,12 @@ export function HomePage() {
     if (mode !== "ask") doSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterYear, filterLang]);
+
+  // Fetch embedded doc IDs when dev mode is active (for the vector badge)
+  useEffect(() => {
+    if (!devMode) return;
+    fetchEmbeddedIds().then(data => setEmbeddedIds(new Set(data.ids))).catch(() => {});
+  }, [devMode]);
 
   // ── AI ask ──────────────────────────────────────────────────────────────────
 
@@ -319,6 +326,9 @@ export function HomePage() {
                   mode="list"
                   onClick={() => setViewerIdx(i)}
                   thumbVersion={thumbVersions[r.document.id]}
+                  devMode={devMode}
+                  isEmbedded={embeddedIds.has(r.document.id)}
+                  score={r.score > 0 ? r.score : undefined}
                 />
               ))}
             </div>
@@ -332,6 +342,9 @@ export function HomePage() {
                   gridSize={gridSize}
                   onClick={() => setViewerIdx(i)}
                   thumbVersion={thumbVersions[r.document.id]}
+                  devMode={devMode}
+                  isEmbedded={embeddedIds.has(r.document.id)}
+                  score={r.score > 0 ? r.score : undefined}
                 />
               ))}
             </div>

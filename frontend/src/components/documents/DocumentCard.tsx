@@ -1,4 +1,4 @@
-import { FileText, Calendar, Tag, Sparkles, ScanText, Cpu } from "lucide-react";
+import { FileText, Calendar, Tag, Sparkles, ScanText, Cpu, Waypoints } from "lucide-react";
 import type { Document } from "../../types";
 import { useT } from "../../i18n";
 import { iconForType } from "./typeIcons";
@@ -60,6 +60,23 @@ function ProcessingBadge({ doc, className = "" }: { doc: Document; className?: s
   return <span className={`proc proc-dot ${level} ${className}`} title={title} aria-label={title} />;
 }
 
+function EmbeddedBadge({ className = "" }: { className?: string }) {
+  return (
+    <span className={`emb-badge ${className}`} title="Vector embedding built" aria-label="Embedded">
+      <Waypoints size={10} strokeWidth={2.5} />
+    </span>
+  );
+}
+
+function ScoreChip({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  return (
+    <span className="score-chip" title={`Semantic similarity: ${(score * 100).toFixed(1)}%`}>
+      {pct}%
+    </span>
+  );
+}
+
 interface Props {
   doc: Document;
   highlight?: string;
@@ -67,6 +84,9 @@ interface Props {
   mode: "list" | "grid";
   gridSize?: "sm" | "md" | "lg" | "xl";
   thumbVersion?: number;
+  devMode?: boolean;
+  isEmbedded?: boolean;
+  score?: number;
 }
 
 function formatDate(iso?: string): string {
@@ -97,8 +117,9 @@ function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number
   );
 }
 
-export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", thumbVersion }: Props) {
+export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
   const date = formatDate(doc.document_date || doc.added_at);
+  const showScore = score !== undefined && score > 0;
 
   if (mode === "list") {
     return (
@@ -111,7 +132,9 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
             <span className="doc-filename truncate">{doc.filename}</span>
             <div className="doc-list-meta">
               {date && <span className="doc-date text-sm text-muted"><Calendar size={12} /> {date}</span>}
+              {showScore && <ScoreChip score={score} />}
               <ProcessingBadge doc={doc} />
+              {devMode && isEmbedded && <EmbeddedBadge />}
               {doc.document_type && <TypeIcon type={doc.document_type} size={27} className="doc-type-icon" />}
             </div>
           </div>
@@ -146,10 +169,14 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", t
       <div className="doc-grid-thumb">
         <Thumbnail doc={doc} thumbVersion={thumbVersion} />
         {doc.document_type && <TypeIcon type={doc.document_type} size={24} className="doc-grid-type-icon" />}
-        <ProcessingBadge doc={doc} className="doc-grid-status" />
+        <div className="doc-grid-badges">
+          {devMode && isEmbedded && <EmbeddedBadge className="doc-grid-emb" />}
+          <ProcessingBadge doc={doc} className="doc-grid-status" />
+        </div>
       </div>
       <div className="doc-grid-footer">
         <span className="doc-filename truncate text-sm">{doc.filename}</span>
+        {showScore && <ScoreChip score={score} />}
         {gridSize !== "sm" && date && (
           <span className="doc-date text-xs text-muted">{date}</span>
         )}

@@ -120,9 +120,7 @@
 .doc-grid-xl .doc-grid-thumb   { height: 360px; }
 
 .doc-grid-status {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  /* positioned by parent .doc-grid-badges */
 }
 /* Back the AI-recognition icon so it stays legible over a thumbnail */
 .doc-grid-status.proc-ai-ocr {
@@ -166,6 +164,46 @@
   color: #fff;
   background: linear-gradient(135deg, var(--color-ai), var(--color-ai-edge));
   box-shadow: var(--shadow-sm);
+}
+
+/* Top-right badge stack: embedding indicator + processing tier */
+.doc-grid-badges {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Embedding (vector) indicator — teal dot with waypoints icon */
+.emb-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: #0d9488;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+/* Semantic similarity chip — shown on cards in search results */
+.score-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 10px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: color-mix(in srgb, var(--color-ai) 12%, transparent);
+  color: var(--color-ai);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Document-type (class) icon badge, top-left of the grid thumbnail */

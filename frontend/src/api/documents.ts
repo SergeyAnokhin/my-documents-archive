@@ -76,6 +76,9 @@ export const searchDocuments = (params: Record<string, unknown> = {}) => {
   return api.get<SearchResponse>(`/search?${qs}`);
 };
 
+export const fetchEmbeddedIds = () =>
+  api.get<{ ids: number[] }>("/search/embedded-ids");
+
 export const askDocuments = (
   query: string,
   language: string,
