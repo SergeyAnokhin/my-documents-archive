@@ -9,6 +9,7 @@ import "./AIAnswer.css";
 interface Props {
   answer: string;
   sources: Document[];
+  sourceSimilarities?: (number | null)[];
   cost: number;
   noProvider?: boolean;
   onDocClick: (idx: number) => void;
@@ -21,7 +22,7 @@ interface Props {
   thumbVersions?: Record<number, number>;
 }
 
-export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
+export function AIAnswer({ answer, sources, sourceSimilarities, cost, noProvider, onDocClick,
   tokensIn, tokensOut, modelName, docsSent, devMode, debug, thumbVersions }: Props) {
   const { t } = useT();
   const [showDebug, setShowDebug] = useState(false);
@@ -97,15 +98,19 @@ export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
             <span>{t.aiSearch.sources}</span>
           </div>
           <div className="ai-sources-list">
-            {sources.map((doc, i) => (
-              <DocumentCard
-                key={doc.id}
-                doc={doc}
-                mode="list"
-                onClick={() => onDocClick(i)}
-                thumbVersion={thumbVersions?.[doc.id]}
-              />
-            ))}
+            {sources.map((doc, i) => {
+              const sim = sourceSimilarities?.[i];
+              return (
+                <DocumentCard
+                  key={doc.id}
+                  doc={doc}
+                  mode="list"
+                  onClick={() => onDocClick(i)}
+                  thumbVersion={thumbVersions?.[doc.id]}
+                  score={sim != null && sim > 0 ? sim : undefined}
+                />
+              );
+            })}
           </div>
         </div>
       )}

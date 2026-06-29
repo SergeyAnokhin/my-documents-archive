@@ -378,6 +378,10 @@ async def ask_documents(
         )
 
     source_docs = [DocumentOut.model_validate(d) for d in docs]
+    source_similarities = [
+        (1.0 - sem_dist[d.id]) if d.id in sem_dist else None
+        for d in docs
+    ]
 
     # ── Provider ───────────────────────────────────────────────────────────
     provider = (
@@ -387,8 +391,8 @@ async def ask_documents(
         .first()
     )
     if not provider:
-        return AIAnswerResponse(answer="", sources=source_docs, cost=0.0, no_provider=True,
-                                docs_sent=len(docs), depth=depth, debug=dbg)
+        return AIAnswerResponse(answer="", sources=source_docs, source_similarities=source_similarities,
+                                cost=0.0, no_provider=True, docs_sent=len(docs), depth=depth, debug=dbg)
 
     # ── Context assembly ───────────────────────────────────────────────────
     context_parts = []
@@ -474,6 +478,7 @@ async def ask_documents(
     return AIAnswerResponse(
         answer=answer,
         sources=source_docs,
+        source_similarities=source_similarities,
         cost=cost,
         tokens_in=tokens_in,
         tokens_out=tokens_out,

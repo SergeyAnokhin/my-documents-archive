@@ -292,6 +292,7 @@ export function HomePage() {
               <AIAnswer
                 answer={aiAnswer.answer}
                 sources={aiAnswer.sources}
+                sourceSimilarities={aiAnswer.source_similarities}
                 cost={aiAnswer.cost}
                 noProvider={aiAnswer.no_provider}
                 onDocClick={(i) => setAiViewerIdx(i)}
@@ -360,6 +361,7 @@ export function HomePage() {
         onNext={() => setViewerIdx((i) => (i !== null ? i + 1 : null))}
         hasPrev={viewerIdx !== null && viewerIdx > 0}
         hasNext={viewerIdx !== null && viewerIdx < results.length - 1}
+        isEmbedded={devMode && viewerDoc ? embeddedIds.has(viewerDoc.id) : undefined}
       />
 
       {/* Document viewer — AI sources */}
@@ -370,6 +372,7 @@ export function HomePage() {
         onNext={() => setAiViewerIdx((i) => (i !== null ? i + 1 : null))}
         hasPrev={aiViewerIdx !== null && aiViewerIdx > 0}
         hasNext={aiViewerIdx !== null && aiAnswer !== null && aiViewerIdx < aiAnswer.sources.length - 1}
+        isEmbedded={devMode && aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
       />
 
       {/* Keyboard shortcuts help */}

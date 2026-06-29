@@ -304,6 +304,7 @@ export interface AskDebug {
 export interface AIAnswerResponse {
   answer: string;
   sources: Document[];
+  source_similarities?: (number | null)[];
   cost: number;
   no_provider?: boolean;
   tokens_in?: number;

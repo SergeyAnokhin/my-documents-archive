@@ -398,6 +398,7 @@ class AskDebug(BaseModel):
 class AIAnswerResponse(BaseModel):
     answer: str
     sources: List[DocumentOut]
+    source_similarities: List[Optional[float]] = []  # cosine similarity (0-1) per source, None if no embedding
     cost: float = 0.0
     no_provider: bool = False
     tokens_in: int = 0

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical,
-  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check,
+  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints,
 } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
@@ -22,6 +22,7 @@ interface Props {
   onNext?: () => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  isEmbedded?: boolean;
 }
 
 function formatDate(iso?: string) {
@@ -33,7 +34,7 @@ function formatDate(iso?: string) {
 
 // ── Main viewer ─────────────────────────────────────────────────────────────
 
-export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext }: Props) {
+export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext, isEmbedded }: Props) {
   const { t } = useT();
   const navigate = useNavigate();
   const { advancedMode } = useAdvancedMode();
@@ -654,6 +655,20 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext 
                     {doc.analysis_error}
                   </p>
                 )}
+
+                {/* Embedding status */}
+                <div className="viewer-meta-row">
+                  <span className="viewer-meta-label">Embedding</span>
+                  {isEmbedded === undefined ? (
+                    <span className="text-sm text-muted">—</span>
+                  ) : isEmbedded ? (
+                    <span className="text-sm" style={{ color: "#0d9488", display: "flex", alignItems: "center", gap: 4 }}>
+                      <Waypoints size={13} /> indexed
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted">not indexed</span>
+                  )}
+                </div>
 
                 {/* OCR model attribution */}
                 {doc.ocr_model && (
