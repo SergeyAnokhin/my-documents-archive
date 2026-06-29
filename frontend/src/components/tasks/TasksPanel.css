@@ -453,6 +453,25 @@
   border-color: var(--color-accent);
 }
 
+.create-form-force-label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-tag);
+  cursor: pointer;
+  font-size: .875rem;
+  font-weight: 500;
+}
+.create-form-force-label input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; }
+.create-form-force-hint {
+  display: block;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
 .create-form-footer {
   display: flex;
   justify-content: flex-end;

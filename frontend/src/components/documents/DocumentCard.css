@@ -166,24 +166,24 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Top-right badge stack: embedding indicator + processing tier */
+/* Top-right badge row: embedding indicator + processing tier */
 .doc-grid-badges {
   position: absolute;
   top: 8px;
   right: 8px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: 4px;
 }
 
-/* Embedding (vector) indicator — teal dot with waypoints icon */
+/* Embedding (vector) indicator — teal badge, same footprint as proc-analyzed */
 .emb-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: #0d9488;
@@ -211,6 +211,9 @@
   position: absolute;
   bottom: 6px;
   left: 6px;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+  backdrop-filter: blur(3px);
 }
 
 /* Document-type (class) icon badge, top-left of the grid thumbnail */

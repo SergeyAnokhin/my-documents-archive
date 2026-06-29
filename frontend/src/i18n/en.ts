@@ -460,6 +460,8 @@ export const en = {
     readDocs: "Provider documentation →",
     compressMaxSideLabel: "Max long side (pixels)",
     compressCandidatesCount: "{{count}} of {{total}} image files exceed this threshold",
+    forceEmbedLabel: "Force full recompute",
+    forceEmbedHint: "Re-embed all analyzed documents, not just those missing vectors",
     candidatesCount: "{{count}} documents match the selection criteria",
     candidatesUnknown: "Exact count determined at runtime",
     candidatesLoading: "Counting candidates…",
@@ -487,6 +489,13 @@ export const en = {
     durationSec: "s",
     durationLabel: "time",
     logsLastN: "Last {{count}} lines",
+  },
+
+  searchHistory: {
+    title: "Recent searches",
+    clear: "Clear",
+    maxLabel: "Keep last",
+    maxSuffix: "searches",
   },
 
   // Misc

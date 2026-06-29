@@ -63,7 +63,7 @@ function ProcessingBadge({ doc, className = "" }: { doc: Document; className?: s
 function EmbeddedBadge({ className = "" }: { className?: string }) {
   return (
     <span className={`emb-badge ${className}`} title="Vector embedding built" aria-label="Embedded">
-      <Waypoints size={10} strokeWidth={2.5} />
+      <Waypoints size={12} strokeWidth={2.5} />
     </span>
   );
 }

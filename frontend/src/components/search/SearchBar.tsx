@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
-import { Search, X, Mic, MicOff } from "lucide-react";
+import { Search, X, Mic, MicOff, History, Clock } from "lucide-react";
 import type { SearchMode } from "../../types";
 import { useT } from "../../i18n";
 import { FilterDropdown, type DropdownOption } from "./FilterDropdown";
+import { useSearchHistory } from "../../hooks/useSearchHistory";
 import "./SearchBar.css";
 
 const LANG_BCP47: Record<string, string> = { en: "en-US", ru: "ru-RU", fr: "fr-FR" };
@@ -46,9 +47,14 @@ export function SearchBar({
 }: Props) {
   const { t, lang } = useT();
   const inputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null);
   const [listening, setListening] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const histSearch = useSearchHistory("search");
+  const histAsk = useSearchHistory("ask");
+  const hist = mode === "ask" ? histAsk : histSearch;
 
   const hasSpeech =
     typeof window !== "undefined" &&
@@ -79,6 +85,18 @@ export function SearchBar({
 
   useEffect(() => () => { recogRef.current?.stop(); }, []);
 
+  // Close history dropdown on outside click
+  useEffect(() => {
+    if (!showHistory) return;
+    const handler = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showHistory]);
+
   const isAsk = mode === "ask";
   const placeholder = listening
     ? t.voiceListening
@@ -88,47 +106,97 @@ export function SearchBar({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (value.trim()) hist.save(value.trim());
+    setShowHistory(false);
     onSubmit();
   };
 
   return (
     <form className="search-bar" onSubmit={handleSubmit} role="search">
-      {/* Input row */}
-      <div className={`search-input-wrap${listening ? " search-input-wrap--listening" : ""}`}>
-        <Search size={18} className="search-icon" aria-hidden="true" />
-        <input
-          ref={inputRef}
-          type="search"
-          className={`search-input${hasSpeech ? " search-input--has-mic" : ""}`}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-          aria-label={placeholder}
-          autoComplete="off"
-        />
-        <div className="search-right-btns">
-          {value && (
-            <button
-              type="button"
-              className="search-clear"
-              onClick={() => { onChange(""); inputRef.current?.focus(); }}
-              aria-label="Clear"
-            >
-              <X size={15} />
-            </button>
-          )}
-          {hasSpeech && (
-            <button
-              type="button"
-              className={`search-mic${listening ? " search-mic--active" : ""}`}
-              onClick={toggleVoice}
-              title={listening ? t.voiceListening : t.voiceSearch}
-              aria-label={listening ? t.voiceListening : t.voiceSearch}
-            >
-              {listening ? <MicOff size={16} /> : <Mic size={16} />}
-            </button>
-          )}
+      {/* Input row + history dropdown wrapper */}
+      <div className="search-input-outer" ref={historyRef}>
+        <div className={`search-input-wrap${listening ? " search-input-wrap--listening" : ""}`}>
+          <Search size={18} className="search-icon" aria-hidden="true" />
+          <input
+            ref={inputRef}
+            type="search"
+            className={`search-input${hasSpeech ? " search-input--has-mic" : ""}`}
+            placeholder={placeholder}
+            value={value}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+            aria-label={placeholder}
+            autoComplete="off"
+          />
+          <div className="search-right-btns">
+            {value && (
+              <button
+                type="button"
+                className="search-clear"
+                onClick={() => { onChange(""); inputRef.current?.focus(); }}
+                aria-label="Clear"
+              >
+                <X size={15} />
+              </button>
+            )}
+            {hist.items.length > 0 && (
+              <button
+                type="button"
+                className={`search-history-btn${showHistory ? " active" : ""}`}
+                onClick={() => setShowHistory(v => !v)}
+                title={t.searchHistory.title}
+                aria-label={t.searchHistory.title}
+              >
+                <History size={15} />
+              </button>
+            )}
+            {hasSpeech && (
+              <button
+                type="button"
+                className={`search-mic${listening ? " search-mic--active" : ""}`}
+                onClick={toggleVoice}
+                title={listening ? t.voiceListening : t.voiceSearch}
+                aria-label={listening ? t.voiceListening : t.voiceSearch}
+              >
+                {listening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* History dropdown */}
+        {showHistory && hist.items.length > 0 && (
+          <div className="search-history-dropdown">
+            <div className="search-history-header text-xs text-muted">{t.searchHistory.title}</div>
+            {hist.items.map((item, i) => (
+              <button
+                key={i}
+                type="button"
+                className="search-history-item"
+                onClick={() => { onChange(item); setShowHistory(false); }}
+              >
+                <Clock size={12} className="search-history-item-icon" />
+                <span className="search-history-item-text">{item}</span>
+              </button>
+            ))}
+            <div className="search-history-footer">
+              <button type="button" className="search-history-clear" onClick={hist.clear}>
+                {t.searchHistory.clear}
+              </button>
+              <label className="search-history-max-label">
+                {t.searchHistory.maxLabel}
+                <input
+                  type="number"
+                  className="search-history-max-input"
+                  min={1}
+                  max={50}
+                  value={hist.max}
+                  onChange={e => hist.setMax(Number(e.target.value))}
+                />
+                {t.searchHistory.maxSuffix}
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom row: mode pills + depth (AI only) + filter dropdowns */}

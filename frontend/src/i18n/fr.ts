@@ -452,6 +452,8 @@ export const fr: Translations = {
     readDocs: "Documentation du fournisseur →",
     compressMaxSideLabel: "Grand côté max (pixels)",
     compressCandidatesCount: "{{count}} sur {{total}} fichiers images dépassent ce seuil",
+    forceEmbedLabel: "Recalcul forcé",
+    forceEmbedHint: "Reconstruire les embeddings de tous les documents analysés, pas seulement ceux qui en manquent",
     candidatesCount: "{{count}} documents correspondent aux critères de sélection",
     candidatesUnknown: "Le nombre exact est déterminé au moment de l'exécution",
     candidatesLoading: "Comptage des candidats…",
@@ -479,6 +481,13 @@ export const fr: Translations = {
     durationSec: "s",
     durationLabel: "durée",
     logsLastN: "{{count}} dernières lignes",
+  },
+
+  searchHistory: {
+    title: "Recherches récentes",
+    clear: "Effacer",
+    maxLabel: "Conserver les",
+    maxSuffix: "dernières",
   },
 
   loading: "Chargement…",

@@ -137,6 +137,7 @@ export function HomePage() {
 
   const handleModeChange = (m: SearchMode) => {
     setMode(m);
+    setQuery("");
     if (m === "ask") {
       setResults([]);
       setTotal(0);

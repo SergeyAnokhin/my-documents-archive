@@ -417,11 +417,14 @@ async def _embed_missing(task_id: int, config: dict) -> None:
     Scans the whole archive — not just freshly-added docs — so it backfills the
     vector index after it was reset or for documents analyzed before embeddings
     existed. Logs the candidate count up front.
+
+    config.force=True re-embeds ALL analyzed documents, ignoring existing vectors.
     """
     from ..services.indexer import _run_embedding
     from ..services.embeddings import embedded_ids
 
-    _log(task_id, "Starting: embed analyzed documents that are missing embeddings")
+    force = bool(config.get("force", False))
+    _log(task_id, "Starting: " + ("force-recomputing all embeddings" if force else "embedding analyzed documents that are missing embeddings"))
 
     db = SessionLocal()
     try:
@@ -436,11 +439,17 @@ async def _embed_missing(task_id: int, config: dict) -> None:
             )
             .all()
         )
-        missing = [d for d in analyzed if d.id not in existing]
+        if force:
+            missing = analyzed
+            _log(task_id,
+                 f"Force mode: re-embedding all {len(missing)} analyzed document(s) "
+                 f"({len(existing)} already had embeddings)")
+        else:
+            missing = [d for d in analyzed if d.id not in existing]
+            _log(task_id,
+                 f"Candidates: {len(missing)} analyzed document(s) missing embeddings "
+                 f"({len(analyzed)} analyzed total, {len(existing)} already embedded)")
         total = len(missing)
-        _log(task_id,
-             f"Candidates: {total} analyzed document(s) missing embeddings "
-             f"({len(analyzed)} analyzed total, {len(existing)} already embedded)")
         _set_progress(task_id, 0, total)
 
         processed = errors = 0

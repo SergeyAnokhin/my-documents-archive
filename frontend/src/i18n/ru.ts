@@ -452,6 +452,8 @@ export const ru: Translations = {
     readDocs: "Документация провайдера →",
     compressMaxSideLabel: "Макс. длинная сторона (пикселей)",
     compressCandidatesCount: "{{count}} из {{total}} файлов-изображений превышают этот порог",
+    forceEmbedLabel: "Пересчитать принудительно",
+    forceEmbedHint: "Перестроить эмбеддинги всех проанализированных документов, не только отсутствующих",
     candidatesCount: "{{count}} документов попадают под условие отбора",
     candidatesUnknown: "Точное количество определяется при запуске",
     candidatesLoading: "Считаю кандидатов…",
@@ -479,6 +481,13 @@ export const ru: Translations = {
     durationSec: "с",
     durationLabel: "время",
     logsLastN: "Последние {{count}} строк",
+  },
+
+  searchHistory: {
+    title: "Последние поиски",
+    clear: "Очистить",
+    maxLabel: "Хранить последние",
+    maxSuffix: "поисков",
   },
 
   loading: "Загрузка…",

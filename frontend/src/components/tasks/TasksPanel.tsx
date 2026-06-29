@@ -82,6 +82,9 @@ const BATCH_POLL_DEFAULTS: Record<string, number> = {
 // Tasks that have a scope selector (cumulative level filter).
 const TYPES_WITH_SCOPE: TaskType[] = ["batch_ocr_mistral", "batch_ocr_gemini"];
 
+// Tasks that expose a "force full recompute" checkbox.
+const TYPES_WITH_FORCE: TaskType[] = ["embed_missing"];
+
 // External documentation links for task types that have official provider docs.
 const TASK_DOC_URLS: Partial<Record<TaskType, string>> = {
   reclassify_unclassified: "https://ai.google.dev/gemini-api/docs/batch-mode",
@@ -486,6 +489,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const [providerId, setProviderId] = useState<string>("");
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [saving, setSaving] = useState(false);
+  const [forceEmbed, setForceEmbed] = useState(false);
   const [candidates, setCandidates] = useState<Record<string, number | null> | null>(null);
   const [scope, setScope] = useState(1);
   const [scopeCount, setScopeCount] = useState<number | null>(null);
@@ -553,6 +557,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
   const handleSelectType = (type: TaskType) => {
     setSelectedType(type);
     setTitle(t.tasks.types[type as keyof typeof t.tasks.types] ?? type);
+    setForceEmbed(false);
     setScope(1);
     setScopeCount(null);
     setMaxLongSide("1024");
@@ -581,6 +586,9 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
       }
       if (selectedType === "compress_images") {
         config.max_long_side = parseInt(maxLongSide, 10) || 1024;
+      }
+      if (TYPES_WITH_FORCE.includes(selectedType) && forceEmbed) {
+        config.force = true;
       }
       const task = await createTask({ task_type: selectedType, title: title.trim(), config });
       onCreated(task);
@@ -687,6 +695,18 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
                     : t.tasks.scopeCount.replace("{{count}}", String(scopeCount))}
               </span>
             </div>
+          )}
+
+          {TYPES_WITH_FORCE.includes(selectedType) && (
+            <label className="create-form-force-label">
+              <input
+                type="checkbox"
+                checked={forceEmbed}
+                onChange={e => setForceEmbed(e.target.checked)}
+              />
+              <span>{t.tasks.forceEmbedLabel}</span>
+              <span className="create-form-force-hint text-xs text-muted">{t.tasks.forceEmbedHint}</span>
+            </label>
           )}
 
           <div className="create-form-field">
