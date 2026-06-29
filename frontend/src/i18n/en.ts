@@ -241,6 +241,8 @@ export const en = {
       providerName: "Name (auto-generated if empty)",
       providerType: "Provider",
       apiKey: "API Key",
+      sessionToken: "Session Token",
+      sessionTokenHint: "Paste your __Secure-next-auth.session-token cookie from chatgpt.com",
       modelName: "Model",
       enableVision: "Enable AI Vision",
       visionHint: "Sends document image to vision model before analysis. Improves accuracy on complex layouts.",

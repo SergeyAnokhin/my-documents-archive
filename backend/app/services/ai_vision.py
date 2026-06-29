@@ -85,7 +85,7 @@ class VisionFullResponse(BaseModel):
     short_title: str
 
 
-VISION_CAPABLE = {"openai", "gemini", "openrouter", "mistral"}
+VISION_CAPABLE = {"openai", "gemini", "openrouter", "mistral", "openai_web"}
 
 VISION_DEFAULTS = {
     "openai":     "gpt-4o-mini",
@@ -170,6 +170,8 @@ async def run_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = 
         return await _call_gemini(provider, img_bytes, prompt, json_mode=json_mode, response_schema=response_schema)
     if ptype == "mistral":
         return await _call_mistral_ocr(provider, img_bytes)
+    if ptype == "openai_web":
+        return await _call_chatgpt_web_vision(provider, img_bytes, prompt, json_mode=json_mode)
     b64 = base64.b64encode(img_bytes).decode()
     return await _call_openai_compat(provider, b64, prompt, json_mode=json_mode)
 
@@ -326,6 +328,22 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
         data = resp.json()
     text, cost = parse_mistral_ocr(data, image_policy)
     return text, 0, 0, cost
+
+
+async def _call_chatgpt_web_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = False) -> tuple[str, int, int, float]:
+    """ChatGPT Web vision — sends image to chatgpt.com using OAuth access token."""
+    from .chatgpt_web import vision_completion, ensure_fresh_token
+    import base64 as b64_mod
+    image_b64 = b64_mod.b64encode(img_bytes).decode()
+    model = getattr(provider, "model", None) or "gpt-4o-mini"
+    access_token = await ensure_fresh_token(provider)
+    return await vision_completion(
+        access_token=access_token,
+        image_b64=image_b64,
+        prompt=prompt,
+        model=model,
+        json_mode=json_mode,
+    )
 
 
 async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT, json_mode: bool = False, response_schema=None) -> tuple[str, int, int, float]:
