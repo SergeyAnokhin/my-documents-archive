@@ -320,6 +320,12 @@ export const ru: Translations = {
     allTypes: "Все типы",
     allLanguages: "Все языки",
     allStatuses: "Все статусы",
+    quality: "Качество",
+    allDocuments: "Все документы",
+    qualityNoEmbedding: "Без эмбеддинга",
+    qualityNoSummary: "Без анализа",
+    qualityNoTags: "Без тегов",
+    qualityComplete: "Полные",
   },
 
   lab: {

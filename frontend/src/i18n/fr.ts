@@ -320,6 +320,12 @@ export const fr: Translations = {
     allTypes: "Tous les types",
     allLanguages: "Toutes les langues",
     allStatuses: "Tous les statuts",
+    quality: "Qualité",
+    allDocuments: "Tous les documents",
+    qualityNoEmbedding: "Sans embedding",
+    qualityNoSummary: "Sans résumé",
+    qualityNoTags: "Sans tags",
+    qualityComplete: "Complets",
   },
 
   lab: {

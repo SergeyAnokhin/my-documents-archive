@@ -72,6 +72,7 @@ def search_documents(
     tag:           Optional[str] = None,
     language:      Optional[str] = None,
     ocr_status:    Optional[str] = None,
+    quality:       Optional[str] = None,
     page:      int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -93,6 +94,30 @@ def search_documents(
         base = base.filter(Document.ocr_status == ocr_status)
     if tag:
         base = base.filter(Document.tags.contains(tag))
+
+    # ── Quality / status filters (advanced mode) ───────────────────────────
+    if quality == "no_embedding":
+        try:
+            from ..services.embeddings import embedded_ids as get_embedded_ids
+            emb_ids = get_embedded_ids()
+            base = base.filter(~Document.id.in_(emb_ids))
+        except Exception:
+            pass
+    elif quality == "no_summary":
+        base = base.filter(or_(Document.summary == None, Document.summary == ""))
+    elif quality == "no_tags":
+        base = base.filter(
+            or_(Document.tags == None, Document.tags.cast(String) == "[]")
+        )
+    elif quality == "complete":
+        base = base.filter(
+            Document.analysis_status == "done",
+            Document.summary != None,
+            Document.summary != "",
+            ~or_(Document.tags == None, Document.tags.cast(String) == "[]"),
+            Document.document_type != None,
+            Document.document_type != "unclassified",
+        )
 
     t0 = time.perf_counter()
 

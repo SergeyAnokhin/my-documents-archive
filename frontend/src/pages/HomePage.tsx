@@ -7,8 +7,10 @@ import { DocumentViewer } from "../components/documents/DocumentViewer";
 import { UploadZone } from "../components/documents/UploadZone";
 import { KeyboardHelp } from "../components/ui/KeyboardHelp";
 import { Button } from "../components/ui/Button";
+import { FilterDropdown } from "../components/search/FilterDropdown";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
+import { useAdvancedMode } from "../contexts/AdvancedModeContext";
 import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
@@ -17,6 +19,7 @@ const GRID_SIZES: GridSize[] = ["sm", "md", "lg", "xl"];
 
 export function HomePage() {
   const { t, lang } = useT();
+  const { advancedMode } = useAdvancedMode();
 
   // Search state
   const [query, setQuery] = useState("");
@@ -28,6 +31,7 @@ export function HomePage() {
   // Filter state (year is a string to match option values)
   const [filterLang, setFilterLang] = useState<string | null>(null);
   const [filterYear, setFilterYear] = useState<string | null>(null);
+  const [filterQuality, setFilterQuality] = useState<string | null>(null);
 
   // AI ask state
   const [aiAnswer, setAiAnswer] = useState<AIAnswerResponse | null>(null);
@@ -69,6 +73,7 @@ export function HomePage() {
         page_size: 48,
         ...(filterYear ? { year: filterYear } : {}),
         ...(filterLang ? { language: filterLang } : {}),
+        ...(filterQuality ? { quality: filterQuality } : {}),
       });
       setResults(res.items);
       setTotal(res.total);
@@ -77,7 +82,7 @@ export function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [query, mode, filterYear, filterLang]);
+  }, [query, mode, filterYear, filterLang, filterQuality]);
 
   useEffect(() => {
     const id = setTimeout(doSearch, query ? 350 : 0);
@@ -105,7 +110,7 @@ export function HomePage() {
   useEffect(() => {
     if (mode !== "ask") doSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterYear, filterLang]);
+  }, [filterYear, filterLang, filterQuality]);
 
   // Fetch embedded doc IDs on mount and whenever a library change occurs
   useEffect(() => {
@@ -239,6 +244,20 @@ export function HomePage() {
               <span className="toolbar-count text-sm text-muted">
                 {total > 0 ? `${total} documents` : ""}
               </span>
+              {advancedMode && (
+                <FilterDropdown
+                  label={t.filters.quality}
+                  clearLabel={t.filters.allDocuments}
+                  options={[
+                    { value: "no_embedding", label: t.filters.qualityNoEmbedding },
+                    { value: "no_summary",   label: t.filters.qualityNoSummary },
+                    { value: "no_tags",      label: t.filters.qualityNoTags },
+                    { value: "complete",     label: t.filters.qualityComplete },
+                  ]}
+                  value={filterQuality}
+                  onSelect={setFilterQuality}
+                />
+              )}
             </div>
             <div className="toolbar-right">
               <Button

@@ -326,6 +326,12 @@ export const en = {
     allTypes: "All types",
     allLanguages: "All languages",
     allStatuses: "All statuses",
+    quality: "Quality",
+    allDocuments: "All documents",
+    qualityNoEmbedding: "No embedding",
+    qualityNoSummary: "No summary",
+    qualityNoTags: "No tags",
+    qualityComplete: "Complete",
   },
 
   // OCR Tuning
