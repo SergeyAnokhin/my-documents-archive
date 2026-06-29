@@ -186,20 +186,51 @@ async def _call_provider(provider, user_msg: str, system: str = ANALYSIS_SYSTEM,
 
 
 async def _call_chatgpt_web(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
-    """Call ChatGPT Web API using session token."""
-    from .chatgpt_web import chat_completion
+    """Call ChatGPT Web API using OAuth access token (with auto-refresh)."""
+    from .chatgpt_web import chat_completion, ensure_fresh_token
+    import asyncio
+    
     model = getattr(provider, "model", None) or "gpt-4o-mini"
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_msg},
     ]
-    return await chat_completion(
-        session_token=provider.api_key,
-        messages=messages,
-        model=model,
-        max_tokens=1024,
-        json_mode=json_mode,
-    )
+    
+    last_error = None
+    for attempt in range(2):
+        try:
+            access_token = await ensure_fresh_token(provider)
+            return await chat_completion(
+                access_token=access_token,
+                messages=messages,
+                model=model,
+                max_tokens=1024,
+                json_mode=json_mode,
+            )
+        except RuntimeError as e:
+            msg = str(e)
+            if "401" in msg or "expired" in msg.lower() or "refresh" in msg.lower():
+                # Token issue — force re-auth warning
+                if attempt == 0:
+                    log.warning("ChatGPT OAuth: token expired, will retry after refresh")
+                    # Force next refresh by clearing expires_at
+                    try:
+                        import json as _json
+                        extra = getattr(provider, "extra_params", None) or {}
+                        if isinstance(extra, str):
+                            extra = _json.loads(extra)
+                        oauth = extra.get("oauth", {}) if isinstance(extra, dict) else {}
+                        oauth["expires_at"] = 0
+                        extra["oauth"] = oauth
+                        provider.extra_params = extra
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1)
+                    continue
+            last_error = e
+            break
+    
+    raise last_error or RuntimeError("ChatGPT OAuth: all attempts failed")
 
 
 async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:

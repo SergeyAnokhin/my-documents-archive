@@ -277,6 +277,10 @@ async def _fetch_openrouter(api_key: str) -> list[dict]:
 
 
 async def _fetch_chatgpt_web(session_token: str) -> list[dict]:
-    """Fetch available models from ChatGPT Web API using session token."""
+    """Fetch available models from ChatGPT Web API using OAuth access token.
+    
+    The 'session_token' parameter here is actually the OAuth access_token
+    stored in AIProvider.api_key.
+    """
     from .chatgpt_web import list_models
     return await list_models(session_token)

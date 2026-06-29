@@ -331,13 +331,14 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
 
 
 async def _call_chatgpt_web_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = False) -> tuple[str, int, int, float]:
-    """ChatGPT Web vision — sends image to chatgpt.com/backend-api/conversation."""
-    from .chatgpt_web import vision_completion
+    """ChatGPT Web vision — sends image to chatgpt.com using OAuth access token."""
+    from .chatgpt_web import vision_completion, ensure_fresh_token
     import base64 as b64_mod
     image_b64 = b64_mod.b64encode(img_bytes).decode()
     model = getattr(provider, "model", None) or "gpt-4o-mini"
+    access_token = await ensure_fresh_token(provider)
     return await vision_completion(
-        session_token=provider.api_key,
+        access_token=access_token,
         image_b64=image_b64,
         prompt=prompt,
         model=model,

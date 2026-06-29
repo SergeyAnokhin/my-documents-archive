@@ -8,6 +8,7 @@ from .config import settings
 from .database import init_db
 from .routers import documents, upload, search, admin, indexing, lab
 from .routers.tasks import router as tasks_router
+from .routers.auth_chatgpt import router as chatgpt_auth_router
 
 
 class _SuppressHealthCheck(logging.Filter):
@@ -35,6 +36,7 @@ app.include_router(admin.router)
 app.include_router(indexing.router)
 app.include_router(lab.router)
 app.include_router(tasks_router)
+app.include_router(chatgpt_auth_router)
 
 
 @app.on_event("startup")
