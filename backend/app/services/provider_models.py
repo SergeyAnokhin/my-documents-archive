@@ -277,10 +277,24 @@ async def _fetch_openrouter(api_key: str) -> list[dict]:
 
 
 async def _fetch_chatgpt_web(session_token: str) -> list[dict]:
-    """Fetch available models from ChatGPT Web API using OAuth access token.
-    
-    The 'session_token' parameter here is actually the OAuth access_token
-    stored in AIProvider.api_key.
+    """Return known ChatGPT subscription models.
+
+    Uses the hardcoded list from chatgpt_web.CHATGPT_WEB_MODELS
+    (same approach as Hermes Agent for Codex models).
+    Does NOT call the chatgpt.com API — the /backend-api/models
+    endpoint is unreliable with OAuth tokens and may return
+    stale/limited model lists.
     """
-    from .chatgpt_web import list_models
-    return await list_models(session_token)
+    from .chatgpt_web import CHATGPT_WEB_MODELS
+    return [
+        {
+            "id": m["id"],
+            "name": m["name"],
+            "supports_vision": m["vision"],
+            "context_length": m["ctx"],
+            "price_in": 0.0,
+            "price_out": 0.0,
+            "is_free": True,
+        }
+        for m in CHATGPT_WEB_MODELS
+    ]
