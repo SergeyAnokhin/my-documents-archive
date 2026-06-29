@@ -113,14 +113,14 @@ export function HomePage() {
     setAiLoading(true);
     setAiAnswer(null);
     try {
-      const res = await askDocuments(query, lang, filterYear, filterLang, depth);
+      const res = await askDocuments(query, lang, filterYear, filterLang, depth, devMode);
       setAiAnswer(res);
     } catch {
       /* ignore */
     } finally {
       setAiLoading(false);
     }
-  }, [query, lang, filterYear, filterLang, depth]);
+  }, [query, lang, filterYear, filterLang, depth, devMode]);
 
   // ── Mode change ─────────────────────────────────────────────────────────────
 
@@ -293,6 +293,7 @@ export function HomePage() {
                 modelName={aiAnswer.model_name}
                 docsSent={aiAnswer.docs_sent}
                 devMode={devMode}
+                debug={aiAnswer.debug}
                 thumbVersions={thumbVersions}
               />
             )}

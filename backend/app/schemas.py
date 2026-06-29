@@ -355,6 +355,46 @@ class LabApplyResult(BaseModel):
     file_size: int  # updated file size on disk
 
 
+class AskDebugDoc(BaseModel):
+    """One row of the /ask retrieval trace (debug mode only)."""
+    rank: int                              # position in the semantic ranking (1 = closest)
+    doc_id: int
+    filename: str
+    document_type: Optional[str] = None
+    similarity: Optional[float] = None     # cosine similarity 1-distance; None = no embedding
+    distance: Optional[float] = None       # raw cosine distance from ChromaDB
+    in_fulltext: bool = False              # also matched the keyword (fulltext) branch
+    retrieved: bool = False                # survived the n_retrieve cut
+    sent: bool = False                     # actually sent to the LLM (in context)
+
+
+class AskDebug(BaseModel):
+    """Full per-request retrieval trace for the advanced-mode debug modal."""
+    query: str
+    query_variants: List[str]
+    depth: int
+    n_retrieve: int
+    n_send: int
+    ocr_chars: int
+    embedded_count: int                    # docs with embeddings in ChromaDB
+    total_docs: int                        # non-deleted docs in scope (after year/lang filters)
+    fulltext_count: int
+    fulltext_ids: List[int]
+    semantic: List[AskDebugDoc]            # every embedded doc scored against the query
+    retrieved_ids: List[int]
+    sent_ids: List[int]
+    fallback_newest: bool = False          # pool was empty → answered from newest docs
+    context_chars: int = 0
+    system_prompt: str = ""
+    user_prompt: str = ""                  # full context block sent to the LLM
+    semantic_ms: float = 0.0
+    fulltext_ms: float = 0.0
+    llm_ms: float = 0.0
+    total_ms: float = 0.0
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+
+
 class AIAnswerResponse(BaseModel):
     answer: str
     sources: List[DocumentOut]
@@ -365,6 +405,7 @@ class AIAnswerResponse(BaseModel):
     model_name: Optional[str] = None
     docs_sent: int = 0
     depth: int = 2
+    debug: Optional[AskDebug] = None
 
 
 # ── Tasks ────────────────────────────────────────────────────────────────────

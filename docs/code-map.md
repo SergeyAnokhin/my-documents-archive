@@ -25,7 +25,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
-| `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
+| `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). `GET /ask?debug=true` adds a full retrieval trace (`AskDebug`) to the response; an INFO `🔎 [ask] retrieval` table is also logged every request. Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
 | `routers/admin.py` | **Aggregator** — mounts the five `admin_*` sub-routers under prefix `/api/admin`. Start here, then jump to the right sub-router below |
 | `routers/admin_library.py` | Stats, sync, batch-index, reclassify-all/unclassified, log (+ `_log` helper) |
 | `routers/admin_folders.py` | Watched-folder CRUD: list / add / remove / toggle |
@@ -43,7 +43,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/ai_vision.py` | AI Vision: sends first document page to vision model. For capable models (OpenAI/Gemini/OpenRouter) uses `VISION_FULL_PROMPT` — returns structured JSON (text + all analysis fields) in one call, so the indexer skips Step 4 entirely. For **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing) returns plain transcription — Analysis still runs. Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. |
 | `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
 | `log_filters.py` | `SuppressNoisyPaths` logging filter (drops `/api/tasks` + `/api/health` from access log); referenced by `log_config.json` |
-| `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `collection_count()` |
+| `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `search_similar_scored()` (ids + cosine distance, for `/ask` debug), `collection_count()` |
 | `services/pricing.py` | `estimate_cost(model, tokens_in, tokens_out)` — static per-token price table for all known providers (OpenAI, Gemini, DeepSeek, Mistral, OpenRouter). Returns 0.0 for unknown models. |
 | `services/provider_models.py` | `fetch_models(provider_type, api_key, base_url)` — lists available models from a provider's API (used by admin "fetch models" and inline model edit) |
 | `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
@@ -85,7 +85,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/ui/Modal.tsx` | Accessible modal overlay |
 | `components/search/SearchBar.tsx` | Search input + mode pills (fulltext/semantic/hybrid/ask) + voice input (Web Speech API, language follows UI lang) + year/language quick-filter chips |
 | `components/search/FilterDropdown.tsx` | Reusable filter dropdown used by the search toolbar |
-| `components/search/AIAnswer.tsx` | AI Q&A result card: answer text + source document list |
+| `components/search/AIAnswer.tsx` | AI Q&A result card: answer text + source document list. In debug mode shows a "Query log" button opening `AskDebugModal` |
+| `components/search/AskDebugModal.tsx` | Advanced-mode modal showing the per-request `/ask` retrieval trace (embedded vs total docs, full semantic ranking with weights + sent/retrieved/dropped flags, fulltext hits, the prompt sent to the LLM, timings); copy-to-clipboard. Only the last request is held (in `aiAnswer.debug` state) |
 | `components/documents/DocumentCard.tsx` | List row and grid tile rendering. Renders a per-class type icon (`typeIcons.ts`) at the far right of the list meta row and as a badge on the grid thumbnail. `ProcessingBadge` shows the highest processing tier reached: gray dot (pending) → green/teal dot (local OCR Tesseract/EasyOCR, from `ocr_model`) → violet `ScanText` icon (AI text recognition) → gradient `Sparkles` badge (full AI analysis, `analysis_status==="done"`) |
 | `components/documents/typeIcons.ts` | Maps each `document_type` slug (AI taxonomy) → a lucide icon; `iconForType()` with keyword + `FileText` fallbacks for free-form types |
 | `components/documents/UploadZone.tsx` | Drag-and-drop upload zone |

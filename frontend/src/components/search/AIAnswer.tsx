@@ -1,6 +1,8 @@
-import { Sparkles, FileText, DollarSign } from "lucide-react";
-import type { Document } from "../../types";
+import { useState } from "react";
+import { Sparkles, FileText, DollarSign, Bug } from "lucide-react";
+import type { Document, AskDebug } from "../../types";
 import { DocumentCard } from "../documents/DocumentCard";
+import { AskDebugModal } from "./AskDebugModal";
 import { useT } from "../../i18n";
 import "./AIAnswer.css";
 
@@ -15,12 +17,14 @@ interface Props {
   modelName?: string | null;
   docsSent?: number;
   devMode?: boolean;
+  debug?: AskDebug | null;
   thumbVersions?: Record<number, number>;
 }
 
 export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
-  tokensIn, tokensOut, modelName, docsSent, devMode, thumbVersions }: Props) {
+  tokensIn, tokensOut, modelName, docsSent, devMode, debug, thumbVersions }: Props) {
   const { t } = useT();
+  const [showDebug, setShowDebug] = useState(false);
 
   if (noProvider) {
     return (
@@ -54,7 +58,7 @@ export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
       </div>
 
       {/* Dev info row — visible when devMode */}
-      {devMode && (modelName || (tokensIn != null) || (docsSent != null)) && (
+      {devMode && (modelName || (tokensIn != null) || (docsSent != null) || debug) && (
         <div className="ai-answer-dev-row">
           {modelName && <span className="ai-dev-chip">{modelName}</span>}
           {(tokensIn != null || tokensOut != null) && (
@@ -65,7 +69,17 @@ export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
           {docsSent != null && (
             <span className="ai-dev-chip">{docsSent} {t.aiSearch.docsSent}</span>
           )}
+          {debug && (
+            <button type="button" className="ai-dev-log-btn" onClick={() => setShowDebug(true)}>
+              <Bug size={12} />
+              {t.aiSearch.debug.open}
+            </button>
+          )}
         </div>
+      )}
+
+      {showDebug && debug && (
+        <AskDebugModal debug={debug} onClose={() => setShowDebug(false)} />
       )}
 
       {/* Answer body */}

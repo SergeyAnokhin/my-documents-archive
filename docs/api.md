@@ -56,10 +56,13 @@ Base URL: `http://localhost:8000`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/search` | Search documents. Params: `query`, `mode`, `year`, `month`, `document_type`, `tag`, `language`, `ocr_status`, `page`, `page_size` |
+| GET | `/api/search/ask` | AI Q&A over the archive. Params: `query`, `language`, `year`, `filter_language`, `depth` (1 fast / 2 normal / 3 deep — controls `n_retrieve`/`n_send`/`ocr_chars`), `debug` |
 
 `mode`: `fulltext` (SQLite LIKE over `ocr_text + filename + summary`) · `semantic` (ChromaDB, Phase 4) · `hybrid` (Phase 4)
 
 Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchResult = {document, score, highlight?}`
+
+**`/ask`** retrieves with hybrid (semantic top-K merged with fulltext keyword hits), sends the top `n_send` docs to the AI provider, and returns `AIAnswerResponse = {answer, sources, cost, model_name, docs_sent, depth, debug?}`. With `debug=true` the `debug` field (`AskDebug`) carries the full retrieval trace — `embedded_count` vs `total_docs`, the whole semantic ranking with cosine similarity and `sent`/`retrieved`/`dropped` flags, fulltext ids, the prompt sent to the LLM, and per-stage timings. Every request also logs an INFO `🔎 [ask] retrieval` table. `fallback_newest=true` means the candidate pool was empty (no embeddings / no keyword hits) and the answer was built from the newest documents.
 
 ## Admin
 

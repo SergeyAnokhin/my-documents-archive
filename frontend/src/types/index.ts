@@ -262,6 +262,44 @@ export interface TaskLog {
   created_at?: string;
 }
 
+export interface AskDebugDoc {
+  rank: number;
+  doc_id: number;
+  filename: string;
+  document_type?: string | null;
+  similarity?: number | null;
+  distance?: number | null;
+  in_fulltext: boolean;
+  retrieved: boolean;
+  sent: boolean;
+}
+
+export interface AskDebug {
+  query: string;
+  query_variants: string[];
+  depth: number;
+  n_retrieve: number;
+  n_send: number;
+  ocr_chars: number;
+  embedded_count: number;
+  total_docs: number;
+  fulltext_count: number;
+  fulltext_ids: number[];
+  semantic: AskDebugDoc[];
+  retrieved_ids: number[];
+  sent_ids: number[];
+  fallback_newest: boolean;
+  context_chars: number;
+  system_prompt: string;
+  user_prompt: string;
+  semantic_ms: number;
+  fulltext_ms: number;
+  llm_ms: number;
+  total_ms: number;
+  provider_name?: string | null;
+  model_name?: string | null;
+}
+
 export interface AIAnswerResponse {
   answer: string;
   sources: Document[];
@@ -272,6 +310,7 @@ export interface AIAnswerResponse {
   model_name?: string | null;
   docs_sent?: number;
   depth?: number;
+  debug?: AskDebug | null;
 }
 
 export interface BackupInfo {

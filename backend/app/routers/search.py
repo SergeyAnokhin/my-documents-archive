@@ -10,7 +10,10 @@ log = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models import Document, AIProvider, IndexingLog
-from ..schemas import SearchResponse, SearchResult, DocumentOut, AIAnswerResponse
+from ..schemas import (
+    SearchResponse, SearchResult, DocumentOut, AIAnswerResponse,
+    AskDebug, AskDebugDoc,
+)
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -283,6 +286,7 @@ async def ask_documents(
     year: Optional[int] = None,
     filter_language: Optional[str] = None,
     depth: int = Query(2, ge=1, le=3),
+    debug: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     """Answer a free-form question about the user's documents using AI."""
@@ -301,12 +305,19 @@ async def ask_documents(
     if filter_language:
         base = base.filter(Document.language == filter_language)
 
+    # In debug mode score the *whole* embedded collection so the modal can show
+    # exactly where every document ranked (not just the ones that survived the cut).
+    from ..services.embeddings import collection_count
+    embedded_count = collection_count()
+    sem_n = max(embedded_count, cfg["n_retrieve"] * 2) if debug else cfg["n_retrieve"] * 2
+
     # ── Hybrid retrieval: semantic + fulltext always merged ────────────────
     t1 = time.perf_counter()
-    sem_scored = _semantic_scored(query, cfg["n_retrieve"] * 2)
+    sem_scored = _semantic_scored(query, sem_n)
     sem_ids   = [sid for sid, _ in sem_scored]
     sem_dist  = {sid: dist for sid, dist in sem_scored}
-    log.debug("🧠 [ask] step=semantic  ids=%d  ms=%.0f", len(sem_ids), (time.perf_counter() - t1) * 1000)
+    semantic_ms = (time.perf_counter() - t1) * 1000
+    log.debug("🧠 [ask] step=semantic  ids=%d  ms=%.0f", len(sem_ids), semantic_ms)
 
     t2 = time.perf_counter()
     query_variants = _expand_fulltext_query(query)
@@ -314,8 +325,9 @@ async def ask_documents(
     ft_ids: set[int] = set()
     for variant in query_variants:
         ft_ids |= _fulltext_ids(base, variant)
+    fulltext_ms = (time.perf_counter() - t2) * 1000
     log.debug("📄 [ask] step=fulltext  ids=%d  variants=%d  ms=%.0f",
-              len(ft_ids), len(query_variants), (time.perf_counter() - t2) * 1000)
+              len(ft_ids), len(query_variants), fulltext_ms)
 
     merged = _merge_hybrid(sem_ids, ft_ids)
     log.debug("🔀 [ask] step=merge  total=%d  selected=%d",
@@ -342,6 +354,19 @@ async def ask_documents(
                    retrieved_ids={d.id for d in docs_all},
                    cfg=cfg)
 
+    # ── Debug trace (advanced mode) ────────────────────────────────────────
+    dbg: Optional[AskDebug] = None
+    if debug:
+        dbg = _build_ask_debug(
+            base, query, query_variants, depth, cfg,
+            sem_scored, ft_ids, docs_all, docs,
+            total_docs=base.count(),
+            embedded_count=embedded_count,
+            fallback_newest=(not merged),
+            semantic_ms=semantic_ms,
+            fulltext_ms=fulltext_ms,
+        )
+
     source_docs = [DocumentOut.model_validate(d) for d in docs]
 
     # ── Provider ───────────────────────────────────────────────────────────
@@ -353,7 +378,7 @@ async def ask_documents(
     )
     if not provider:
         return AIAnswerResponse(answer="", sources=source_docs, cost=0.0, no_provider=True,
-                                docs_sent=len(docs), depth=depth)
+                                docs_sent=len(docs), depth=depth, debug=dbg)
 
     # ── Context assembly ───────────────────────────────────────────────────
     context_parts = []
@@ -410,10 +435,20 @@ async def ask_documents(
         tokens_in = tokens_out = 0
         cost = 0.0
         log.warning("❌ [ask] LLM call failed: %s", exc)
+    llm_ms = (time.perf_counter() - t4) * 1000
 
     model_name = provider.model or provider.name
-    log.info("✅ [ask] done  total_ms=%.0f  answer_chars=%d",
-             (time.perf_counter() - t0) * 1000, len(answer or ""))
+    total_ms = (time.perf_counter() - t0) * 1000
+    log.info("✅ [ask] done  total_ms=%.0f  answer_chars=%d", total_ms, len(answer or ""))
+
+    if dbg is not None:
+        dbg.context_chars = len(context)
+        dbg.system_prompt = system
+        dbg.user_prompt = user_msg
+        dbg.llm_ms = llm_ms
+        dbg.total_ms = total_ms
+        dbg.provider_name = provider.name
+        dbg.model_name = model_name
     _log_ask(db, query, len(docs), depth, cost, tokens_in, tokens_out, model_name)
     from ..services.usage import record_usage
     record_usage(
@@ -433,6 +468,76 @@ async def ask_documents(
         model_name=model_name,
         docs_sent=len(docs),
         depth=depth,
+        debug=dbg,
+    )
+
+
+def _build_ask_debug(
+    base_query,
+    query: str,
+    query_variants: list[str],
+    depth: int,
+    cfg: dict,
+    sem_scored: list[tuple[int, float]],
+    ft_ids: set[int],
+    docs_all: list,
+    docs: list,
+    total_docs: int,
+    embedded_count: int,
+    fallback_newest: bool,
+    semantic_ms: float,
+    fulltext_ms: float,
+) -> AskDebug:
+    """Assemble the per-request retrieval trace returned to the debug modal.
+
+    `semantic` lists every embedded document scored against the query (closest
+    first) with its similarity and selection flags — this is what shows *where*
+    a relevant document ranked and which cut (n_retrieve / n_send) dropped it.
+    """
+    sent_ids      = {d.id for d in docs}
+    retrieved_ids = {d.id for d in docs_all}
+    sem_ids       = [sid for sid, _ in sem_scored]
+
+    rows = (
+        base_query.filter(Document.id.in_(set(sem_ids)))
+        .with_entities(Document.id, Document.filename, Document.document_type)
+        .all()
+        if sem_ids else []
+    )
+    meta = {r[0]: (r[1], r[2]) for r in rows}
+
+    semantic = []
+    for rank, (sid, dist) in enumerate(sem_scored, 1):
+        fn, dt = meta.get(sid, ("?", None))
+        semantic.append(AskDebugDoc(
+            rank=rank,
+            doc_id=sid,
+            filename=fn,
+            document_type=dt,
+            similarity=(1 - dist) if dist is not None else None,
+            distance=dist,
+            in_fulltext=sid in ft_ids,
+            retrieved=sid in retrieved_ids,
+            sent=sid in sent_ids,
+        ))
+
+    return AskDebug(
+        query=query,
+        query_variants=query_variants,
+        depth=depth,
+        n_retrieve=cfg["n_retrieve"],
+        n_send=cfg["n_send"],
+        ocr_chars=cfg["ocr_chars"],
+        embedded_count=embedded_count,
+        total_docs=total_docs,
+        fulltext_count=len(ft_ids),
+        fulltext_ids=sorted(ft_ids),
+        semantic=semantic,
+        retrieved_ids=[d.id for d in docs_all],
+        sent_ids=[d.id for d in docs],
+        fallback_newest=fallback_newest,
+        semantic_ms=semantic_ms,
+        fulltext_ms=fulltext_ms,
     )
 
 

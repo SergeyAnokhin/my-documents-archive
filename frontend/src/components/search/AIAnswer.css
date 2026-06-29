@@ -73,6 +73,21 @@
   white-space: nowrap;
 }
 
+.ai-dev-log-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6875rem;
+  color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, #6366f1 35%, var(--color-border));
+  border-radius: var(--radius-full);
+  padding: 2px 9px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.ai-dev-log-btn:hover { background: color-mix(in srgb, #6366f1 18%, var(--color-surface)); }
+
 /* Answer text */
 .ai-answer-body {
   padding: var(--sp-5) var(--sp-6);

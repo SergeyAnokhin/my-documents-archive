@@ -82,11 +82,13 @@ export const askDocuments = (
   year?: string | null,
   filterLanguage?: string | null,
   depth?: number,
+  debug?: boolean,
 ) => {
   const params: Record<string, string> = { query, language };
   if (year) params.year = year;
   if (filterLanguage) params.filter_language = filterLanguage;
   if (depth) params.depth = String(depth);
+  if (debug) params.debug = "true";
   return api.get<AIAnswerResponse>(`/search/ask?${new URLSearchParams(params).toString()}`);
 };
 
