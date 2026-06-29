@@ -50,10 +50,9 @@ export function AddProviderForm({
   // ── OAuth state ──────────────────────────────────────────────────────────
   const [oauthStep, setOAuthStep] = useState<"idle" | "waiting" | "authorized" | "error">("idle");
   const [oauthDeviceCode, setOAuthDeviceCode] = useState<{
-    device_code: string;
+    device_auth_id: string;
     user_code: string;
     verification_uri: string;
-    verification_uri_complete: string;
     interval: number;
   } | null>(null);
   const [oauthMessage, setOAuthMessage] = useState("");
@@ -75,19 +74,24 @@ export function AddProviderForm({
       setOAuthDeviceCode(dc);
       setOAuthMessage(`Go to ${dc.verification_uri} and enter code: ${dc.user_code}`);
       // Start polling
-      pollForToken(dc.device_code, dc.interval);
+      pollForToken(dc.device_auth_id, dc.user_code, dc.interval);
     } catch (e: any) {
       setOAuthStep("error");
       setOAuthMessage(e?.message || String(e));
     }
   };
 
-  const pollForToken = async (device_code: string, interval: number) => {
-    const maxAttempts = Math.ceil(900 / Math.max(interval, 2)); // 900s timeout
+  const pollForToken = async (device_auth_id: string, user_code: string, interval: number) => {
+    const maxAttempts = Math.ceil(900 / Math.max(interval, 3)); // 900s timeout
     for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(r => setTimeout(r, Math.max(interval, 2) * 1000));
+      await new Promise(r => setTimeout(r, Math.max(interval, 3) * 1000));
       try {
-        const result = await chatgptOAuth.pollToken(oauthDeviceCode?.device_code || "", 0);
+        const result = await chatgptOAuth.pollToken(
+          device_auth_id,
+          user_code,
+          interval,
+          0,
+        );
         if (result.status === "authorized") {
           setOAuthStep("authorized");
           setOAuthMessage("Connected! Select a model and save.");
@@ -309,7 +313,7 @@ export function AddProviderForm({
                 Open this URL in your browser:
               </p>
               <a
-                href={oauthDeviceCode.verification_uri_complete || oauthDeviceCode.verification_uri}
+                href={oauthDeviceCode.verification_uri}
                 target="_blank" rel="noopener"
                 style={{
                   fontSize: 14, fontWeight: 600,
@@ -317,7 +321,7 @@ export function AddProviderForm({
                   wordBreak: "break-all",
                 }}
               >
-                {oauthDeviceCode.verification_uri_complete || oauthDeviceCode.verification_uri}
+                {oauthDeviceCode.verification_uri}
               </a>
               <p style={{ fontSize: 13, margin: "8px 0 4px 0", color: "var(--color-ink-muted)" }}>
                 And enter this code:

@@ -1,12 +1,12 @@
 """
 ChatGPT OAuth authentication router.
 
-Endpoints:
-  POST /api/auth/chatgpt/device-code  → start device code flow
-  POST /api/auth/chatgpt/token        → poll for token (after user authorizes)
-  GET  /api/auth/chatgpt/status       → check auth status for a provider
-  POST /api/auth/chatgpt/refresh      → manually refresh OAuth tokens
-  DELETE /api/auth/chatgpt/logout     → remove OAuth tokens
+Uses OpenAI's proprietary device-auth flow (same as ChatGPT desktop app):
+  1. POST /device-code → start device flow (returns device_auth_id + user_code)
+  2. POST /token         → poll for authorization + exchange for OAuth tokens
+  3. GET  /status        → check auth status
+  4. POST /refresh       → manually refresh tokens
+  5. DELETE /logout/{id} → remove tokens
 """
 import json
 import logging
@@ -28,21 +28,21 @@ router = APIRouter(prefix="/api/auth/chatgpt", tags=["chatgpt-oauth"])
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class DeviceCodeStartResponse(BaseModel):
-    device_code: str
+    device_auth_id: str
     user_code: str
     verification_uri: str
-    verification_uri_complete: str = ""
-    expires_in: int = 900
     interval: int = 5
 
 
 class TokenPollRequest(BaseModel):
-    device_code: str
-    provider_id: int = 0   # if set, save token to this provider
+    device_auth_id: str
+    user_code: str
+    interval: int = 5
+    provider_id: int = 0
 
 
 class TokenPollResponse(BaseModel):
-    status: str             # "pending" | "authorized" | "expired" | "denied" | "error"
+    status: str
     access_token: str = ""
     refresh_token: str = ""
     expires_in: int = 0
@@ -61,19 +61,13 @@ class AuthStatusResponse(BaseModel):
 
 @router.post("/device-code", response_model=DeviceCodeStartResponse)
 async def start_device_code():
-    """Initiate OAuth 2.0 Device Authorization flow.
-
-    Returns a user_code and verification_uri.
-    The user must visit the URL and enter the code.
-    """
+    """Step 1: Request device auth user code from OpenAI."""
     try:
         result = await chatgpt_web.start_device_flow()
         return DeviceCodeStartResponse(
-            device_code=result.device_code,
+            device_auth_id=result.device_auth_id,
             user_code=result.user_code,
             verification_uri=result.verification_uri,
-            verification_uri_complete=result.verification_uri_complete,
-            expires_in=result.expires_in,
             interval=result.interval,
         )
     except RuntimeError as e:
@@ -85,22 +79,17 @@ async def start_device_code():
 
 @router.post("/token", response_model=TokenPollResponse)
 async def poll_token(body: TokenPollRequest, db: Session = Depends(get_db)):
-    """Poll for OAuth token after user authorization.
-
-    Returns 'pending' while the user hasn't authorized yet.
-    Returns 'authorized' with tokens when ready.
-    """
+    """Step 2-4: Poll for authorization, exchange code for tokens."""
     try:
-        token = await chatgpt_web.poll_for_token(body.device_code)
+        token = await chatgpt_web.poll_for_token(
+            device_auth_id=body.device_auth_id,
+            user_code=body.user_code,
+            interval=body.interval,
+        )
     except RuntimeError as e:
         msg = str(e)
         if msg == "authorization_pending":
             return TokenPollResponse(status="pending")
-        if msg == "slow_down":
-            return TokenPollResponse(
-                status="pending",
-                message="Slow down — polling too fast. Retry with longer interval.",
-            )
         if "expired" in msg.lower():
             return TokenPollResponse(status="expired", message=msg)
         if "declined" in msg.lower() or "denied" in msg.lower():
@@ -111,11 +100,10 @@ async def poll_token(body: TokenPollRequest, db: Session = Depends(get_db)):
         log.exception("Token poll failed")
         return TokenPollResponse(status="error", message=str(e))
 
-    # Save tokens to provider if provider_id is specified
+    # Save tokens to provider
     if body.provider_id:
         provider = db.query(AIProvider).filter(
             AIProvider.id == body.provider_id,
-            AIProvider.provider_type == "openai_web",
         ).first()
         if provider:
             provider.api_key = token.access_token
@@ -132,8 +120,7 @@ async def poll_token(body: TokenPollRequest, db: Session = Depends(get_db)):
             }
             provider.extra_params = extra
             db.commit()
-            db.refresh(provider)
-            log.info("ChatGPT OAuth: tokens saved for provider %s (id=%s)", provider.name, provider.id)
+            log.info("ChatGPT OAuth: tokens saved for provider %s", provider.name)
 
     return TokenPollResponse(
         status="authorized",
@@ -145,7 +132,6 @@ async def poll_token(body: TokenPollRequest, db: Session = Depends(get_db)):
 
 @router.get("/status", response_model=AuthStatusResponse)
 async def auth_status(provider_id: int, db: Session = Depends(get_db)):
-    """Check OAuth token status for a given provider."""
     provider = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
     if not provider:
         return AuthStatusResponse(connected=False)
@@ -175,7 +161,6 @@ async def auth_status(provider_id: int, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=AuthStatusResponse)
 async def refresh_token(provider_id: int, db: Session = Depends(get_db)):
-    """Manually refresh OAuth tokens for a provider."""
     provider = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
@@ -206,7 +191,6 @@ async def refresh_token(provider_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/logout/{provider_id}")
 async def logout(provider_id: int, db: Session = Depends(get_db)):
-    """Remove OAuth tokens from a provider (but keep the provider record)."""
     provider = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")

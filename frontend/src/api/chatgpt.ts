@@ -1,16 +1,14 @@
 /**
- * ChatGPT OAuth API client.
+ * ChatGPT OAuth API client — OpenAI's proprietary device-auth flow.
  * 
- * NOTE: api.client.ts prepends /api automatically, so paths here are relative to /api.
+ * NOTE: api.client.ts prepends /api automatically.
  */
 import { api } from "./client";
 
 export interface DeviceCodeResponse {
-  device_code: string;
+  device_auth_id: string;
   user_code: string;
   verification_uri: string;
-  verification_uri_complete: string;
-  expires_in: number;
   interval: number;
 }
 
@@ -36,9 +34,16 @@ export const chatgptOAuth = {
     return r as DeviceCodeResponse;
   },
 
-  async pollToken(device_code: string, provider_id: number): Promise<TokenPollResponse> {
+  async pollToken(
+    device_auth_id: string,
+    user_code: string,
+    interval: number,
+    provider_id: number,
+  ): Promise<TokenPollResponse> {
     const r = await api.post("/auth/chatgpt/token", {
-      device_code,
+      device_auth_id,
+      user_code,
+      interval,
       provider_id,
     });
     return r as TokenPollResponse;

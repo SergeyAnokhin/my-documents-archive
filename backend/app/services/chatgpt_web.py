@@ -1,34 +1,38 @@
 """
-ChatGPT OAuth 2.0 client — Device Code flow for ChatGPT subscription.
+ChatGPT OAuth client — OpenAI's proprietary Device Auth flow.
 
-Flow (same as Hermes Agent / OpenAI Codex):
-1. App calls start_device_flow() → gets user_code + verification_uri
-2. User visits chatgpt.com/device and enters the 8-digit code
-3. App polls poll_for_token() → gets access_token + refresh_token
-4. Tokens stored; access_token used for API calls
-5. When access_token expires, refresh_oauth_token() uses refresh_token
+EXACT endpoints reverse-engineered from Hermes Agent (hermes_cli/auth.py):
+  1. POST auth.openai.com/api/accounts/deviceauth/usercode → {user_code, device_auth_id}
+  2. User visits auth.openai.com/codex/device and enters the code
+  3. POST auth.openai.com/api/accounts/deviceauth/token → {authorization_code, code_verifier}
+  4. POST auth.openai.com/oauth/token (grant_type=authorization_code) → {access_token, refresh_token}
+  
+Token refresh:
+  POST auth.openai.com/oauth/token (grant_type=refresh_token) → new tokens
 
-Key constants from Hermes Agent:
-  CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-  CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
-
-API endpoint: chatgpt.com/backend-api/conversation (the ChatGPT web API)
+API inference:
+  chatgpt.com/backend-api/conversation using Bearer access_token
 """
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
 
 log = logging.getLogger(__name__)
 
-# ── OAuth constants (from Hermes Agent) ─────────────────────────────────────
+# ── Constants (from Hermes Agent) ────────────────────────────────────────────
 CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
-CODEX_DEVICE_CODE_URL = "https://auth.openai.com/oauth/device/code"
-DEFAULT_SCOPE = "offline_access openid profile email"
+CODEX_OAUTH_ISSUER = "https://auth.openai.com"
+CODEX_OAUTH_TOKEN_URL = f"{CODEX_OAUTH_ISSUER}/oauth/token"
+
+# OpenAI's proprietary device-auth endpoints (NOT standard OAuth device code!)
+DEVICE_AUTH_USERCODE_URL = f"{CODEX_OAUTH_ISSUER}/api/accounts/deviceauth/usercode"
+DEVICE_AUTH_TOKEN_URL = f"{CODEX_OAUTH_ISSUER}/api/accounts/deviceauth/token"
+DEVICE_VERIFICATION_URL = f"{CODEX_OAUTH_ISSUER}/codex/device"
+DEVICE_CALLBACK_URL = f"{CODEX_OAUTH_ISSUER}/deviceauth/callback"
 
 # ── API endpoints ───────────────────────────────────────────────────────────
 CHATGPT_HOST = "https://chatgpt.com"
@@ -51,17 +55,16 @@ CHATGPT_WEB_MODELS = [
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# OAuth 2.0 Device Code Flow
+# OpenAI Proprietary Device Auth Flow
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class DeviceCodeResponse:
-    device_code: str
-    user_code: str            # 8-character code the user enters
-    verification_uri: str     # URL the user visits (e.g. https://chatgpt.com/device)
-    verification_uri_complete: str = ""  # URL with user_code pre-filled
-    expires_in: int = 900     # seconds until device_code expires
-    interval: int = 5         # seconds between poll attempts
+    device_auth_id: str
+    user_code: str             # 8-character code the user enters
+    verification_uri: str      # auth.openai.com/codex/device
+    interval: int = 5          # seconds between poll attempts
+    expires_in: int = 900
 
 
 @dataclass
@@ -70,150 +73,156 @@ class TokenResponse:
     refresh_token: str
     token_type: str = "Bearer"
     expires_in: int = 3600
-    # Computed client-side
-    expires_at: float = 0.0  # unix timestamp
+    expires_at: float = 0.0
 
 
 async def start_device_flow() -> DeviceCodeResponse:
-    """Initiate OAuth 2.0 Device Authorization flow.
+    """Step 1: Request device auth user code from OpenAI.
 
-    Returns the user_code and verification_uri to show to the user.
-    The user must visit the URL and enter the code to authorize.
-
-    Raises RuntimeError on network/auth failures.
+    Calls the proprietary endpoint used by ChatGPT desktop apps.
     """
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(
-                CODEX_DEVICE_CODE_URL,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                data={
-                    "client_id": CODEX_OAUTH_CLIENT_ID,
-                    "scope": DEFAULT_SCOPE,
-                },
-            )
-
-        if r.status_code == 429:
-            raise RuntimeError(
-                "ChatGPT OAuth: rate limited (429) — too many device code "
-                "requests. Wait a minute and try again."
-            )
-        if r.status_code != 200:
-            body = r.text[:300]
-            raise RuntimeError(
-                f"ChatGPT OAuth: device code request failed "
-                f"(HTTP {r.status_code}): {body}"
-            )
-
-        data = r.json()
-        result = DeviceCodeResponse(
-            device_code=data["device_code"],
-            user_code=data.get("user_code", ""),
-            verification_uri=data.get("verification_uri", "https://chatgpt.com/device"),
-            verification_uri_complete=data.get("verification_uri_complete", ""),
-            expires_in=int(data.get("expires_in", 900)),
-            interval=int(data.get("interval", 5)),
-        )
-        log.info(
-            "ChatGPT OAuth: device code ready — user_code=%s, expires_in=%ds",
-            result.user_code, result.expires_in,
-        )
-        return result
-
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"ChatGPT OAuth: device code request failed: {e}")
-
-
-async def poll_for_token(device_code: str) -> TokenResponse:
-    """Poll the token endpoint until the user authorizes.
-
-    Returns TokenResponse on success.
-    Raises RuntimeError with specific messages for pending/expired/denied states.
-    """
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(
-                CODEX_OAUTH_TOKEN_URL,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                data={
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                    "device_code": device_code,
-                    "client_id": CODEX_OAUTH_CLIENT_ID,
-                },
-            )
-
-        if r.status_code == 200:
-            data = r.json()
-            expires_in = int(data.get("expires_in", 3600))
-            result = TokenResponse(
-                access_token=data["access_token"],
-                refresh_token=data.get("refresh_token", ""),
-                token_type=data.get("token_type", "Bearer"),
-                expires_in=expires_in,
-                expires_at=time.time() + expires_in - 120,  # refresh 2 min before expiry
-            )
-            log.info("ChatGPT OAuth: token obtained (expires in %ds)", expires_in)
-            return result
-
-        # Non-200: check error type
+    max_attempts = 4
+    resp = None
+    for attempt in range(1, max_attempts + 1):
         try:
-            err = r.json()
-        except Exception:
-            err = {}
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    DEVICE_AUTH_USERCODE_URL,
+                    json={"client_id": CODEX_OAUTH_CLIENT_ID},
+                    headers={"Content-Type": "application/json"},
+                )
+        except Exception as exc:
+            raise RuntimeError(f"ChatGPT OAuth: device code request failed: {exc}")
 
-        error = ""
-        if isinstance(err, dict):
-            error = err.get("error", "")
-            if isinstance(error, dict):
-                error = error.get("code", "") or error.get("type", "")
-            error = str(error).strip()
+        if resp.status_code != 429:
+            break
+        if attempt < max_attempts:
+            delay = min(2 ** attempt, 60)
+            await _async_sleep(delay)
 
-        if error == "authorization_pending":
-            raise RuntimeError("authorization_pending")
-        if error == "slow_down":
-            raise RuntimeError("slow_down")
-        if error in ("access_denied", "authorization_declined"):
-            raise RuntimeError(
-                "ChatGPT OAuth: authorization was declined by user. "
-                "Please try again."
-            )
-        if error == "expired_token":
-            raise RuntimeError(
-                "ChatGPT OAuth: device code expired. "
-                "Please start a new authorization flow."
-            )
-        if r.status_code == 429:
-            raise RuntimeError(
-                "ChatGPT OAuth: rate limited (429). Wait and try again."
-            )
-
+    if resp is None or (resp.status_code == 429):
         raise RuntimeError(
-            f"ChatGPT OAuth: token request failed "
-            f"(HTTP {r.status_code}, error={error or 'unknown'}): "
-            f"{r.text[:200]}"
+            "ChatGPT OAuth: rate limited (429). Wait a minute and try again."
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"ChatGPT OAuth: device code request failed "
+            f"(HTTP {resp.status_code}): {resp.text[:300]}"
         )
 
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"ChatGPT OAuth: token poll failed: {e}")
+    data = resp.json()
+    user_code = data.get("user_code", "")
+    device_auth_id = data.get("device_auth_id", "")
+    interval = max(3, int(data.get("interval", 5)))
+
+    if not user_code or not device_auth_id:
+        raise RuntimeError("ChatGPT OAuth: incomplete device code response")
+
+    log.info("ChatGPT OAuth: device_auth_id=%s user_code=%s", device_auth_id[:8], user_code)
+    return DeviceCodeResponse(
+        device_auth_id=device_auth_id,
+        user_code=user_code,
+        verification_uri=DEVICE_VERIFICATION_URL,
+        interval=interval,
+    )
+
+
+async def poll_for_token(device_auth_id: str, user_code: str, interval: int) -> TokenResponse:
+    """Step 2-4: Poll for authorization, then exchange code for tokens.
+
+    First polls the proprietary token endpoint until user authorizes,
+    then exchanges the authorization_code for OAuth tokens.
+    """
+    # ── Poll for authorization code ──────────────────────────────────────
+    authorization_code = ""
+    code_verifier = ""
+    max_wait = 15 * 60
+    start = time.monotonic()
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        while time.monotonic() - start < max_wait:
+            await _async_sleep(interval)
+            try:
+                poll_resp = await client.post(
+                    DEVICE_AUTH_TOKEN_URL,
+                    json={"device_auth_id": device_auth_id, "user_code": user_code},
+                    headers={"Content-Type": "application/json"},
+                )
+            except Exception:
+                continue
+
+            if poll_resp.status_code == 200:
+                data = poll_resp.json()
+                authorization_code = data.get("authorization_code", "")
+                code_verifier = data.get("code_verifier", "")
+                if authorization_code and code_verifier:
+                    break
+                raise RuntimeError("ChatGPT OAuth: incomplete authorization response")
+            elif poll_resp.status_code in {403, 404}:
+                continue  # user hasn't authorized yet
+            elif poll_resp.status_code == 400:
+                # May mean expired
+                raise RuntimeError("authorization_pending")
+            else:
+                raise RuntimeError(
+                    f"ChatGPT OAuth: poll error HTTP {poll_resp.status_code}"
+                )
+
+    if not authorization_code:
+        raise RuntimeError("authorization_pending")  # still pending (caller retries)
+
+    # ── Exchange authorization code for OAuth tokens ─────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            token_resp = await client.post(
+                CODEX_OAUTH_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": authorization_code,
+                    "redirect_uri": DEVICE_CALLBACK_URL,
+                    "client_id": CODEX_OAUTH_CLIENT_ID,
+                    "code_verifier": code_verifier,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except Exception as exc:
+        raise RuntimeError(f"ChatGPT OAuth: token exchange failed: {exc}")
+
+    if token_resp.status_code == 429:
+        raise RuntimeError("ChatGPT OAuth: rate limited on token exchange (429)")
+
+    if token_resp.status_code != 200:
+        raise RuntimeError(
+            f"ChatGPT OAuth: token exchange failed "
+            f"(HTTP {token_resp.status_code}): {token_resp.text[:300]}"
+        )
+
+    data = token_resp.json()
+    access_token = data.get("access_token")
+    refresh_token = data.get("refresh_token", "")
+
+    if not access_token:
+        raise RuntimeError("ChatGPT OAuth: token response missing access_token")
+
+    expires_in = int(data.get("expires_in", 3600))
+    result = TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type=data.get("token_type", "Bearer"),
+        expires_in=expires_in,
+        expires_at=time.time() + expires_in - 120,
+    )
+    log.info("ChatGPT OAuth: tokens obtained (expires in %ds)", expires_in)
+    return result
 
 
 async def refresh_oauth_token(refresh_token: str) -> TokenResponse:
-    """Refresh an expired OAuth access token using the refresh_token.
-
-    Returns a new TokenResponse with fresh tokens.
-    Raises RuntimeError if the refresh_token is invalid/expired.
-    """
+    """Refresh an expired OAuth access token."""
     if not refresh_token:
-        raise RuntimeError(
-            "ChatGPT OAuth: missing refresh_token. Re-authentication required."
-        )
+        raise RuntimeError("ChatGPT OAuth: missing refresh_token")
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             r = await client.post(
                 CODEX_OAUTH_TOKEN_URL,
                 headers={
@@ -228,12 +237,10 @@ async def refresh_oauth_token(refresh_token: str) -> TokenResponse:
             )
 
         if r.status_code == 429:
-            raise RuntimeError(
-                "ChatGPT OAuth: rate limited on token refresh (429). "
-                "Credentials still valid; retry later."
-            )
+            raise RuntimeError("ChatGPT OAuth: rate limited on refresh (429)")
 
         if r.status_code != 200:
+            # Check for invalid_grant → re-auth needed
             try:
                 err = r.json()
             except Exception:
@@ -245,32 +252,19 @@ async def refresh_oauth_token(refresh_token: str) -> TokenResponse:
                     error = err_obj.get("code", "") or err_obj.get("type", "")
                 elif isinstance(err_obj, str):
                     error = err_obj
-                else:
-                    error = str(err_obj or "")
 
-            if error in ("invalid_grant", "invalid_token", "invalid_request",
-                         "refresh_token_reused"):
-                raise RuntimeError(
-                    "ChatGPT OAuth: refresh token invalid/consumed. "
-                    "Re-authentication required."
-                )
+            if error in ("invalid_grant", "invalid_token", "refresh_token_reused"):
+                raise RuntimeError("ChatGPT OAuth: refresh token invalid — re-auth required")
             if r.status_code in (401, 403):
-                raise RuntimeError(
-                    "ChatGPT OAuth: refresh token rejected (401/403). "
-                    "Re-authentication required."
-                )
+                raise RuntimeError("ChatGPT OAuth: refresh rejected — re-auth required")
             raise RuntimeError(
-                f"ChatGPT OAuth: token refresh failed "
-                f"(HTTP {r.status_code}): {r.text[:200]}"
+                f"ChatGPT OAuth: refresh failed HTTP {r.status_code}: {r.text[:200]}"
             )
 
         data = r.json()
         access_token = data.get("access_token")
         if not access_token:
-            raise RuntimeError(
-                "ChatGPT OAuth: refresh response missing access_token. "
-                "Re-authentication required."
-            )
+            raise RuntimeError("ChatGPT OAuth: refresh response missing access_token")
 
         new_refresh = data.get("refresh_token", "") or refresh_token
         expires_in = int(data.get("expires_in", 3600))
@@ -287,7 +281,7 @@ async def refresh_oauth_token(refresh_token: str) -> TokenResponse:
     except RuntimeError:
         raise
     except Exception as e:
-        raise RuntimeError(f"ChatGPT OAuth: token refresh failed: {e}")
+        raise RuntimeError(f"ChatGPT OAuth: refresh failed: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -295,7 +289,6 @@ async def refresh_oauth_token(refresh_token: str) -> TokenResponse:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _browser_headers(access_token: str = "") -> dict:
-    """Headers that mimic a browser request to bypass basic Cloudflare checks."""
     headers = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Encoding": "gzip, deflate, br",
@@ -323,12 +316,7 @@ async def chat_completion(
     max_tokens: int = 1024,
     json_mode: bool = False,
 ) -> tuple[str, int, int, float]:
-    """Send messages to ChatGPT Web API using OAuth access token.
-
-    Returns (text, tokens_in, tokens_out, cost).
-    """
     chatgpt_messages = _convert_messages(messages)
-
     body = {
         "action": "next",
         "messages": chatgpt_messages,
@@ -341,7 +329,6 @@ async def chat_completion(
         "force_paragen": False,
         "force_rate_limit": False,
     }
-
     if json_mode:
         body["messages"].insert(0, {
             "id": _make_uuid(),
@@ -361,19 +348,15 @@ async def chat_completion(
             if r.status_code == 429:
                 raise RuntimeError("ChatGPT: rate limited (429)")
             if r.status_code == 401:
-                raise RuntimeError(
-                    "ChatGPT: access token expired or invalid (401). "
-                    "Token refresh needed."
-                )
+                raise RuntimeError("ChatGPT: access token expired (401) — refresh needed")
             if r.status_code != 200:
                 raise RuntimeError(f"ChatGPT: HTTP {r.status_code}: {r.text[:300]}")
 
             text = _parse_conversation_response(r.text)
             tokens_in = sum(len(m.get("content", "")) // 4 for m in messages)
             tokens_out = len(text) // 4 if text else 0
-            cost = 0.0  # subscription covers it
+            cost = 0.0
             return text, tokens_in, tokens_out, cost
-
     except RuntimeError:
         raise
     except Exception as e:
@@ -387,28 +370,25 @@ async def vision_completion(
     model: str = "gpt-4o-mini",
     json_mode: bool = False,
 ) -> tuple[str, int, int, float]:
-    """Send image + prompt to ChatGPT Web API for vision analysis using OAuth access token."""
     body = {
         "action": "next",
-        "messages": [
-            {
-                "id": _make_uuid(),
-                "author": {"role": "user"},
-                "content": {
-                    "content_type": "multimodal_text",
-                    "parts": [
-                        prompt,
-                        {
-                            "content_type": "image_asset_pointer",
-                            "asset_pointer": f"data:image/jpeg;base64,{image_b64}",
-                            "size_bytes": len(image_b64) * 3 // 4,
-                            "width": 1024,
-                            "height": 1024,
-                        },
-                    ],
-                },
-            }
-        ],
+        "messages": [{
+            "id": _make_uuid(),
+            "author": {"role": "user"},
+            "content": {
+                "content_type": "multimodal_text",
+                "parts": [
+                    prompt,
+                    {
+                        "content_type": "image_asset_pointer",
+                        "asset_pointer": f"data:image/jpeg;base64,{image_b64}",
+                        "size_bytes": len(image_b64) * 3 // 4,
+                        "width": 1024,
+                        "height": 1024,
+                    },
+                ],
+            },
+        }],
         "model": model,
         "parent_message_id": _make_uuid(),
         "conversation_id": None,
@@ -418,7 +398,6 @@ async def vision_completion(
         "force_paragen": False,
         "force_rate_limit": False,
     }
-
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             r = await client.post(
@@ -429,10 +408,7 @@ async def vision_completion(
             if r.status_code == 429:
                 raise RuntimeError("ChatGPT: rate limited (429)")
             if r.status_code == 401:
-                raise RuntimeError(
-                    "ChatGPT: access token expired or invalid (401). "
-                    "Token refresh needed."
-                )
+                raise RuntimeError("ChatGPT: access token expired (401) — refresh needed")
             if r.status_code != 200:
                 raise RuntimeError(f"ChatGPT: HTTP {r.status_code}: {r.text[:300]}")
 
@@ -441,7 +417,6 @@ async def vision_completion(
             tokens_out = len(text) // 4 if text else 0
             cost = 0.0
             return text, tokens_in, tokens_out, cost
-
     except RuntimeError:
         raise
     except Exception as e:
@@ -449,10 +424,8 @@ async def vision_completion(
 
 
 async def list_models(access_token: str) -> list[dict]:
-    """Return available models for this ChatGPT subscription."""
     if not access_token:
         return _fallback_models()
-
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(
@@ -460,14 +433,11 @@ async def list_models(access_token: str) -> list[dict]:
                 headers=_browser_headers(access_token),
             )
             if r.status_code != 200:
-                log.warning("ChatGPT models: HTTP %d", r.status_code)
                 return _fallback_models()
-
             data = r.json()
             models = data.get("models") or data
             if not isinstance(models, list):
                 return _fallback_models()
-
             result = []
             for m in models:
                 mid = m.get("slug") or m.get("id") or m.get("title", "")
@@ -484,17 +454,15 @@ async def list_models(access_token: str) -> list[dict]:
                     "is_free": True,
                 })
             return result if result else _fallback_models()
-
     except Exception:
         return _fallback_models()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Token lifecycle helpers for AIAnalysis/AIVision callers
+# Token lifecycle helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _oauth_extra_fields(provider) -> dict:
-    """Extract OAuth fields from an AIProvider's extra_params dict."""
     extra = getattr(provider, "extra_params", None) or {}
     if isinstance(extra, str):
         try:
@@ -505,26 +473,18 @@ def _oauth_extra_fields(provider) -> dict:
 
 
 async def ensure_fresh_token(provider, db_session=None) -> str:
-    """Ensure provider has a valid OAuth access token, refreshing if needed.
-
-    Returns the current valid access_token.
-    Raises RuntimeError if token is missing and cannot be refreshed.
-    """
     oauth = _oauth_extra_fields(provider)
     access_token = provider.api_key
     expires_at = oauth.get("expires_at", 0)
     refresh_token = oauth.get("refresh_token", "")
 
-    # Token is still fresh
     if access_token and expires_at > time.time():
         return access_token
 
-    # Token expired — try to refresh
     if refresh_token:
-        log.info("ChatGPT OAuth: access token expired, refreshing...")
+        log.info("ChatGPT OAuth: token expired, refreshing...")
         try:
             new_tokens = await refresh_oauth_token(refresh_token)
-            # Update provider in DB
             provider.api_key = new_tokens.access_token
             extra = getattr(provider, "extra_params", None) or {}
             if isinstance(extra, str):
@@ -538,35 +498,32 @@ async def ensure_fresh_token(provider, db_session=None) -> str:
                 "token_type": new_tokens.token_type,
             }
             provider.extra_params = extra
-
             if db_session:
                 db_session.commit()
                 db_session.refresh(provider)
-
             log.info("ChatGPT OAuth: token refreshed successfully")
             return new_tokens.access_token
         except Exception as e:
-            log.warning("ChatGPT OAuth: token refresh failed: %s", e)
-            # If we have an old token, try it anyway (might still work)
+            log.warning("ChatGPT OAuth: refresh failed: %s", e)
             if access_token:
                 return access_token
             raise
 
-    # No refresh token, no access token
     if access_token:
-        return access_token  # return whatever we have
-    raise RuntimeError(
-        "ChatGPT OAuth: no access token and no refresh token. "
-        "Re-authentication required."
-    )
+        return access_token
+    raise RuntimeError("ChatGPT OAuth: no tokens — re-authentication required")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Helpers (unchanged from chatgpt_web.py)
+# Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
+
+async def _async_sleep(seconds: float):
+    import asyncio
+    await asyncio.sleep(seconds)
+
 
 def _convert_messages(messages: list[dict]) -> list[dict]:
-    """Convert OpenAI-format messages to ChatGPT Web API format."""
     result = []
     for msg in messages:
         role = msg.get("role", "user")
@@ -577,20 +534,15 @@ def _convert_messages(messages: list[dict]) -> list[dict]:
                 if isinstance(part, dict) and part.get("type") == "text":
                     parts.append(part.get("text", ""))
             content = "\n".join(parts)
-
         result.append({
             "id": _make_uuid(),
             "author": {"role": role},
-            "content": {
-                "content_type": "text",
-                "parts": [str(content)],
-            },
+            "content": {"content_type": "text", "parts": [str(content)]},
         })
     return result
 
 
 def _parse_conversation_response(text: str) -> str:
-    """Parse ChatGPT Web API response."""
     try:
         data = json.loads(text)
         msg = data.get("message") or data
@@ -600,24 +552,16 @@ def _parse_conversation_response(text: str) -> str:
         return data.get("text", "") or ""
     except (json.JSONDecodeError, KeyError, TypeError):
         pass
-
     last_text = ""
     for line in text.split("\n"):
         if line.startswith("data: ") and not line.startswith("data: [DONE]"):
             try:
                 chunk = json.loads(line[6:])
-                parts = (
-                    chunk.get("message", {})
-                    .get("content", {})
-                    .get("parts", [])
-                )
+                parts = (chunk.get("message", {}).get("content", {}).get("parts", []))
                 if parts:
-                    last_text = "".join(
-                        p if isinstance(p, str) else str(p) for p in parts
-                    )
+                    last_text = "".join(p if isinstance(p, str) else str(p) for p in parts)
             except (json.JSONDecodeError, KeyError):
                 pass
-
     return last_text.strip()
 
 
@@ -650,13 +594,9 @@ def _guess_vision(model: dict) -> bool:
 def _fallback_models() -> list[dict]:
     return [
         {
-            "id": m["id"],
-            "name": m["name"],
-            "supports_vision": m["vision"],
-            "context_length": m["ctx"],
-            "price_in": 0.0,
-            "price_out": 0.0,
-            "is_free": True,
+            "id": m["id"], "name": m["name"],
+            "supports_vision": m["vision"], "context_length": m["ctx"],
+            "price_in": 0.0, "price_out": 0.0, "is_free": True,
         }
         for m in CHATGPT_WEB_MODELS
     ]
