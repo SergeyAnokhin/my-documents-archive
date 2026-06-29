@@ -15,10 +15,11 @@ interface Props {
   modelName?: string | null;
   docsSent?: number;
   devMode?: boolean;
+  thumbVersions?: Record<number, number>;
 }
 
 export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
-  tokensIn, tokensOut, modelName, docsSent, devMode }: Props) {
+  tokensIn, tokensOut, modelName, docsSent, devMode, thumbVersions }: Props) {
   const { t } = useT();
 
   if (noProvider) {
@@ -88,6 +89,7 @@ export function AIAnswer({ answer, sources, cost, noProvider, onDocClick,
                 doc={doc}
                 mode="list"
                 onClick={() => onDocClick(i)}
+                thumbVersion={thumbVersions?.[doc.id]}
               />
             ))}
           </div>

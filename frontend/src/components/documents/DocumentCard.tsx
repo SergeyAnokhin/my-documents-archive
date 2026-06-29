@@ -66,6 +66,7 @@ interface Props {
   onClick: () => void;
   mode: "list" | "grid";
   gridSize?: "sm" | "md" | "lg" | "xl";
+  thumbVersion?: number;
 }
 
 function formatDate(iso?: string): string {
@@ -82,11 +83,11 @@ function TypeIcon({ type, size, className }: { type: string; size: number; class
   );
 }
 
-function Thumbnail({ doc }: { doc: Document }) {
+function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number }) {
   if (doc.thumbnail_path) {
-    const v = doc.updated_at ? `?v=${new Date(doc.updated_at).getTime()}` : "";
+    const v = thumbVersion ?? (doc.updated_at ? new Date(doc.updated_at).getTime() : undefined);
     const filename = doc.thumbnail_path.split(/[/\\]/).pop();
-    const url = `/thumbnails/${filename}${v}`;
+    const url = `/thumbnails/${filename}${v ? `?v=${v}` : ""}`;
     return <img src={url} alt="" className="doc-thumb-img" loading="lazy" />;
   }
   return (
@@ -96,14 +97,14 @@ function Thumbnail({ doc }: { doc: Document }) {
   );
 }
 
-export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md" }: Props) {
+export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md", thumbVersion }: Props) {
   const date = formatDate(doc.document_date || doc.added_at);
 
   if (mode === "list") {
     return (
       <article className="doc-list-item" onClick={onClick} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onClick()}>
         <div className="doc-list-thumb">
-          <Thumbnail doc={doc} />
+          <Thumbnail doc={doc} thumbVersion={thumbVersion} />
         </div>
         <div className="doc-list-body">
           <div className="doc-list-top">
@@ -143,7 +144,7 @@ export function DocumentCard({ doc, highlight, onClick, mode, gridSize = "md" }:
       onKeyDown={(e) => e.key === "Enter" && onClick()}
     >
       <div className="doc-grid-thumb">
-        <Thumbnail doc={doc} />
+        <Thumbnail doc={doc} thumbVersion={thumbVersion} />
         {doc.document_type && <TypeIcon type={doc.document_type} size={24} className="doc-grid-type-icon" />}
         <ProcessingBadge doc={doc} className="doc-grid-status" />
       </div>

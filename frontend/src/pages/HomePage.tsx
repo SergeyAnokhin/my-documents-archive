@@ -9,7 +9,7 @@ import { KeyboardHelp } from "../components/ui/KeyboardHelp";
 import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
-import { searchDocuments, syncLibrary, askDocuments, getDocument } from "../api/documents";
+import { searchDocuments, syncLibrary, askDocuments } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
 
@@ -45,6 +45,9 @@ export function HomePage() {
 
   // Upload drawer
   const [showUpload, setShowUpload] = useState(false);
+
+  // Thumbnail version overrides after image edits (client-side cache-bust)
+  const [thumbVersions, setThumbVersions] = useState<Record<number, number>>({});
 
   // Sync
   const [syncing, setSyncing] = useState(false);
@@ -89,13 +92,9 @@ export function HomePage() {
 
   // Refresh a single document's thumbnail after an image edit is applied
   useEffect(() => {
-    const handler = async (e: Event) => {
+    const handler = (e: Event) => {
       const { id } = (e as CustomEvent<{ id: number }>).detail;
-      try {
-        const doc = await getDocument(id);
-        setResults(prev => prev.map(r => r.document.id === id ? { ...r, document: doc } : r));
-        setAiAnswer(prev => prev ? { ...prev, sources: prev.sources.map(d => d.id === id ? doc : d) } : prev);
-      } catch { /* ignore */ }
+      setThumbVersions(prev => ({ ...prev, [id]: Date.now() }));
     };
     window.addEventListener("docintell:document-image-changed", handler);
     return () => window.removeEventListener("docintell:document-image-changed", handler);
@@ -294,6 +293,7 @@ export function HomePage() {
                 modelName={aiAnswer.model_name}
                 docsSent={aiAnswer.docs_sent}
                 devMode={devMode}
+                thumbVersions={thumbVersions}
               />
             )}
             {!aiLoading && !aiAnswer && (
@@ -317,6 +317,7 @@ export function HomePage() {
                   highlight={r.highlight}
                   mode="list"
                   onClick={() => setViewerIdx(i)}
+                  thumbVersion={thumbVersions[r.document.id]}
                 />
               ))}
             </div>
@@ -329,6 +330,7 @@ export function HomePage() {
                   mode="grid"
                   gridSize={gridSize}
                   onClick={() => setViewerIdx(i)}
+                  thumbVersion={thumbVersions[r.document.id]}
                 />
               ))}
             </div>
