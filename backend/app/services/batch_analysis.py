@@ -97,15 +97,8 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             base_q = db.query(Document).filter(Document.is_deleted == False)
 
             if doc_ids_filter is not None:
-                docs = (
-                    base_q
-                    .filter(
-                        Document.id.in_(doc_ids_filter),
-                        Document.ocr_text.isnot(None),
-                        Document.ocr_text != "",
-                    )
-                    .all()
-                )
+                # Explicit ID list — no extra filters applied; caller is responsible for selection.
+                docs = base_q.filter(Document.id.in_(doc_ids_filter)).all()
             elif doc_scope == "unclassified":
                 # reclassify_unclassified: has ocr done, type is unclassified/other, not manually set
                 docs = (
@@ -173,7 +166,10 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         doc_id_map = {}
 
         for doc in docs:
-            text_snippet = (doc.ocr_text or "")[:4000]
+            text_snippet = ((doc.ocr_text or "").strip() or (doc.vision_description or "").strip())[:4000]
+            if not text_snippet:
+                _log(task_id, f"⚠ {doc.filename}: no text to analyze, skipping")
+                continue
             user_msg = f"OCR Text:\n{text_snippet}"
             key = str(doc.id)
             doc_id_map[key] = doc.id
