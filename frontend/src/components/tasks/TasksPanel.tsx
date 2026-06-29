@@ -35,6 +35,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   batch_ocr_gemini:        "BATCH OCR",
   batch_analysis_gemini:   "BATCH AI",
   embed_missing:           "EMBED",
+  fix_quality:             "FIX",
   cleanup_missing:         "CLEANUP",
   compress_images:         "COMPRESS",
 };
@@ -107,14 +108,23 @@ const BATCH_TASK_TYPES: TaskType[] = [
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
+export interface TaskPreCreate {
+  taskType: TaskType;
+  title: string;
+  config: Record<string, unknown>;
+  candidateCount?: number;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
+  preCreate?: TaskPreCreate | null;
+  onPreCreateConsumed?: () => void;
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function TasksPanel({ open, onClose }: Props) {
+export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Props) {
   const { t } = useT();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
@@ -138,6 +148,13 @@ export function TasksPanel({ open, onClose }: Props) {
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [open, load]);
+
+  // Auto-open CreateTaskModal when a pre-create config arrives
+  useEffect(() => {
+    if (open && preCreate) {
+      setShowCreate(true);
+    }
+  }, [open, preCreate]);
 
   // Poll while any task is running
   useEffect(() => {
@@ -184,6 +201,12 @@ export function TasksPanel({ open, onClose }: Props) {
   const handleCreated = (task: Task) => {
     setTasks(prev => [...prev, task]);
     setShowCreate(false);
+    onPreCreateConsumed?.();
+  };
+
+  const handleCloseCreate = () => {
+    setShowCreate(false);
+    onPreCreateConsumed?.();
   };
 
   // ── Drag-and-drop reorder ──────────────────────────────────────────────────
@@ -273,7 +296,11 @@ export function TasksPanel({ open, onClose }: Props) {
         <CreateTaskModal
           t={t}
           onCreated={handleCreated}
-          onClose={() => setShowCreate(false)}
+          onClose={handleCloseCreate}
+          initialType={preCreate?.taskType}
+          initialTitle={preCreate?.title}
+          initialConfig={preCreate?.config}
+          initialCandidateCount={preCreate?.candidateCount}
         />
       )}
 
@@ -382,6 +409,11 @@ function TaskCard({
       {/* Description */}
       <p className="task-card-desc">
         {t.tasks.descriptions[taskType as keyof typeof t.tasks.descriptions] ?? ""}
+        {!!task.config?.quality_filter && (
+          <span className="task-quality-badge">
+            {String(task.config.quality_filter as string).replace(/_/g, " ")}
+          </span>
+        )}
       </p>
 
       {/* Progress bar — shown while running or after finish if total > 0 */}
@@ -479,11 +511,15 @@ interface CreateProps {
   t: ReturnType<typeof useT>["t"];
   onCreated: (task: Task) => void;
   onClose: () => void;
+  initialType?: TaskType;
+  initialTitle?: string;
+  initialConfig?: Record<string, unknown>;
+  initialCandidateCount?: number;
 }
 
-function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
-  const [selectedType, setSelectedType] = useState<TaskType | null>(null);
-  const [title, setTitle] = useState("");
+function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, initialConfig, initialCandidateCount }: CreateProps) {
+  const [selectedType, setSelectedType] = useState<TaskType | null>(initialType ?? null);
+  const [title, setTitle] = useState(initialTitle ?? "");
   const [limit, setLimit] = useState("50");
   const [pollInterval, setPollInterval] = useState("30");
   const [providerId, setProviderId] = useState<string>("");
@@ -573,7 +609,7 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
     if (!selectedType || !title.trim()) return;
     setSaving(true);
     try {
-      const config: Record<string, unknown> = {};
+      const config: Record<string, unknown> = { ...(initialConfig ?? {}) };
       if (TYPES_WITH_LIMIT.includes(selectedType)) {
         config.limit = parseInt(limit, 10) || 50;
       }
@@ -635,14 +671,16 @@ function CreateTaskModal({ t, onCreated, onClose }: CreateProps) {
             )}
             {!hasScope && (
               <span className="create-form-candidates">
-                {candidates === null
-                  ? t.tasks.candidatesLoading
-                  : (() => {
-                      const count = candidates[selectedType];
-                      return count === null || count === undefined
-                        ? t.tasks.candidatesUnknown
-                        : t.tasks.candidatesCount.replace("{{count}}", String(count));
-                    })()}
+                {initialCandidateCount !== undefined
+                  ? t.tasks.candidatesCount.replace("{{count}}", String(initialCandidateCount))
+                  : candidates === null
+                    ? t.tasks.candidatesLoading
+                    : (() => {
+                        const count = candidates[selectedType];
+                        return count === null || count === undefined
+                          ? t.tasks.candidatesUnknown
+                          : t.tasks.candidatesCount.replace("{{count}}", String(count));
+                      })()}
               </span>
             )}
           </div>

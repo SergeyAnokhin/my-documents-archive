@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Header } from "./components/layout/Header";
 import { AdminPanel } from "./components/admin/AdminPanel";
-import { TasksPanel } from "./components/tasks/TasksPanel";
+import { TasksPanel, type TaskPreCreate } from "./components/tasks/TasksPanel";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
 import { LangContext, translations, type Lang } from "./i18n";
@@ -13,12 +13,30 @@ import { setCustomTypeIcons } from "./components/documents/typeIcons";
 function HomeRoute() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [tasksPreCreate, setTasksPreCreate] = useState<TaskPreCreate | null>(null);
+
+  // Listen for requests from HomePage to open tasks panel with a pre-configured task
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<TaskPreCreate>).detail;
+      setTasksPreCreate(detail);
+      setTasksOpen(true);
+    };
+    window.addEventListener("docintell:open-tasks-create", handler);
+    return () => window.removeEventListener("docintell:open-tasks-create", handler);
+  }, []);
+
   return (
     <>
       <Header onAdminOpen={() => setAdminOpen(true)} onTasksOpen={() => setTasksOpen(true)} />
       <HomePage />
       <AdminPanel open={adminOpen} onClose={() => setAdminOpen(false)} />
-      <TasksPanel open={tasksOpen} onClose={() => setTasksOpen(false)} />
+      <TasksPanel
+        open={tasksOpen}
+        onClose={() => setTasksOpen(false)}
+        preCreate={tasksPreCreate}
+        onPreCreateConsumed={() => setTasksPreCreate(null)}
+      />
     </>
   );
 }

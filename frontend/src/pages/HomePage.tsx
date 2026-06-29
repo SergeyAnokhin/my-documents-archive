@@ -11,7 +11,7 @@ import { FilterDropdown } from "../components/search/FilterDropdown";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { useAdvancedMode } from "../contexts/AdvancedModeContext";
-import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts, dispatchQuality } from "../api/documents";
+import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
 import "./HomePage.css";
 
@@ -35,7 +35,6 @@ export function HomePage() {
 
   // Quality counts for the filter dropdown
   const [qualityCounts, setQualityCounts] = useState<Record<string, number>>({});
-  const [dispatching, setDispatching] = useState(false);
 
   // AI ask state
   const [aiAnswer, setAiAnswer] = useState<AIAnswerResponse | null>(null);
@@ -181,20 +180,26 @@ export function HomePage() {
 
   // ── Dispatch quality filter docs to processing queue ──────────────────────
 
-  const handleDispatch = async () => {
-    if (!filterQuality || dispatching) return;
-    setDispatching(true);
-    try {
-      const res = await dispatchQuality(filterQuality);
-      const msg = t.filters.qualityDispatched.replace("{{n}}", String(res.dispatched));
-      // Refresh counts after dispatch
-      fetchQualityCounts().then(setQualityCounts).catch(() => {});
-      alert(msg);
-    } catch {
-      /* ignore */
-    } finally {
-      setDispatching(false);
-    }
+  const handleDispatch = () => {
+    if (!filterQuality || filterQuality === "complete") return;
+    const labelMap: Record<string, string> = {
+      no_ocr: t.filters.qualityNoOcr,
+      no_embedding: t.filters.qualityNoEmbedding,
+      no_analysis: t.filters.qualityNoAnalysis,
+      no_summary: t.filters.qualityNoSummary,
+      no_tags: t.filters.qualityNoTags,
+      no_category: t.filters.qualityNoCategory,
+    };
+    window.dispatchEvent(
+      new CustomEvent("docintell:open-tasks-create", {
+        detail: {
+          taskType: "fix_quality",
+          title: `Fix: ${labelMap[filterQuality] ?? filterQuality}`,
+          config: { quality_filter: filterQuality },
+          candidateCount: qualityCounts[filterQuality] ?? 0,
+        },
+      })
+    );
   };
 
   // ── Sync ────────────────────────────────────────────────────────────────────
@@ -298,7 +303,7 @@ export function HomePage() {
                       variant="ghost"
                       size="sm"
                       icon={<SendHorizonal size={13} />}
-                      loading={dispatching}
+
                       onClick={handleDispatch}
                     >
                       {t.filters.qualityDispatch}

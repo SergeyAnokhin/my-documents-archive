@@ -126,6 +126,7 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         "reclassify_all": reclassify_all_count,
         "recluster": recluster_count,
         "embed_missing": embed_missing_count,
+        "fix_quality": None,
         "batch_ocr_mistral": batch_ocr_scope1,
         "batch_ocr_gemini": batch_ocr_scope1,
         "batch_analysis_gemini": batch_analysis_count,
@@ -289,6 +290,8 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
             await _recluster(task_id, config)
         elif task_type == "embed_missing":
             await _embed_missing(task_id, config)
+        elif task_type == "fix_quality":
+            await _fix_quality(task_id, config)
         elif task_type == "batch_ocr_mistral":
             await run_batch_ocr_mistral(task_id, config)
         elif task_type == "batch_ocr_gemini":
@@ -478,6 +481,81 @@ async def _embed_missing(task_id: int, config: dict) -> None:
 
     _finish(task_id, "done", {"processed": processed, "errors": errors, "candidates": total})
     _log(task_id, f"Done — embedded {processed} document(s), {errors} error(s)")
+
+
+async def _fix_quality(task_id: int, config: dict) -> None:
+    """Process documents that have a specific quality gap (no OCR, no embedding, etc.)."""
+    from ..services.indexer import index_document, reclassify_document, embed_document_by_id
+    from sqlalchemy import or_, String
+
+    quality = config.get("quality_filter", "")
+    _log(task_id, f"Starting: fix quality gap '{quality}'")
+
+    db = SessionLocal()
+    try:
+        base = db.query(Document).filter(Document.is_deleted == False)
+
+        if quality == "no_ocr":
+            docs = base.filter(
+                or_(Document.ocr_status != "done", Document.ocr_text == None, Document.ocr_text == "")
+            ).all()
+            operation = "ocr"
+        elif quality == "no_embedding":
+            from ..services.embeddings import embedded_ids
+            emb_ids = embedded_ids()
+            docs = [d for d in base.all() if d.id not in emb_ids]
+            operation = "embedding"
+        elif quality == "no_analysis":
+            docs = base.filter(Document.analysis_status != "done").all()
+            operation = "reclassify"
+        elif quality == "no_summary":
+            docs = base.filter(or_(Document.summary == None, Document.summary == "")).all()
+            operation = "reclassify"
+        elif quality == "no_tags":
+            docs = base.filter(or_(Document.tags == None, Document.tags.cast(String) == "[]")).all()
+            operation = "reclassify"
+        elif quality == "no_category":
+            docs = base.filter(
+                or_(
+                    Document.document_type == None,
+                    Document.document_type == "unclassified",
+                    Document.document_type == "other",
+                )
+            ).all()
+            operation = "reclassify"
+        else:
+            _log(task_id, f"Unknown quality_filter: {quality!r}", "error")
+            _finish(task_id, "error")
+            return
+
+        total = len(docs)
+        _log(task_id, f"Found {total} document(s) with gap: {quality!r}")
+        _set_progress(task_id, 0, total)
+
+        processed = errors = 0
+        for i, doc in enumerate(docs):
+            if _is_stopped(task_id):
+                _log(task_id, f"Stopped after {i} document(s)")
+                return
+            try:
+                if operation == "ocr":
+                    await index_document(doc.id, True)
+                elif operation == "embedding":
+                    await embed_document_by_id(doc.id)
+                else:
+                    await reclassify_document(doc.id)
+                processed += 1
+                db.expire(doc)
+                _log(task_id, f"✓ {doc.filename}")
+            except Exception as exc:
+                errors += 1
+                _log(task_id, f"✗ {doc.filename}: {exc}", "error")
+            _set_progress(task_id, i + 1, total)
+    finally:
+        db.close()
+
+    _finish(task_id, "done", {"processed": processed, "errors": errors})
+    _log(task_id, f"Done — {processed} document(s) processed, {errors} error(s)")
 
 
 async def _cleanup_missing(task_id: int, config: dict) -> None:
