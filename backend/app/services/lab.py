@@ -38,34 +38,6 @@ def get_worker_url(db: Optional[Session] = None) -> str:
 
 log = logging.getLogger(__name__)
 
-# Vision models in the lab: transcribe AND extract structured fields in one call.
-# Response is parsed as JSON; if the model returns plain text (e.g. Mistral OCR),
-# the whole response is treated as the transcribed text with empty fields.
-VISION_ANALYSIS_PROMPT = """\
-Analyze this scanned document image and return a single JSON object with two keys:
-
-"text": verbatim transcription of ALL text in the document, preserving original
-line breaks and reading order. Do not translate, summarise, or add comments.
-Output the raw transcription only — no labels, no markdown.
-
-"fields": extracted metadata:
-  "document_type": the single best type from this list — passport, national_id,
-    driver_license, birth_certificate, death_certificate, marriage_certificate,
-    divorce_certificate, residence_permit, visa, contract, agreement,
-    power_of_attorney, court_document, invoice, bank_statement, receipt,
-    tax_document, payslip, property_deed, title_certificate, insurance_policy,
-    medical_certificate, prescription, medical_record, diploma, certificate,
-    transcript, student_id, permit, license, registration, notarial_deed,
-    letter, notice, announcement, photo, scan, unclassified
-  "document_date": most significant date in YYYY-MM-DD format, or null
-  "person_first_name": first name of the main person, or null
-  "person_last_name": last name of the main person, or null
-  "organization": company/institution name, or null
-  "amount": numeric monetary value (no currency symbol), or null
-  "amount_currency": ISO 4217 code ("USD", "EUR", "RUB"), or null
-  "language": ISO 639-1 code ("ru", "en", "fr", etc.)
-
-Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
 _LANG_NAMES: dict[str, str] = {
     "en": "English",
@@ -342,25 +314,24 @@ async def worker_available(db: Optional[Session] = None) -> bool:
 
 def _parse_vision_analysis(raw: str) -> tuple[str, dict]:
     """
-    Parse the combined vision+analysis JSON response.
-    Returns (transcribed_text, fields_dict).
+    Parse a VISION_FULL_PROMPT response (flat JSON) into (transcribed_text, fields_dict).
     Falls back to (raw, {}) when the model returns plain text (e.g. Mistral OCR).
     """
-    stripped = raw.strip()
-    # Strip markdown fences if present
-    if stripped.startswith("```"):
-        lines = stripped.split("\n")
-        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-        stripped = "\n".join(lines[1:end])
-    try:
-        data = json.loads(stripped)
-        text = str(data.get("text") or "").strip()
-        fields = data.get("fields") or {}
-        if not isinstance(fields, dict):
-            fields = {}
-        return text or stripped, fields
-    except Exception:
-        return stripped, {}
+    data = ai_vision.parse_vision_full(raw)
+    if data is None:
+        return raw.strip(), {}
+    text = str(data.get("text") or "").strip()
+    fields = {
+        "document_type": data.get("document_type"),
+        "document_date": data.get("document_date"),
+        "person_first_name": data.get("person_first_name"),
+        "person_last_name": data.get("person_last_name"),
+        "organization": data.get("organization"),
+        "amount": data.get("amount"),
+        "amount_currency": data.get("amount_currency"),
+        "language": data.get("language"),
+    }
+    return text, fields
 
 
 async def run_vision_ocr(img_bytes: bytes, provider, db: Session) -> tuple[str, dict, float, int, int, int]:
@@ -369,7 +340,7 @@ async def run_vision_ocr(img_bytes: bytes, provider, db: Session) -> tuple[str, 
     Returns (text, fields, cost, elapsed_ms, tokens_in, tokens_out).
     """
     start = time.perf_counter()
-    raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, VISION_ANALYSIS_PROMPT)
+    raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, ai_vision.VISION_FULL_PROMPT, response_schema=ai_vision.VisionFullResponse)
     ms = int((time.perf_counter() - start) * 1000)
     _update_stats(db, provider, tin, tout, cost)
     text, fields = _parse_vision_analysis(raw)

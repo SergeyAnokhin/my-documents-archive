@@ -175,6 +175,15 @@
   padding-top: 2px;
 }
 
+.viewer-meta-divider {
+  border-top: 1px solid var(--color-border);
+  margin: var(--sp-1) 0;
+}
+
+.viewer-meta-path {
+  word-break: break-all;
+}
+
 .viewer-tags {
   display: flex;
   flex-wrap: wrap;

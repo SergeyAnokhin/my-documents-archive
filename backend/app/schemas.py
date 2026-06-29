@@ -1,6 +1,7 @@
 import json as _json
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Any
 
 
@@ -43,6 +44,7 @@ class DocumentOut(BaseModel):
     api_cost_analysis: float = 0.0
     ocr_model: Optional[str] = None
     updated_at: Optional[datetime] = None
+    relative_path: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -53,6 +55,17 @@ class DocumentOut(BaseModel):
             except Exception:
                 return []
         return v or []
+
+    @model_validator(mode="after")
+    def compute_relative_path(self) -> "DocumentOut":
+        if self.filepath and self.relative_path is None:
+            try:
+                from .config import settings
+                lib = Path(settings.library_path).resolve()
+                self.relative_path = str(Path(self.filepath).relative_to(lib))
+            except (ValueError, Exception):
+                pass
+        return self
 
     model_config = {"from_attributes": True}
 

@@ -39,7 +39,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   const { t } = useT();
   const navigate = useNavigate();
   const { advancedMode } = useAdvancedMode();
-  const [activeTab, setActiveTab] = useState<"preview" | "text" | "details" | "dev">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "text" | "dev">("preview");
   const [devMsg, setDevMsg] = useState("");
   const [devLoading, setDevLoading] = useState<"reindex" | "reclassify" | null>(null);
 
@@ -481,15 +481,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
         <div className="viewer-info">
           {/* Tabs */}
           <div className="viewer-tabs">
-            {(["preview", "text", "details", "dev"] as const).map((tab) => (
+            {(["preview", "text", "dev"] as const).map((tab) => (
               <button
                 key={tab}
                 className={`viewer-tab${activeTab === tab ? " active" : ""}`}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "preview" ? "Preview"
+                {tab === "preview" ? t.metadata
                   : tab === "text" ? t.recognizedText
-                  : tab === "details" ? t.metadata
                   : t.devMode}
               </button>
             ))}
@@ -577,6 +576,31 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                     <span>{doc.amount} {doc.amount_currency ?? ""}</span>
                   </div>
                 )}
+
+                <div className="viewer-meta-divider" />
+
+                {doc.relative_path && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">Path</span>
+                    <span className="text-mono text-sm viewer-meta-path">{doc.relative_path}</span>
+                  </div>
+                )}
+                <div className="viewer-meta-row">
+                  <span className="viewer-meta-label">Filename</span>
+                  <span className="text-mono text-sm">{doc.filename}</span>
+                </div>
+                {doc.added_at && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">Added</span>
+                    <span>{formatDate(doc.added_at)}</span>
+                  </div>
+                )}
+                {doc.file_size && (
+                  <div className="viewer-meta-row">
+                    <span className="viewer-meta-label">Size</span>
+                    <span>{(doc.file_size / 1024).toFixed(1)} KB</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -596,38 +620,6 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 </p>
                 <div className="text-mono">
                   {doc.ocr_text || <em className="text-muted">{t.noSummary}</em>}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "details" && (
-              <div className="viewer-meta-list">
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Filename</span>
-                  <span className="text-mono text-sm">{doc.filename}</span>
-                </div>
-                {doc.document_date && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Document date</span>
-                    <span>{formatDate(doc.document_date)}</span>
-                  </div>
-                )}
-                {doc.added_at && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Added</span>
-                    <span>{formatDate(doc.added_at)}</span>
-                  </div>
-                )}
-                {doc.file_size && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Size</span>
-                    <span>{(doc.file_size / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">OCR</span>
-                  <span className={`status-dot ${doc.ocr_status}`} style={{ marginRight: 6 }} />
-                  <span className="text-sm">{t.status[doc.ocr_status as keyof typeof t.status]}</span>
                 </div>
               </div>
             )}

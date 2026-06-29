@@ -9,7 +9,7 @@ from app.services.ai_vision import (
     VISION_FULL_PROMPT,
     MISTRAL_OCR_PRICE_PER_PAGE,
     parse_mistral_ocr as _parse_mistral_ocr,
-    _parse_vision_full,
+    parse_vision_full as _parse_vision_full,
 )
 from app.services.provider_models import _mistral_ocr_models
 

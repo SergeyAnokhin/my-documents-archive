@@ -7,7 +7,8 @@ import json
 
 import pytest
 
-from app.services.lab import _parse_json, _judge_system, VISION_ANALYSIS_PROMPT, _parse_vision_analysis
+from app.services.lab import _parse_json, _judge_system, _parse_vision_analysis
+from app.services.ai_vision import VISION_FULL_PROMPT
 
 
 def test_parse_json_plain():
@@ -28,10 +29,11 @@ def test_parse_json_raises_on_garbage():
 
 
 def test_prompts_request_verbatim_and_json():
-    # Vision prompt must ask for transcription and return JSON with text + fields.
-    assert "text" in VISION_ANALYSIS_PROMPT
-    assert "fields" in VISION_ANALYSIS_PROMPT
-    assert "JSON" in VISION_ANALYSIS_PROMPT
+    # The shared vision prompt (used by both indexer and lab) must ask for
+    # verbatim text and return a JSON object with the core fields.
+    assert "text" in VISION_FULL_PROMPT
+    assert "document_type" in VISION_FULL_PROMPT
+    assert "JSON" in VISION_FULL_PROMPT
     # Judge prompts (with and without image) must include the agreed JSON keys.
     for with_image in (True, False):
         prompt = _judge_system(with_image)
@@ -48,7 +50,8 @@ def test_judge_prompt_language():
 
 
 def test_parse_vision_analysis_json():
-    raw = '{"text": "Hello world", "fields": {"document_type": "invoice", "language": "en"}}'
+    # Lab now uses VISION_FULL_PROMPT — flat JSON, no nested "fields" key.
+    raw = '{"text": "Hello world", "document_type": "invoice", "language": "en"}'
     text, fields = _parse_vision_analysis(raw)
     assert text == "Hello world"
     assert fields["document_type"] == "invoice"
@@ -63,7 +66,7 @@ def test_parse_vision_analysis_fallback_plain_text():
 
 
 def test_parse_vision_analysis_markdown_fenced():
-    raw = "```json\n{\"text\": \"Doc text\", \"fields\": {\"language\": \"ru\"}}\n```"
+    raw = '```json\n{"text": "Doc text", "language": "ru"}\n```'
     text, fields = _parse_vision_analysis(raw)
     assert text == "Doc text"
     assert fields["language"] == "ru"

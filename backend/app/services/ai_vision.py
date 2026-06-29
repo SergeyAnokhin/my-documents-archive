@@ -13,7 +13,6 @@ AND provider_type in VISION_CAPABLE, sorted by sort_order ASC. Failover on error
 Falls back to env-var providers if no DB providers are configured.
 """
 
-import asyncio
 import base64
 import io
 import json
@@ -21,6 +20,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from pydantic import BaseModel
 from PIL import Image
 from sqlalchemy.orm import Session
 
@@ -69,6 +69,22 @@ If the document contains no readable text (it is a photograph, illustration, or 
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
+class VisionFullResponse(BaseModel):
+    text: str
+    summary: str
+    document_type: str
+    document_type_confidence: float
+    tags: list[str]
+    language: str
+    organization: Optional[str] = None
+    amount: Optional[float] = None
+    amount_currency: Optional[str] = None
+    person_first_name: Optional[str] = None
+    person_last_name: Optional[str] = None
+    document_date: Optional[str] = None
+    short_title: str
+
+
 VISION_CAPABLE = {"openai", "gemini", "openrouter", "mistral"}
 
 VISION_DEFAULTS = {
@@ -109,7 +125,7 @@ async def describe_document(
 
     for provider in providers:
         try:
-            text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_FULL_PROMPT)
+            text, tin, tout, cost = await run_vision(provider, img_bytes, VISION_FULL_PROMPT, response_schema=VisionFullResponse)
             update_provider_stats(db, provider, tin, tout, cost)
             from .usage import record_usage
             record_usage(
@@ -124,7 +140,7 @@ async def describe_document(
                 # Mistral OCR ignores the prompt and returns plain markdown.
                 return text, None, cost
 
-            data = _parse_vision_full(text)
+            data = parse_vision_full(text)
             if data and "text" in data:
                 transcription = str(data.pop("text") or "").strip()
                 return transcription, coerce_analysis_fields(data), cost
@@ -138,7 +154,7 @@ async def describe_document(
     return None
 
 
-def _parse_vision_full(raw: str) -> Optional[dict]:
+def parse_vision_full(raw: str) -> Optional[dict]:
     """Parse VISION_FULL_PROMPT response. Returns the full dict or None on parse error."""
     try:
         data = json.loads(strip_code_fences(raw))
@@ -147,11 +163,11 @@ def _parse_vision_full(raw: str) -> Optional[dict]:
         return None
 
 
-async def run_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = False) -> tuple[str, int, int, float]:
+async def run_vision(provider, img_bytes: bytes, prompt: str, json_mode: bool = False, response_schema=None) -> tuple[str, int, int, float]:
     """Send an image + prompt to one vision provider. Returns (text, tokens_in, tokens_out, cost)."""
     ptype = provider.provider_type
     if ptype == "gemini":
-        return await _call_gemini(provider, img_bytes, prompt, json_mode=json_mode)
+        return await _call_gemini(provider, img_bytes, prompt, json_mode=json_mode, response_schema=response_schema)
     if ptype == "mistral":
         return await _call_mistral_ocr(provider, img_bytes)
     b64 = base64.b64encode(img_bytes).decode()
@@ -312,22 +328,24 @@ async def _call_mistral_ocr(provider, img_bytes: bytes) -> tuple[str, int, int, 
     return text, 0, 0, cost
 
 
-async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT, json_mode: bool = False) -> tuple[str, int, int, float]:
-    import google.generativeai as genai
+async def _call_gemini(provider, img_bytes: bytes, prompt: str = VISION_PROMPT, json_mode: bool = False, response_schema=None) -> tuple[str, int, int, float]:
+    from google import genai
+    from google.genai import types
     extra = getattr(provider, "extra_params", None) or {}
     model_name = getattr(provider, "model", None) or VISION_DEFAULTS["gemini"]
-    genai.configure(api_key=provider.api_key)
-    gm = genai.GenerativeModel(model_name)
-    image_part = {"mime_type": "image/jpeg", "data": img_bytes}
-    gen_cfg: dict = {"max_output_tokens": int(extra.get("max_tokens", 2048))}
+    client = genai.Client(api_key=provider.api_key)
+    image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+    cfg_kwargs: dict = {"max_output_tokens": int(extra.get("max_tokens", 2048))}
     if "temperature" in extra:
-        gen_cfg["temperature"] = float(extra["temperature"])
-    if json_mode:
-        gen_cfg["response_mime_type"] = "application/json"
-    resp = await asyncio.to_thread(
-        gm.generate_content,
-        [prompt, image_part],
-        generation_config=gen_cfg,
+        cfg_kwargs["temperature"] = float(extra["temperature"])
+    if response_schema is not None:
+        cfg_kwargs["response_schema"] = response_schema
+    elif json_mode:
+        cfg_kwargs["response_mime_type"] = "application/json"
+    resp = await client.aio.models.generate_content(
+        model=model_name,
+        contents=[prompt, image_part],
+        config=types.GenerateContentConfig(**cfg_kwargs),
     )
     um = getattr(resp, "usage_metadata", None)
     tin  = int(getattr(um, "prompt_token_count", 0) or 0)

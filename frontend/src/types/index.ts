@@ -2,6 +2,7 @@ export interface Document {
   id: number;
   filename: string;
   filepath: string;
+  relative_path?: string;
   file_size?: number;
   mime_type?: string;
   document_date?: string;
