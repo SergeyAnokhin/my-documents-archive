@@ -420,6 +420,8 @@ export const ru: Translations = {
     createTask: "Создать задачу",
     configLimit: "Лимит (документов)",
     configMaxClusters: "Макс. кластеров",
+    configAnalysisProvider: "Провайдер анализа",
+    noAnalysisProvider: "Провайдеры анализа не настроены — добавьте в настройках AI",
     configFolder: "Путь к папке (опционально)",
     configProvider: "Провайдер {{provider}}",
     noBatchProvider: "Провайдеры {{provider}} не настроены — добавьте в настройках AI",

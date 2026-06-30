@@ -420,6 +420,8 @@ export const fr: Translations = {
     createTask: "Créer la tâche",
     configLimit: "Limite (documents)",
     configMaxClusters: "Max clusters",
+    configAnalysisProvider: "Fournisseur d'analyse",
+    noAnalysisProvider: "Aucun fournisseur d'analyse configuré — ajoutez-en un dans les paramètres AI",
     configFolder: "Chemin du dossier (optionnel)",
     configProvider: "Fournisseur {{provider}}",
     noBatchProvider: "Aucun fournisseur {{provider}} configuré — ajoutez-en un dans les paramètres AI",

@@ -428,6 +428,8 @@ export const en = {
     createTask: "Create Task",
     configLimit: "Limit (documents)",
     configMaxClusters: "Max clusters",
+    configAnalysisProvider: "Analysis provider",
+    noAnalysisProvider: "No analysis providers configured — add one in AI Settings",
     configFolder: "Folder path (optional)",
     configProvider: "{{provider}} provider",
     noBatchProvider: "No {{provider}} providers configured — add one in AI Settings",

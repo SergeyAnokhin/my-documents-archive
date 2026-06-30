@@ -541,6 +541,7 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
 
   const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
   const isBatch = !!batchProviderType;
+  const isRecluster = selectedType === "recluster";
   const hasScope = selectedType ? TYPES_WITH_SCOPE.includes(selectedType) : false;
   const providerLabel = batchProviderType
     ? batchProviderType[0].toUpperCase() + batchProviderType.slice(1)
@@ -551,18 +552,29 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
     getTaskCandidates().then(setCandidates).catch(() => {});
   }, []);
 
-  // Load matching providers when a batch type is selected
+  // Load matching providers when a batch or recluster type is selected
   useEffect(() => {
     if (!selectedType) return;
     const wanted = BATCH_PROVIDER_TYPE[selectedType];
-    if (!wanted) return;
-    listProviders()
-      .then(all => {
-        const matching = all.filter(p => p.provider_type === wanted && p.enabled);
-        setProviders(matching);
-        if (matching.length > 0) setProviderId(String(matching[0].id));
-      })
-      .catch(() => {});
+    if (wanted) {
+      listProviders()
+        .then(all => {
+          const matching = all.filter(p => p.provider_type === wanted && p.enabled);
+          setProviders(matching);
+          if (matching.length > 0) setProviderId(String(matching[0].id));
+        })
+        .catch(() => {});
+    } else if (selectedType === "recluster") {
+      listProviders()
+        .then(all => {
+          const matching = all.filter(
+            p => (p.task_type === "analysis" || p.task_type === "both") && p.enabled,
+          );
+          setProviders(matching);
+          if (matching.length > 0) setProviderId(String(matching[0].id));
+        })
+        .catch(() => {});
+    }
   }, [selectedType]);
 
   // Fetch scope count when scope or task type changes (only for scope-aware tasks)
@@ -620,6 +632,7 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
       }
       if (selectedType === "recluster") {
         config.max_clusters = parseInt(maxClusters, 10) || 40;
+        if (providerId) config.provider_id = parseInt(providerId, 10);
       }
       if (hasScope) {
         config.scope = scope;
@@ -769,6 +782,27 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
             </div>
           )}
 
+          {isRecluster && (
+            <div className="create-form-field">
+              <label className="create-form-label">{t.tasks.configAnalysisProvider}</label>
+              {providers.length === 0 ? (
+                <p className="text-sm text-muted">{t.tasks.noAnalysisProvider}</p>
+              ) : (
+                <select
+                  className="create-form-input"
+                  value={providerId}
+                  onChange={e => setProviderId(e.target.value)}
+                >
+                  {providers.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.model ? ` — ${p.model}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           <div className="create-form-field">
             <label className="create-form-label">{t.tasks.taskTitle}</label>
             <input
@@ -838,7 +872,7 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
               size="sm"
               loading={saving}
               onClick={handleCreate}
-              disabled={!title.trim() || (isBatch && providers.length === 0)}
+              disabled={!title.trim() || (isBatch && providers.length === 0) || (isRecluster && providers.length === 0)}
             >
               {t.tasks.createTask}
             </Button>

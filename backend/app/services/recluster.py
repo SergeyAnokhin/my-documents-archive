@@ -131,10 +131,12 @@ async def _name_cluster(
     summaries: list[str],
     taken_icons: set[str],
     db,
+    provider=None,
     max_retries: int = 3,
 ) -> tuple[str, str]:
     """Ask LLM to name one cluster. Returns (type_slug, lucide_icon).
 
+    provider: specific AIProvider to use; falls back to the first analysis provider.
     taken_icons: icons already assigned to earlier clusters in this run plus
     all static built-in icons — the LLM must not repeat them.
     Retries up to max_retries times if the icon is unknown or already taken.
@@ -144,9 +146,11 @@ async def _name_cluster(
     from .ai_common import strip_code_fences
     from .type_icon_suggestion import ALLOWED_ICONS
 
-    providers = _get_providers(db)
-    if not providers:
-        return ("unclassified", "FileText")
+    if provider is None:
+        providers = _get_providers(db)
+        if not providers:
+            return ("unclassified", "FileText")
+        provider = providers[0]
 
     numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(summaries[:5]))
     excluded = set(taken_icons)  # copy so retries can expand it
@@ -174,7 +178,7 @@ async def _name_cluster(
 
         try:
             text, _, _, _ = await run_text(
-                providers[0],
+                provider,
                 "You are a document archivist.",
                 user_msg,
             )
@@ -248,16 +252,21 @@ def _save_cluster_icons(cluster_names: dict[int, tuple[str, str]], db) -> None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-async def run_recluster(task_id: Optional[int] = None, max_clusters: int = 40) -> dict:
+async def run_recluster(
+    task_id: Optional[int] = None,
+    max_clusters: int = 40,
+    provider_id: Optional[int] = None,
+) -> dict:
     """
     Full clustering pipeline.
     Returns {"total": int, "clusters": int, "applied": int}.
     max_clusters caps the upper bound passed to _k_range (default 40).
+    provider_id: DB id of the AIProvider to use for naming; falls back to first analysis provider.
     """
     import numpy as np
     from sklearn.cluster import KMeans
     from ..database import SessionLocal
-    from ..models import Document
+    from ..models import AIProvider, Document
     from .embeddings import _get_model
     from .type_icon_suggestion import STATIC_ICON_VALUES
 
@@ -297,6 +306,15 @@ async def run_recluster(task_id: Optional[int] = None, max_clusters: int = 40) -
             return {"total": 0, "clusters": 0, "applied": 0}
 
         _tlog(f"Loaded {len(docs)} documents for clustering")
+
+        # Resolve provider once upfront (avoids a DB query per cluster)
+        provider = None
+        if provider_id is not None:
+            provider = db.query(AIProvider).filter(AIProvider.id == provider_id).first()
+            if provider:
+                _tlog(f"Using provider: {provider.name}")
+            else:
+                _tlog(f"Provider id={provider_id} not found, falling back to default", "warning")
 
         # Step 1: clean summaries
         cleaned = [
@@ -348,7 +366,7 @@ async def run_recluster(task_id: Optional[int] = None, max_clusters: int = 40) -
 
         for cid in range(k):
             repr_summaries = [cleaned[i] for i in repr_map.get(cid, []) if cleaned[i].strip()]
-            type_slug, icon = await _name_cluster(repr_summaries, taken_icons, db)
+            type_slug, icon = await _name_cluster(repr_summaries, taken_icons, db, provider=provider)
             cluster_names[cid] = (type_slug, icon)
             if icon and icon != "FileText":
                 taken_icons.add(icon)
