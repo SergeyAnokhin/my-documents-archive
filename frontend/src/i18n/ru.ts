@@ -419,6 +419,7 @@ export const ru: Translations = {
     selectType: "Выберите тип задачи",
     createTask: "Создать задачу",
     configLimit: "Лимит (документов)",
+    configMaxClusters: "Макс. кластеров",
     configFolder: "Путь к папке (опционально)",
     configProvider: "Провайдер {{provider}}",
     noBatchProvider: "Провайдеры {{provider}} не настроены — добавьте в настройках AI",

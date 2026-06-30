@@ -5,10 +5,11 @@ Pipeline:
   1. Load all analyzed documents with a non-empty summary.
   2. Clean summary: strip tags, person/org names, dates.
   3. Embed cleaned texts (reuse sentence-transformers model from embeddings.py).
-  4. Auto-select cluster count k via silhouette score.
+  4. Auto-select cluster count k via silhouette score (cap: 40).
   5. K-means clustering.
   6. Pick 3-5 representative docs per cluster (nearest to centroid).
-  7. Ask LLM to name each cluster → type slug + Lucide icon.
+  7. Ask LLM to name each cluster → type slug + Lucide icon in one call
+     (conflict-aware: each cluster sees icons already taken by prior clusters).
   8. Apply: old document_type → tags (if meaningful), new type set.
 """
 
@@ -68,8 +69,8 @@ def _strip_for_clustering(
 # ── K selection ───────────────────────────────────────────────────────────────
 
 def _k_range(n: int) -> tuple[int, int]:
-    k_min = max(5, int(math.sqrt(n / 50)))
-    k_max = min(35, int(math.sqrt(n / 5)))
+    k_min = max(3, int(math.sqrt(n / 50)))
+    k_max = min(40, int(math.sqrt(n / 5)))
     return k_min, max(k_min + 2, k_max)
 
 
@@ -126,38 +127,77 @@ def _representative_indices(embeddings, labels, k: int, n_repr: int = 5) -> dict
     return result
 
 
-async def _name_cluster(summaries: list[str], db) -> tuple[str, str]:
-    """Ask LLM to name one cluster. Returns (type_slug, lucide_icon)."""
+async def _name_cluster(
+    summaries: list[str],
+    taken_icons: set[str],
+    db,
+    max_retries: int = 3,
+) -> tuple[str, str]:
+    """Ask LLM to name one cluster. Returns (type_slug, lucide_icon).
+
+    taken_icons: icons already assigned to earlier clusters in this run plus
+    all static built-in icons — the LLM must not repeat them.
+    Retries up to max_retries times if the icon is unknown or already taken.
+    """
     import json
     from .ai_analysis import _get_providers, run_text
     from .ai_common import strip_code_fences
+    from .type_icon_suggestion import ALLOWED_ICONS
 
     providers = _get_providers(db)
     if not providers:
         return ("unclassified", "FileText")
 
     numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(summaries[:5]))
-    user_msg = (
-        "The following documents belong to the same group in a personal archive:\n\n"
-        f"{numbered}\n\n"
-        "Based on their content, propose:\n"
-        '1. A short document type slug (1–3 words, lowercase, underscores, '
-        'e.g. "tax_return", "insurance_policy", "passport", "bank_statement")\n'
-        '2. A Lucide icon name that fits the content '
-        '(e.g. "FileText", "Briefcase", "CreditCard", "Home", "Heart", '
-        '"GraduationCap", "Car", "Shield", "Receipt", "Building2")\n\n'
-        'Reply with JSON only: {"type": "...", "icon": "..."}'
-    )
+    excluded = set(taken_icons)  # copy so retries can expand it
 
-    try:
-        text, _, _, _ = await run_text(providers[0], "You are a document archivist.", user_msg)
-        data = json.loads(strip_code_fences(text))
-        type_slug = data.get("type", "unclassified").lower().replace(" ", "_")
-        icon = data.get("icon", "FileText")
-        return (type_slug, icon)
-    except Exception as e:
-        log.warning("Cluster naming failed: %s", e)
-        return ("unclassified", "FileText")
+    for attempt in range(max_retries):
+        available = [ic for ic in ALLOWED_ICONS if ic not in excluded]
+        if not available:
+            log.warning("No icons left for cluster (attempt %d)", attempt)
+            return ("unclassified", "FileText")
+
+        user_msg = (
+            "The following document summaries all belong to the same cluster "
+            "in a personal archive:\n\n"
+            f"{numbered}\n\n"
+            "Based on their content, propose a document type and a matching icon.\n\n"
+            "Rules:\n"
+            '- "slug": 1-3 words, lowercase, underscores '
+            '(e.g. "tax_return", "medical_record", "utility_bill")\n'
+            '- "icon": choose from AVAILABLE only (exact PascalCase spelling)\n'
+            '- Do NOT use any icon from EXCLUDED — those are already taken\n\n'
+            f"AVAILABLE: {', '.join(available)}\n"
+            f"EXCLUDED: {', '.join(sorted(excluded))}\n\n"
+            'Reply with JSON only: {"slug": "...", "icon": "..."}'
+        )
+
+        try:
+            text, _, _, _ = await run_text(
+                providers[0],
+                "You are a document archivist.",
+                user_msg,
+            )
+            data = json.loads(strip_code_fences(text))
+            slug = str(data.get("slug", "unclassified")).lower().replace(" ", "_").strip()
+            icon = str(data.get("icon", "")).strip()
+
+            if icon not in ALLOWED_ICONS:
+                log.debug("Unknown icon '%s' (attempt %d), retrying…", icon, attempt)
+                excluded.add(icon)
+                continue
+
+            if icon in excluded:
+                log.debug("Conflicting icon '%s' (attempt %d), retrying…", icon, attempt)
+                excluded.add(icon)
+                continue
+
+            return (slug or "unclassified", icon)
+
+        except Exception as e:
+            log.warning("Cluster naming failed (attempt %d): %s", attempt, e)
+
+    return ("unclassified", "FileText")
 
 
 def _apply_new_type(doc, new_type: str) -> None:
@@ -174,26 +214,33 @@ def _apply_new_type(doc, new_type: str) -> None:
 
 
 def _save_cluster_icons(cluster_names: dict[int, tuple[str, str]], db) -> None:
-    """Persist icon suggestions for new type slugs in AppSettings."""
+    """Persist icon assignments for cluster-generated types in AppSettings.
+
+    Overwrites existing custom icon entries for the same slug — recluster is
+    authoritative for the types it generates. Built-in type slugs are skipped
+    (they already have hardcoded icons in typeIcons.ts).
+    """
     import json
     from ..models import AppSettings
+    from .type_icon_suggestion import BUILT_IN_TYPE_SLUGS
+
+    new_icons = {
+        slug: icon
+        for _, (slug, icon) in cluster_names.items()
+        if slug and slug not in ("unclassified", "other") and slug not in BUILT_IN_TYPE_SLUGS
+    }
+    if not new_icons:
+        return
 
     try:
         row = db.query(AppSettings).filter(AppSettings.key == "custom_type_icons").first()
         existing: dict = json.loads(row.value) if row and row.value else {}
-
-        changed = False
-        for _, (type_slug, icon) in cluster_names.items():
-            if type_slug and type_slug != "unclassified" and type_slug not in existing:
-                existing[type_slug] = icon
-                changed = True
-
-        if not changed:
-            return
+        merged = {**existing, **new_icons}  # recluster icons overwrite old entries
+        value = json.dumps(merged, ensure_ascii=False)
         if row:
-            row.value = json.dumps(existing)
+            row.value = value
         else:
-            db.add(AppSettings(key="custom_type_icons", value=json.dumps(existing)))
+            db.add(AppSettings(key="custom_type_icons", value=value))
         db.commit()
     except Exception as e:
         log.warning("Could not save cluster icons: %s", e)
@@ -201,16 +248,18 @@ def _save_cluster_icons(cluster_names: dict[int, tuple[str, str]], db) -> None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-async def run_recluster(task_id: Optional[int] = None) -> dict:
+async def run_recluster(task_id: Optional[int] = None, max_clusters: int = 40) -> dict:
     """
     Full clustering pipeline.
     Returns {"total": int, "clusters": int, "applied": int}.
+    max_clusters caps the upper bound passed to _k_range (default 40).
     """
     import numpy as np
     from sklearn.cluster import KMeans
     from ..database import SessionLocal
     from ..models import Document
     from .embeddings import _get_model
+    from .type_icon_suggestion import STATIC_ICON_VALUES
 
     def _tlog(msg: str, level: str = "info") -> None:
         if task_id is not None:
@@ -272,13 +321,14 @@ async def run_recluster(task_id: Optional[int] = None) -> dict:
         )
         embeddings = np.array(embeddings, dtype=np.float32)
 
-        # Step 3: select k
+        # Step 3: select k (respect the max_clusters cap)
         n = len(docs)
         if n < 5:
             k = n
         else:
             k_min, k_max = _k_range(n)
-            _tlog(f"Selecting k in [{k_min}, {k_max}] via silhouette score…")
+            k_max = min(k_max, max(k_min + 2, max_clusters))
+            _tlog(f"Selecting k in [{k_min}, {k_max}] via silhouette score (cap={max_clusters})…")
             k = _best_k(embeddings, k_min, k_max)
 
         _tlog(f"Clustering {n} documents into k={k} groups…")
@@ -290,17 +340,22 @@ async def run_recluster(task_id: Optional[int] = None) -> dict:
         # Step 5: representative docs per cluster
         repr_map = _representative_indices(embeddings, labels, k)
 
-        # Step 6: name each cluster via LLM
-        _tlog(f"Naming {k} clusters via LLM…")
+        # Step 6: name each cluster via LLM; track taken icons to avoid conflicts.
+        # Seed taken_icons with built-in static icons so clusters don't reuse them.
+        _tlog(f"Naming {k} clusters via LLM (type slug + icon)…")
         cluster_names: dict[int, tuple[str, str]] = {}
+        taken_icons: set[str] = set(STATIC_ICON_VALUES)
+
         for cid in range(k):
             repr_summaries = [cleaned[i] for i in repr_map.get(cid, []) if cleaned[i].strip()]
-            type_slug, icon = await _name_cluster(repr_summaries, db)
+            type_slug, icon = await _name_cluster(repr_summaries, taken_icons, db)
             cluster_names[cid] = (type_slug, icon)
-            _tlog(f"  Cluster {cid + 1}/{k} → {type_slug}")
+            if icon and icon != "FileText":
+                taken_icons.add(icon)
+            _tlog(f"  Cluster {cid + 1}/{k} → {type_slug} ({icon})")
             _progress(cid + 1, k)
 
-        # Step 7: save icons for new types
+        # Step 7: save icons for the new types
         _save_cluster_icons(cluster_names, db)
 
         # Step 8: apply types to documents

@@ -461,8 +461,9 @@ async def _reclassify_all(task_id: int, config: dict) -> None:
 async def _recluster(task_id: int, config: dict) -> None:
     from ..services.recluster import run_recluster
 
-    _log(task_id, "Starting: cluster-based recategorization of all analyzed documents")
-    result = await run_recluster(task_id=task_id)
+    max_clusters = int(config.get("max_clusters", 40))
+    _log(task_id, f"Starting: cluster-based recategorization (max_clusters={max_clusters})")
+    result = await run_recluster(task_id=task_id, max_clusters=max_clusters)
     _finish(task_id, "done", result)
     _log(task_id, f"Done — {result.get('applied', 0)} documents in {result.get('clusters', 0)} clusters")
 

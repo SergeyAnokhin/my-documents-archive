@@ -523,7 +523,8 @@ interface CreateProps {
 function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, initialConfig, initialCandidateCount }: CreateProps) {
   const [selectedType, setSelectedType] = useState<TaskType | null>(initialType ?? null);
   const [title, setTitle] = useState(initialTitle ?? "");
-  const [limit, setLimit] = useState("50");
+  const [limit, setLimit] = useState("100");
+  const [maxClusters, setMaxClusters] = useState("40");
   const [pollInterval, setPollInterval] = useState("30");
   const [providerId, setProviderId] = useState<string>("");
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -603,9 +604,10 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
     setCompressCount(null);
     const providerType = BATCH_PROVIDER_TYPE[type];
     if (providerType) {
-      setLimit("50");
+      setLimit("100");
       setPollInterval(String(BATCH_POLL_DEFAULTS[providerType] ?? 30));
     }
+    if (type === "recluster") setMaxClusters("40");
   };
 
   const handleCreate = async () => {
@@ -614,7 +616,10 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
     try {
       const config: Record<string, unknown> = { ...(initialConfig ?? {}) };
       if (TYPES_WITH_LIMIT.includes(selectedType)) {
-        config.limit = parseInt(limit, 10) || 50;
+        config.limit = parseInt(limit, 10) || 100;
+      }
+      if (selectedType === "recluster") {
+        config.max_clusters = parseInt(maxClusters, 10) || 40;
       }
       if (hasScope) {
         config.scope = scope;
@@ -748,6 +753,20 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
               <span>{t.tasks.forceEmbedLabel}</span>
               <span className="create-form-force-hint text-xs text-muted">{t.tasks.forceEmbedHint}</span>
             </label>
+          )}
+
+          {selectedType === "recluster" && (
+            <div className="create-form-field">
+              <label className="create-form-label">{t.tasks.configMaxClusters}</label>
+              <input
+                className="create-form-input"
+                type="number"
+                value={maxClusters}
+                onChange={e => setMaxClusters(e.target.value)}
+                min="3"
+                max="100"
+              />
+            </div>
           )}
 
           <div className="create-form-field">
