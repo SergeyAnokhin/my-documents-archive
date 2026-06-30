@@ -9,8 +9,15 @@
   .viewer-layout { grid-template-columns: 1fr; height: auto; overflow-y: auto; }
   .viewer-preview { min-height: 50vh; }
   .viewer-zoom-toolbar { overflow-x: auto; flex-wrap: nowrap; }
-  .viewer-edit-toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  .viewer-edit-toolbar { flex-wrap: wrap; row-gap: 4px; overflow-x: hidden; }
   .viewer-info { max-height: none; }
+  .viewer-apply-group {
+    width: 100%;
+    margin-left: 0;
+    padding-top: 6px;
+    border-top: 1px solid var(--color-border-soft);
+    justify-content: flex-end;
+  }
 }
 
 .viewer-preview {
@@ -270,6 +277,13 @@
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
+}
+
+.viewer-apply-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .viewer-edit-label {

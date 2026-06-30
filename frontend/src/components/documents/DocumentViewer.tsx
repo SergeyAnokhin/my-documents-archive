@@ -83,7 +83,6 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
     armAutoFit,
     cropMode,
     setCropMode,
-    confirmMsg: t.lab.applyConfirm,
   });
 
   // Reset zoom/pan/rotation and local metadata when switching documents
@@ -384,7 +383,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 </>
               )}
               {(imageEdit.hasTransformChange || !!imageEdit.previewResult) && (
-                <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                <div className="viewer-apply-group">
                   <Button
                     variant="ghost" size="sm"
                     onClick={imageEdit.handleCancel}

@@ -65,7 +65,6 @@ export function LabPage() {
     docId, isPdf, zoomRef, imgRef, armAutoFit,
     cropMode, setCropMode,
     onLog: addLog,
-    confirmMsg: lab.applyConfirm,
   });
 
   // ── Panel resize ─────────────────────────────────────────────────────────────

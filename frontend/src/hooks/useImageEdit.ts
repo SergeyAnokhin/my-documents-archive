@@ -11,12 +11,11 @@ interface Options {
   cropMode: boolean;
   setCropMode: (v: boolean | ((prev: boolean) => boolean)) => void;
   onLog?: (msg: string, kind?: "ok" | "err") => void;
-  confirmMsg?: string;
 }
 
 export function useImageEdit({
   docId, isPdf, zoomRef, imgRef, armAutoFit,
-  cropMode, setCropMode, onLog, confirmMsg,
+  cropMode, setCropMode, onLog,
 }: Options) {
   const [imageInfo, setImageInfo] = useState<LabImageInfo | null>(null);
   const [outputScale, setOutputScale] = useState(1);
@@ -142,7 +141,6 @@ export function useImageEdit({
   };
 
   const handleApply = async () => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
     autoPreviewCtrl.current?.abort();
     autoPreviewCtrl.current = null;
     setIsApplying(true);

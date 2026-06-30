@@ -10,6 +10,7 @@ from ..schemas import UploadResponse
 from ..services.storage import (
     compute_file_hash,
     guess_mime,
+    infer_document_date,
     is_supported,
     save_uploaded_file,
 )
@@ -66,6 +67,7 @@ async def upload_document(
             vision_status="pending",
             analysis_status="pending",
             source="upload",
+            document_date=infer_document_date(dest),
         )
         db.add(doc)
         db.commit()

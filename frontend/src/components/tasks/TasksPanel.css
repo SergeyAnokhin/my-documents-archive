@@ -51,6 +51,7 @@
   gap: var(--sp-3);
   transition: border-color var(--transition), box-shadow var(--transition), opacity var(--transition);
   cursor: default;
+  min-width: 0;
 }
 
 .task-card:hover {
@@ -83,6 +84,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  min-width: 0;
 }
 
 .task-card-drag {
@@ -226,6 +228,16 @@
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.task-batch-jobid {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-mono);
 }
 
 .task-console-link {

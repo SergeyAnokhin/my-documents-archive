@@ -457,7 +457,7 @@ function TaskCard({
       {/* Batch job ID + console link — shown while running */}
       {task.status === "running" && !!task.result_summary?.batch_job_id && (
         <div className="task-batch-meta">
-          <span className="text-xs text-muted" style={{ fontFamily: "var(--font-mono)" }}>
+          <span className="task-batch-jobid text-xs text-muted">
             job: {String(task.result_summary.batch_job_id)}
           </span>
           {BATCH_CONSOLE_URLS[taskType] && (
