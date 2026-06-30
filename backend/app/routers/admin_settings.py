@@ -40,6 +40,19 @@ def get_type_icons(db: Session = Depends(get_db)):
     return get_custom_type_icons(db)
 
 
+@router.get("/type-names")
+def get_type_names(db: Session = Depends(get_db)):
+    """Return custom type multilingual names: {slug: {en, fr, ru}}."""
+    import json
+    row = db.query(AppSettings).filter(AppSettings.key == "custom_type_names").first()
+    if not row or not row.value:
+        return {}
+    try:
+        return json.loads(row.value)
+    except Exception:
+        return {}
+
+
 @router.post("/update-type-icons")
 async def update_type_icons(db: Session = Depends(get_db)):
     """Ask the LLM to assign Lucide icons to custom document types without one.

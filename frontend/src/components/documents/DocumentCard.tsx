@@ -1,7 +1,7 @@
 import { FileText, Calendar, Tag, Sparkles, ScanText, Cpu, Waypoints } from "lucide-react";
 import type { Document } from "../../types";
 import { useT } from "../../i18n";
-import { iconForType } from "./typeIcons";
+import { iconForType, labelForType } from "./typeIcons";
 import { formatTypeName } from "./TypePicker";
 import "./DocumentCard.css";
 
@@ -97,9 +97,11 @@ function formatDate(iso?: string): string {
 }
 
 function TypeIcon({ type, size, className }: { type: string; size: number; className: string }) {
+  const { lang } = useT();
   const Icon = iconForType(type);
+  const label = labelForType(type, lang);
   return (
-    <span className={className} title={formatTypeName(type)} aria-label={formatTypeName(type)}>
+    <span className={className} title={label} aria-label={label}>
       <Icon size={size} />
     </span>
   );
@@ -120,7 +122,7 @@ function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number
 }
 
 export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const date = formatDate(doc.document_date || doc.added_at);
   const showScore = score !== undefined && score > 0;
 
@@ -145,9 +147,9 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
             <span
               className={`tag${onCategoryClick ? " tag-clickable" : ""}`}
               onClick={onCategoryClick ? (e) => { e.stopPropagation(); onCategoryClick(doc.document_type!); } : undefined}
-              title={onCategoryClick ? `${t.filters.type}: ${doc.document_type}` : undefined}
+              title={onCategoryClick ? `${t.filters.type}: ${labelForType(doc.document_type, lang)}` : undefined}
             >
-              {doc.document_type}
+              {labelForType(doc.document_type, lang)}
             </span>
           )}
           {(highlight || doc.summary) && (

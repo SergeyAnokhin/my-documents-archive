@@ -194,6 +194,9 @@ export const getLog = (limit = 100, minLevel = "info") =>
 export const getCustomTypeIcons = () =>
   api.get<Record<string, string>>("/admin/type-icons");
 
+export const getCustomTypeNames = () =>
+  api.get<Record<string, { en: string; fr: string; ru: string }>>("/admin/type-names");
+
 export const updateTypeIcons = () =>
   api.post<{ updated: number; icons: Record<string, string> }>("/admin/update-type-icons");
 

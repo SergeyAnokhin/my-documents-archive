@@ -715,8 +715,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         doc.summary = parsed.get("summary", "")
                         doc.document_type = parsed.get("document_type", "unclassified")
                         doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
-                        tags = parsed.get("tags") or []
-                        doc.tags = json.dumps(tags, ensure_ascii=False)
+                        doc.tags = parsed.get("tags") or []
                         doc.language = parsed.get("language", "")
                         doc.organization = parsed.get("organization")
                         amount = parsed.get("amount")
@@ -757,8 +756,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     doc.summary = parsed.get("summary", "")
                     doc.document_type = parsed.get("document_type", "unclassified")
                     doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
-                    tags = parsed.get("tags") or []
-                    doc.tags = json.dumps(tags, ensure_ascii=False)
+                    doc.tags = parsed.get("tags") or []
                     doc.language = parsed.get("language", "")
                     doc.organization = parsed.get("organization")
                     amount = parsed.get("amount")

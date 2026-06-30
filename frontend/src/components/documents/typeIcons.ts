@@ -122,6 +122,25 @@ export function setCustomTypeIcons(icons: Record<string, string>): void {
   _customIcons = icons;
 }
 
+// Module-level cache of custom type → multilingual names {en, fr, ru}.
+let _customNames: Record<string, { en: string; fr: string; ru: string }> = {};
+
+/** Updates the custom type names cache (called at startup). */
+export function setCustomTypeNames(names: Record<string, { en: string; fr: string; ru: string }>): void {
+  _customNames = names;
+}
+
+/** Returns a human-readable label for a document type slug.
+ *  Looks up multilingual custom names first, then falls back to slug formatting.
+ */
+export function labelForType(type?: string | null, lang: "en" | "fr" | "ru" = "en"): string {
+  if (!type) return "";
+  const slug = type.trim().toLowerCase();
+  const entry = _customNames[slug];
+  if (entry?.[lang]) return entry[lang];
+  return slug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 /** Returns the lucide icon for a document type, including custom assignments. */
 export function iconForType(type?: string | null): LucideIcon {
   if (!type) return FileText;

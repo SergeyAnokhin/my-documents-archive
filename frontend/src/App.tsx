@@ -7,8 +7,8 @@ import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
 import { LangContext, translations, type Lang } from "./i18n";
 import { AdvancedModeProvider } from "./contexts/AdvancedModeContext";
-import { getCustomTypeIcons } from "./api/documents";
-import { setCustomTypeIcons } from "./components/documents/typeIcons";
+import { getCustomTypeIcons, getCustomTypeNames } from "./api/documents";
+import { setCustomTypeIcons, setCustomTypeNames } from "./components/documents/typeIcons";
 
 function HomeRoute() {
   const [adminOpen, setAdminOpen] = useState(false);
@@ -61,6 +61,7 @@ export default function App() {
 
   useEffect(() => {
     getCustomTypeIcons().then(setCustomTypeIcons).catch(() => {});
+    getCustomTypeNames().then(setCustomTypeNames).catch(() => {});
   }, []);
 
   return (

@@ -68,10 +68,11 @@ def _strip_for_clustering(
 
 # ── K selection ───────────────────────────────────────────────────────────────
 
-def _k_range(n: int) -> tuple[int, int]:
-    k_min = max(3, int(math.sqrt(n / 50)))
-    k_max = min(40, int(math.sqrt(n / 5)))
-    return k_min, max(k_min + 2, k_max)
+def _k_range(n: int, max_clusters: int = 40) -> tuple[int, int]:
+    k_min = max(2, int(math.sqrt(n / 20)))
+    # k_max: at most max_clusters, at least 5 docs per cluster, at least k_min+2
+    k_max = min(max_clusters, max(k_min + 2, n // 5))
+    return k_min, k_max
 
 
 def _best_k(embeddings, k_min: int, k_max: int) -> int:
@@ -133,8 +134,8 @@ async def _name_cluster(
     db,
     provider=None,
     max_retries: int = 3,
-) -> tuple[str, str]:
-    """Ask LLM to name one cluster. Returns (type_slug, lucide_icon).
+) -> tuple[str, str, str, str, str]:
+    """Ask LLM to name one cluster. Returns (slug, icon, name_en, name_fr, name_ru).
 
     provider: specific AIProvider to use; falls back to the first analysis provider.
     taken_icons: icons already assigned to earlier clusters in this run plus
@@ -146,10 +147,12 @@ async def _name_cluster(
     from .ai_common import strip_code_fences
     from .type_icon_suggestion import ALLOWED_ICONS
 
+    _fallback = ("unclassified", "FileText", "Unclassified", "Non classifié", "Без категории")
+
     if provider is None:
         providers = _get_providers(db)
         if not providers:
-            return ("unclassified", "FileText")
+            return _fallback
         provider = providers[0]
 
     numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(summaries[:5]))
@@ -159,21 +162,26 @@ async def _name_cluster(
         available = [ic for ic in ALLOWED_ICONS if ic not in excluded]
         if not available:
             log.warning("No icons left for cluster (attempt %d)", attempt)
-            return ("unclassified", "FileText")
+            return _fallback
 
         user_msg = (
             "The following document summaries all belong to the same cluster "
             "in a personal archive:\n\n"
             f"{numbered}\n\n"
-            "Based on their content, propose a document type and a matching icon.\n\n"
+            "Based on their content, propose a document type, a matching icon, "
+            "and human-readable display names in English, French, and Russian.\n\n"
             "Rules:\n"
             '- "slug": 1-3 words, lowercase, underscores '
             '(e.g. "tax_return", "medical_record", "utility_bill")\n'
             '- "icon": choose from AVAILABLE only (exact PascalCase spelling)\n'
-            '- Do NOT use any icon from EXCLUDED — those are already taken\n\n'
+            '- Do NOT use any icon from EXCLUDED — those are already taken\n'
+            '- "name_en": short English label (2-4 words, Title Case)\n'
+            '- "name_fr": French translation of the label\n'
+            '- "name_ru": Russian translation of the label\n\n'
             f"AVAILABLE: {', '.join(available)}\n"
             f"EXCLUDED: {', '.join(sorted(excluded))}\n\n"
-            'Reply with JSON only: {"slug": "...", "icon": "..."}'
+            'Reply with JSON only: {"slug": "...", "icon": "...", '
+            '"name_en": "...", "name_fr": "...", "name_ru": "..."}'
         )
 
         try:
@@ -186,6 +194,9 @@ async def _name_cluster(
             data = json.loads(strip_code_fences(text))
             slug = str(data.get("slug", "unclassified")).lower().replace(" ", "_").strip()
             icon = str(data.get("icon", "")).strip()
+            name_en = str(data.get("name_en", "") or "").strip()
+            name_fr = str(data.get("name_fr", "") or "").strip()
+            name_ru = str(data.get("name_ru", "") or "").strip()
 
             if icon not in ALLOWED_ICONS:
                 log.warning("Unknown icon '%s' (attempt %d), retrying…", icon, attempt)
@@ -197,12 +208,12 @@ async def _name_cluster(
                 excluded.add(icon)
                 continue
 
-            return (slug or "unclassified", icon)
+            return (slug or "unclassified", icon, name_en, name_fr, name_ru)
 
         except Exception as e:
             log.warning("Cluster naming failed (attempt %d): %s", attempt, e)
 
-    return ("unclassified", "FileText")
+    return _fallback
 
 
 def _apply_new_type(doc, new_type: str) -> None:
@@ -218,37 +229,49 @@ def _apply_new_type(doc, new_type: str) -> None:
     doc.manually_classified = False
 
 
-def _save_cluster_icons(cluster_names: dict[int, tuple[str, str]], db) -> None:
-    """Persist icon assignments for cluster-generated types in AppSettings.
+def _save_cluster_data(cluster_names: dict[int, tuple[str, str, str, str, str]], db) -> None:
+    """Persist icon assignments and multilingual names for cluster-generated types.
 
-    Overwrites existing custom icon entries for the same slug — recluster is
-    authoritative for the types it generates. Built-in type slugs are skipped
-    (they already have hardcoded icons in typeIcons.ts).
+    Stores to two AppSettings keys:
+      custom_type_icons: {slug: icon_name}
+      custom_type_names: {slug: {en: ..., fr: ..., ru: ...}}
+    Built-in type slugs are skipped (they already have hardcoded icons/names).
+    Recluster is authoritative — overwrites previous entries for the same slug.
     """
     import json
     from ..models import AppSettings
     from .type_icon_suggestion import BUILT_IN_TYPE_SLUGS
 
-    new_icons = {
-        slug: icon
-        for _, (slug, icon) in cluster_names.items()
+    custom = [
+        (slug, icon, name_en, name_fr, name_ru)
+        for _, (slug, icon, name_en, name_fr, name_ru) in cluster_names.items()
         if slug and slug not in ("unclassified", "other") and slug not in BUILT_IN_TYPE_SLUGS
-    }
-    if not new_icons:
+    ]
+    if not custom:
         return
 
-    try:
-        row = db.query(AppSettings).filter(AppSettings.key == "custom_type_icons").first()
+    new_icons = {slug: icon for slug, icon, *_ in custom}
+    new_names = {
+        slug: {"en": name_en, "fr": name_fr, "ru": name_ru}
+        for slug, _, name_en, name_fr, name_ru in custom
+    }
+
+    def _upsert(key: str, new_data: dict) -> None:
+        row = db.query(AppSettings).filter(AppSettings.key == key).first()
         existing: dict = json.loads(row.value) if row and row.value else {}
-        merged = {**existing, **new_icons}  # recluster icons overwrite old entries
+        merged = {**existing, **new_data}
         value = json.dumps(merged, ensure_ascii=False)
         if row:
             row.value = value
         else:
-            db.add(AppSettings(key="custom_type_icons", value=value))
+            db.add(AppSettings(key=key, value=value))
+
+    try:
+        _upsert("custom_type_icons", new_icons)
+        _upsert("custom_type_names", new_names)
         db.commit()
     except Exception as e:
-        log.warning("Could not save cluster icons: %s", e)
+        log.warning("Could not save cluster data: %s", e)
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -345,8 +368,7 @@ async def run_recluster(
         if n < 5:
             k = n
         else:
-            k_min, k_max = _k_range(n)
-            k_max = min(k_max, max(k_min + 2, max_clusters))
+            k_min, k_max = _k_range(n, max_clusters)
             _tlog(f"Selecting k in [{k_min}, {k_max}] via silhouette score (cap={max_clusters})…")
             k = _best_k(embeddings, k_min, k_max)
 
@@ -362,27 +384,29 @@ async def run_recluster(
         # Step 6: name each cluster via LLM; track taken icons to avoid conflicts.
         # Seed taken_icons with built-in static icons so clusters don't reuse them.
         _tlog(f"Naming {k} clusters via LLM (type slug + icon)…")
-        cluster_names: dict[int, tuple[str, str]] = {}
+        cluster_names: dict[int, tuple[str, str, str, str, str]] = {}
         taken_icons: set[str] = set(STATIC_ICON_VALUES)
 
         for cid in range(k):
             repr_summaries = [cleaned[i] for i in repr_map.get(cid, []) if cleaned[i].strip()]
-            type_slug, icon = await _name_cluster(repr_summaries, taken_icons, db, provider=provider)
-            cluster_names[cid] = (type_slug, icon)
+            type_slug, icon, name_en, name_fr, name_ru = await _name_cluster(
+                repr_summaries, taken_icons, db, provider=provider
+            )
+            cluster_names[cid] = (type_slug, icon, name_en, name_fr, name_ru)
             if icon and icon != "FileText":
                 taken_icons.add(icon)
-            _tlog(f"  Cluster {cid + 1}/{k} → {type_slug} ({icon})")
+            _tlog(f"  Cluster {cid + 1}/{k} → {type_slug} ({icon}) | {name_en} / {name_fr} / {name_ru}")
             _progress(cid + 1, k)
 
         # Log final cluster table
         _tlog("Cluster naming results:")
         for cid in range(k):
-            slug, icon = cluster_names[cid]
+            slug, icon, name_en, name_fr, name_ru = cluster_names[cid]
             size = sum(1 for lbl in labels if lbl == cid)
-            _tlog(f"  [{cid + 1}/{k}] slug={slug!r}  icon={icon}  docs={size}")
+            _tlog(f"  [{cid + 1}/{k}] slug={slug!r}  icon={icon}  docs={size}  [{name_en} / {name_fr} / {name_ru}]")
 
         # Safety guard: if ALL clusters failed to name, abort without touching docs
-        named = [(s, i) for s, i in cluster_names.values() if s != "unclassified"]
+        named = [(s, i) for s, i, *_ in cluster_names.values() if s != "unclassified"]
         if not named:
             _tlog(
                 "ALL cluster naming calls failed — no changes applied. "
@@ -391,14 +415,14 @@ async def run_recluster(
             )
             return {"total": len(docs), "clusters": k, "applied": 0}
 
-        # Step 7: save icons for the new types
-        _save_cluster_icons(cluster_names, db)
+        # Step 7: save icons and multilingual names for the new types
+        _save_cluster_data(cluster_names, db)
 
         # Step 8: apply types to documents
         _tlog("Applying new types…")
         applied = 0
         for doc, label in zip(docs, labels):
-            new_type, _ = cluster_names[int(label)]
+            new_type = cluster_names[int(label)][0]
             _apply_new_type(doc, new_type)
             applied += 1
         db.commit()

@@ -931,7 +931,7 @@ function TaskLogsModal({ task, t, onClose }: LogsModalProps) {
           logs.map(log => (
             <div key={log.id} className={`log-line log-line--${log.level}`}>
               <span className="log-time text-xs text-muted">
-                {log.created_at ? new Date(log.created_at).toLocaleTimeString() : ""}
+                {log.created_at ? new Date(log.created_at + "Z").toLocaleTimeString() : ""}
               </span>
               <span className="log-message">{log.message}</span>
             </div>

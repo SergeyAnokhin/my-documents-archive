@@ -3,10 +3,12 @@ import { Lock, Pencil } from "lucide-react";
 import type { TypeSuggestion } from "../../types";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
+import type { Lang } from "../../i18n";
 import { patchDocumentType, suggestDocumentTypes } from "../../api/documents";
+import { labelForType } from "./typeIcons";
 
-export function formatTypeName(type: string) {
-  return type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+export function formatTypeName(type: string, lang: Lang = "en") {
+  return labelForType(type, lang);
 }
 
 // ── Inline type picker ──────────────────────────────────────────────────────
@@ -19,7 +21,7 @@ interface TypePickerProps {
 }
 
 export function TypePicker({ docId, currentType, isManual, onSaved }: TypePickerProps) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const tp = t.typePicker;
   const isUnclassified = !currentType || currentType === "unclassified" || currentType === "other";
 
@@ -68,7 +70,7 @@ export function TypePicker({ docId, currentType, isManual, onSaved }: TypePicker
       >
         {isUnclassified
           ? tp.unclassified
-          : formatTypeName(currentType!)}
+          : formatTypeName(currentType!, lang)}
         {isManual && !isUnclassified && (
           <Lock size={10} className="type-badge-lock" />
         )}
@@ -93,7 +95,7 @@ export function TypePicker({ docId, currentType, isManual, onSaved }: TypePicker
                 disabled={saving}
                 title={s.reason}
               >
-                <span className="type-picker-option-name">{formatTypeName(s.type)}</span>
+                <span className="type-picker-option-name">{formatTypeName(s.type, lang)}</span>
                 <span className="type-picker-option-conf">{Math.round(s.confidence * 100)}%</span>
               </button>
             ))}
