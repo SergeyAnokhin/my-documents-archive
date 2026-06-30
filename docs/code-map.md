@@ -18,7 +18,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | File | Responsibility |
 |------|---------------|
 | `run.py` | Dev entry point (`python run.py` → uvicorn on :8000) |
-| `main.py` | FastAPI app factory, CORS, startup hooks, thumbnail static mount |
+| `main.py` | FastAPI app factory, CORS, startup hooks (incl. `recover_running_tasks()` — auto-resumes/stops orphaned `Task` rows left "running" by an unclean restart), thumbnail static mount |
 | `config.py` | All settings (pydantic-settings); `settings` singleton |
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
 | `models.py` | ORM models: `Document` (incl. `source` = `"upload"`/`"sync"`), `WatchedFolder`, `IndexingLog` (incl. `level` = `trace`/`debug`/`info`/`warning`/`error`), `AIProvider`, `AppSettings`, `Task`/`TaskLog`, `AIUsage` (per-call AI/OCR usage ledger — powers the super-user usage screen) |
@@ -56,8 +56,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
 | `routers/tasks.py` | Task queue CRUD + run/stop/logs + the `_run_task_bg` dispatcher and the short in-process runners (index/sync/reclassify/recluster/`embed_missing`/cleanup) — prefix `/api/tasks`. `embed_missing` (`_embed_missing`) backfills ChromaDB vectors for analyzed docs that lack them. Used by the Tasks panel (advanced mode only). |
 | `services/task_runtime.py` | Shared helpers for background task runners (`log_task`, `is_stopped`, `set_progress`, `finish`) — each opens its own short-lived session. Imported by `tasks.py` and `batch_ocr.py`. |
-| `services/batch_ocr.py` | Long-running batch-OCR task runners `run_batch_ocr_mistral()` / `run_batch_ocr_gemini()` (submit remote batch job → poll → write OCR back). Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
-| `services/batch_analysis.py` | `run_batch_analysis_gemini()` — text-only analysis via Gemini Batch API. `doc_scope` param selects: `needs_analysis` (default), `unclassified` (for `reclassify_unclassified` task), `pending` (for `reclassify_all` task). Saves raw JSONL to `.docintell/batch_results/task_{id}.jsonl`. |
+| `services/batch_ocr.py` | Long-running batch-OCR task runners `run_batch_ocr_mistral()` / `run_batch_ocr_gemini()` (submit remote batch job → poll → write OCR back). `run_batch_ocr_gemini()` routes each document through `_needs_vision(doc)`: no OCR text yet → image sent to vision model; OCR text already present (any engine, including local tesseract/easyocr — reused as-is, not re-transcribed) → text-only request (no image, cheaper). Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
+| `services/batch_analysis.py` | `run_batch_analysis_gemini()` — text-only analysis via Gemini Batch API. `doc_scope` param selects: `needs_analysis` (default), `unclassified` (for `reclassify_unclassified` task), `pending` (for `reclassify_all` task). Not directly creatable from the Tasks UI — only runs as the engine behind those two reclassify tasks. Saves raw JSONL to `.docintell/batch_results/task_{id}.jsonl`. |
 | `services/usage.py` | `record_usage(...)` — appends one row to the `ai_usage` ledger. Called by every model call site (analysis, vision, qa, suggest_types, icon_suggest, batch_*, ocr, embedding). Opens its own session; never raises. See [ai-usage.md](ai-usage.md) |
 
 ## Compute (`compute/app/`)
@@ -224,7 +224,7 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 | `reclassify_all` | Type-only classification for docs that already have a summary (one LLM call per doc, no summary/tag regeneration) |
 | `recluster` | Cluster-based recategorization of all analyzed docs (silhouette k-selection + LLM naming) |
 | `batch_ocr_mistral` | Async batch OCR via Mistral Batch API (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
-| `batch_ocr_gemini` | Async batch OCR via Gemini Batch Mode (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
+| `batch_ocr_gemini` | Async batch OCR + analysis via Gemini Batch Mode (50% cheaper); per-document hybrid — sends the image only if no OCR text exists yet, otherwise text-only (existing text is reused as-is, even from local tesseract/easyocr) — see [batch-ocr.md](batch-ocr.md) |
 
 Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag. The two `batch_ocr_*` tasks are long-running pollers: they submit a remote batch job, then poll every `poll_interval` seconds until the provider finishes (up to 24–48 h).
 

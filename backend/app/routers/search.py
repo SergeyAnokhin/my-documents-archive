@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, extract, func, String
 from typing import Optional
 import logging
+import os
 import re
 import time
 
@@ -70,6 +71,7 @@ def search_documents(
     month:         Optional[int] = None,
     document_type: Optional[str] = None,
     tag:           Optional[str] = None,
+    folder:        Optional[str] = None,
     language:      Optional[str] = None,
     ocr_status:    Optional[str] = None,
     quality:       Optional[str] = None,
@@ -94,6 +96,13 @@ def search_documents(
         base = base.filter(Document.ocr_status == ocr_status)
     if tag:
         base = base.filter(Document.tags.contains(tag))
+    if folder:
+        # `folder` is the relative directory path (forward-slash separated, as
+        # returned by DocumentOut.relative_path). Match it as a path segment of
+        # the absolute filepath, regardless of the OS path separator on disk.
+        folder_native = folder.strip("/").replace("/", os.sep)
+        if folder_native:
+            base = base.filter(Document.filepath.contains(f"{os.sep}{folder_native}{os.sep}"))
 
     # ── Quality / status filters (advanced mode) ───────────────────────────
     if quality == "no_embedding":

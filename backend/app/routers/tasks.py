@@ -1,4 +1,5 @@
 """Tasks API — create, run, stop, and inspect background processing jobs."""
+import asyncio
 from datetime import datetime
 from typing import List
 
@@ -10,6 +11,13 @@ from ..models import Document, Task, TaskLog
 from ..schemas import TaskCreate, TaskLogOut, TaskOut, TaskUpdate
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+# Task types that submit a remote batch job and can reconnect to it via
+# batch_job_id (saved in Task.result_summary) instead of resubmitting.
+BATCH_RESUMABLE_TYPES = (
+    "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
+    "reclassify_unclassified", "reclassify_all",
+)
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -205,10 +213,7 @@ async def resume_batch_task(task_id: int, background_tasks: BackgroundTasks, db:
         raise HTTPException(404, "Task not found")
     if task.status == "running":
         return {"message": "Task already running"}
-    if task.task_type not in (
-        "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
-        "reclassify_unclassified", "reclassify_all",
-    ):
+    if task.task_type not in BATCH_RESUMABLE_TYPES:
         raise HTTPException(400, "Only batch tasks support resume")
 
     batch_job_id = (task.result_summary or {}).get("batch_job_id")
@@ -309,6 +314,51 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
         logger.exception("Task %s (%s) failed", task_id, task_type)
         _log(task_id, f"Error: {exc}", "error")
         _finish(task_id, "error")
+
+
+async def recover_running_tasks() -> None:
+    """Recover Task rows stuck at status="running" after an unclean restart.
+
+    Background runners execute as in-process asyncio coroutines (FastAPI
+    BackgroundTasks) with no separate worker process — a pod restart kills
+    them mid-flight without ever updating the Task row, so it stays at
+    status="running" forever, which also blocks both the Run and Resume
+    buttons in the UI. Called once at app startup (see main.py).
+
+    Batch tasks that already had a remote job submitted (`batch_job_id` saved
+    in result_summary) are auto-resumed — the remote job survives the
+    restart, since it runs on the provider's servers, not in this process.
+    Everything else is reset to "stopped" so the user can manually re-run it;
+    any work already committed to the DB before the restart is preserved.
+    """
+    db = SessionLocal()
+    try:
+        orphaned = db.query(Task).filter(Task.status == "running").all()
+        to_resume: list[tuple[int, str, dict]] = []
+        to_note: list[int] = []
+        for task in orphaned:
+            batch_job_id = (task.result_summary or {}).get("batch_job_id")
+            if task.task_type in BATCH_RESUMABLE_TYPES and batch_job_id:
+                task.started_at = datetime.utcnow()
+                task.finished_at = None
+                to_resume.append((
+                    task.id, task.task_type,
+                    {**(task.config or {}), "resume_batch_job_id": str(batch_job_id)},
+                ))
+            else:
+                task.status = "stopped"
+                task.finished_at = datetime.utcnow()
+                to_note.append(task.id)
+        db.commit()
+    finally:
+        db.close()
+
+    for task_id in to_note:
+        _log(task_id, "⚠️ Backend restarted while this task was running — marked as stopped.", "warning")
+
+    for task_id, task_type, config in to_resume:
+        _log(task_id, "🔄 Backend restarted — auto-resuming, reconnecting to the remote batch job.")
+        asyncio.create_task(_run_task_bg(task_id, task_type, config))
 
 
 async def _index_unindexed(task_id: int, config: dict) -> None:

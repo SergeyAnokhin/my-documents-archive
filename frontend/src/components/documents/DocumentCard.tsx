@@ -82,6 +82,7 @@ interface Props {
   highlight?: string;
   onClick: () => void;
   onTagClick?: (value: string) => void;
+  onCategoryClick?: (category: string) => void;
   mode: "list" | "grid";
   gridSize?: "sm" | "md" | "lg" | "xl";
   thumbVersion?: number;
@@ -118,7 +119,8 @@ function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number
   );
 }
 
-export function DocumentCard({ doc, highlight, onClick, onTagClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
+export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryClick, mode, gridSize = "md", thumbVersion, devMode, isEmbedded, score }: Props) {
+  const { t } = useT();
   const date = formatDate(doc.document_date || doc.added_at);
   const showScore = score !== undefined && score > 0;
 
@@ -141,9 +143,9 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, mode, gridSi
           </div>
           {doc.document_type && (
             <span
-              className={`tag${onTagClick ? " tag-clickable" : ""}`}
-              onClick={onTagClick ? (e) => { e.stopPropagation(); onTagClick(doc.document_type!); } : undefined}
-              title={onTagClick ? `Search: ${doc.document_type}` : undefined}
+              className={`tag${onCategoryClick ? " tag-clickable" : ""}`}
+              onClick={onCategoryClick ? (e) => { e.stopPropagation(); onCategoryClick(doc.document_type!); } : undefined}
+              title={onCategoryClick ? `${t.filters.type}: ${doc.document_type}` : undefined}
             >
               {doc.document_type}
             </span>

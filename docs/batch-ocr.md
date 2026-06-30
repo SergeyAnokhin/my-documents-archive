@@ -10,19 +10,46 @@ from the **Tasks** panel (advanced mode only).
 | Task type | Service | Provider API | Document scope |
 |-----------|---------|--------------|----------------|
 | `batch_ocr_mistral` | `batch_ocr.py` | Mistral Batch `/v1/ocr` | `ocr_status="pending"` |
-| `batch_ocr_gemini`  | `batch_ocr.py` | Gemini `:batchGenerateContent` | `ocr_status="pending"` |
-| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | has `ocr_text`, no analysis yet |
+| `batch_ocr_gemini`  | `batch_ocr.py` | Gemini `:batchGenerateContent` | scope-selected (see below); **per-document hybrid** vision/text routing |
+| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | has `ocr_text`, no analysis yet — **internal only**, not directly creatable from the Tasks UI; used by `reclassify_unclassified`/`reclassify_all` below |
 | `reclassify_unclassified` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, type = unclassified/other, not manually set |
 | `reclassify_all` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, `analysis_status != "done"` |
 
-> Mistral has a dedicated OCR endpoint for true OCR. Gemini has **no** OCR
-> endpoint — the batch sends each page to a vision model with a
-> verbatim-transcription prompt and treats the returned text as OCR.
+> Mistral has a dedicated OCR endpoint for true OCR — it always sends the image,
+> since `/v1/ocr` has no text-only mode. Gemini has **no** OCR endpoint, so the
+> batch sends each page to a vision model with a verbatim-transcription prompt
+> and treats the returned text as OCR — but Gemini *can* also analyze plain text,
+> so `batch_ocr_gemini` skips the image entirely for any document that already
+> has OCR text (see **Hybrid vision/text routing** below).
 >
-> `reclassify_unclassified` and `reclassify_all` were formerly synchronous tasks;
-> they now use the Gemini Batch API via `run_batch_analysis_gemini()` with a
-> `doc_scope` parameter selecting the appropriate document set. This makes them
-> 2× cheaper at the cost of async turnaround (up to 24 h).
+> `reclassify_unclassified` and `reclassify_all` are thin wrappers that call
+> `run_batch_analysis_gemini()` (in `batch_analysis.py`) with a `doc_scope`
+> parameter selecting the appropriate document set — always text-only, since by
+> definition these documents already have OCR text. This makes them 2× cheaper
+> at the cost of async turnaround (up to 24 h). `batch_analysis_gemini` is not
+> offered as its own card in the Tasks "create" modal — it only runs as the
+> engine behind those two reclassify tasks (or via a direct API call / resume).
+
+## Hybrid vision/text routing (`batch_ocr_gemini`)
+
+Sending images to Gemini costs image tokens; sending text-only is much cheaper.
+`run_batch_ocr_gemini()` decides per document via `_needs_vision(doc)`
+([`batch_ocr.py`](../backend/app/services/batch_ocr.py)):
+
+| Document state | Mode | Request sent |
+|-----------------|------|---------------|
+| No `ocr_text` yet | **vision** | first-page image + `VISION_FULL_PROMPT` → transcription + all analysis fields in one call |
+| `ocr_text` already exists, from *any* engine — including local `tesseract`/`easyocr` | **text-only** | existing `ocr_text` (first 4000 chars) + `ANALYSIS_SYSTEM` → analysis fields only, no image, `ocr_text`/`ocr_model` left untouched |
+
+Local-engine text is **not** re-transcribed via vision: if it was kept rather
+than re-OCR'd, its quality is assumed acceptable, so only the cheaper
+text-only analysis pass runs. This means a single `batch_ocr_gemini` run at
+scope 2+ (which includes local-OCR'd documents) will mix both request types in
+the same JSONL batch — Gemini batch lines are independent, so this is safe.
+Task logs show which mode was used per document (🖼️ image sent / 📝 text-only,
+no image) and a `📊 N via image, M via text-only` summary before upload. The
+final `result_summary` includes `vision_count` / `text_count` alongside
+`processed`/`failed`.
 
 ## Provider batch support
 
@@ -52,8 +79,11 @@ id so results can be mapped back.
 ```
 1. Resolve provider (by provider_id, else first enabled of the right type)
 2. Collect up to `limit` pending documents
-3. Load first page of each as a resized JPEG (ai_vision.load_first_page)
-4. Build a JSONL file, one inline-base64 request per document
+3. Load first page of each as a resized JPEG (ai_vision.load_first_page) —
+   for `batch_ocr_gemini`, only documents in **vision** mode (see hybrid
+   routing above); text-mode documents reuse the existing `ocr_text` instead
+4. Build a JSONL file, one inline-base64 (vision) or plain-text (Gemini
+   text-only) request per document
 5. Upload the JSONL to the provider's Files API
 6. Create a batch job pointing at the uploaded file
 7. Save the remote job id into Task.result_summary (visible while polling)
@@ -99,6 +129,15 @@ only local polling stops. The job id is logged so it can be inspected manually.
 ## Resume support
 
 `POST /api/tasks/{task_id}/resume-batch` restarts polling for a stopped or interrupted job without re-submitting it. Supported task types: `batch_ocr_mistral`, `batch_ocr_gemini`, `batch_analysis_gemini`, `reclassify_unclassified`, `reclassify_all`. The original `batch_job_id` is read from `Task.result_summary`.
+
+### Automatic recovery on backend restart
+
+Polling runs as an in-process `asyncio` coroutine (FastAPI `BackgroundTasks`) — there is no separate worker process. If the backend pod restarts mid-poll (e.g. a `kubectl rollout restart` during an overnight Mistral run), the coroutine simply dies; the remote batch job is **not** affected, since it keeps running on the provider's servers (up to 24 h Mistral / 48 h Gemini) and `batch_job_id` was already persisted to `Task.result_summary` before polling started.
+
+`recover_running_tasks()` ([`backend/app/routers/tasks.py`](../backend/app/routers/tasks.py)) runs once at app startup (wired in `main.py`) and sweeps every `Task` left at `status="running"`:
+
+- Batch task with a saved `batch_job_id` → auto-resumed (same as `resume-batch`, status stays `"running"`).
+- Anything else (batch task with no job id yet, or a non-batch task type) → reset to `"stopped"` so the Run/Resume buttons work again; any per-document work already committed before the restart is preserved.
 
 ## Batch result download
 

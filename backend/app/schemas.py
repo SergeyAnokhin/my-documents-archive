@@ -62,7 +62,7 @@ class DocumentOut(BaseModel):
             try:
                 from .config import settings
                 lib = Path(settings.library_path).resolve()
-                self.relative_path = str(Path(self.filepath).relative_to(lib))
+                self.relative_path = Path(self.filepath).relative_to(lib).as_posix()
             except (ValueError, Exception):
                 pass
         return self

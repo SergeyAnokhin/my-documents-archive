@@ -7,7 +7,7 @@ from pathlib import Path
 from .config import settings
 from .database import init_db
 from .routers import documents, upload, search, admin, indexing, lab
-from .routers.tasks import router as tasks_router
+from .routers.tasks import recover_running_tasks, router as tasks_router
 
 
 class _SuppressHealthCheck(logging.Filter):
@@ -49,6 +49,11 @@ def mount_thumbnails():
     thumb_dir = settings.thumbnails_dir
     thumb_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/thumbnails", StaticFiles(directory=str(thumb_dir)), name="thumbnails")
+
+
+@app.on_event("startup")
+async def resume_interrupted_tasks():
+    await recover_running_tasks()
 
 
 

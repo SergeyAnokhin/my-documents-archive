@@ -22,10 +22,21 @@ from .task_runtime import (
     set_progress as _set_progress,
 )
 from .ai_vision import VISION_FULL_PROMPT
+from .ai_analysis import ANALYSIS_SYSTEM
 from .ai_common import parse_llm_json, strip_code_fences
 
 
 _LOCAL_OCR_MODELS = {"tesseract", "easyocr"}
+
+
+def _needs_vision(doc: Document) -> bool:
+    """True if the document's image must be sent (no OCR text exists yet).
+
+    Any existing OCR text is reused as-is — including local-engine
+    (tesseract/easyocr) text: if it was kept rather than re-OCR'd, its quality
+    is assumed acceptable, so only the (cheaper) text-only analysis pass runs.
+    """
+    return not (doc.ocr_text or "").strip()
 
 
 def _scope_filter(query, scope: int):
@@ -356,18 +367,21 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     """
     Gemini Batch OCR — uses Google Gemini's Batch Mode (50 % cheaper, async).
 
-    Gemini has no dedicated OCR endpoint, so we send each document's first page
-    to a vision model with VISION_FULL_PROMPT and store both the verbatim text
-    (ocr_text) and all analysis fields (summary, document_type, tags, etc.) in
-    one pass — equivalent to what the synchronous vision pipeline does.
+    Per document, picks one of two request modes (see `_needs_vision`):
+      - vision: no OCR text exists yet — sends the first page image with
+        VISION_FULL_PROMPT, gets back verbatim text + all analysis fields.
+      - text-only: OCR text already exists (any engine, including local
+        tesseract/easyocr — it's reused as-is, not re-transcribed), only
+        analysis is missing — sends just that text with ANALYSIS_SYSTEM (no
+        image, cheaper). `ocr_text`/`ocr_model` are left untouched in this mode.
 
     Flow (REST, mirrors `run_batch_ocr_mistral`):
-      1. Load first page of each pending document as JPEG.
-      2. Build a JSONL file with inline-base64 generateContent requests.
+      1. For each pending document, build either a vision or text-only request.
+      2. Build a JSONL file with inline-base64 / text generateContent requests.
       3. Upload JSONL via the Files API (resumable upload).
       4. Create a batch job (models/{model}:batchGenerateContent).
       5. Poll every `poll_interval` seconds until JOB_STATE_SUCCEEDED.
-      6. Download the responses file and save OCR text back to each document.
+      6. Download the responses file and save results back to each document.
 
     Flow (resume via config["resume_batch_job_id"]):
       Skips phases 1–4, jumps straight to polling an existing remote job.
@@ -397,7 +411,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             ).order_by(AIProvider.sort_order).first()
 
         if not provider:
-            _log(task_id, "No Gemini provider configured — add one in AI Settings", "error")
+            _log(task_id, "❌ No Gemini provider configured — add one in AI Settings", "error")
             _finish(task_id, "error")
             return
 
@@ -411,11 +425,16 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     if resume_job_id:
         # ── Resume path: skip submission, reconnect to existing job ──────────
         batch_job_name = resume_job_id
-        _log(task_id, f"Resuming existing Gemini batch job: {batch_job_name}")
+        _log(task_id, f"🔄 Resuming existing Gemini batch job: {batch_job_name}")
         db = SessionLocal()
         try:
-            all_ids = db.query(Document.id).filter(Document.is_deleted == False).all()
-            doc_id_map: dict[str, int] = {str(row[0]): row[0] for row in all_ids}
+            all_docs = db.query(Document).filter(Document.is_deleted == False).all()
+            doc_id_map: dict[str, int] = {}
+            doc_mode_map: dict[str, str] = {}
+            for d in all_docs:
+                k = str(d.id)
+                doc_id_map[k] = d.id
+                doc_mode_map[k] = "vision" if _needs_vision(d) else "text"
         finally:
             db.close()
     else:
@@ -430,53 +449,75 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             db.close()
 
         if total == 0:
-            _log(task_id, "No pending documents found")
+            _log(task_id, "📭 No pending documents found")
             _finish(task_id, "done", {"processed": 0})
             return
 
-        _log(task_id, f"Found {total} document(s) — model: {model}")
+        _log(task_id, f"📋 Found {total} document(s) — model: {model}")
         _set_progress(task_id, 0, total)
 
-        # ── 3. Build JSONL (inline base64) ───────────────────────────────────
-        _log(task_id, "Loading document images…")
+        # ── 3. Build JSONL — vision when no usable text exists, text-only otherwise ──
         jsonl_lines: list[str] = []
         doc_id_map = {}
+        doc_mode_map: dict[str, str] = {}
+        vision_count = 0
+        text_count = 0
 
         for i, doc in enumerate(docs):
             if _is_stopped(task_id):
-                _log(task_id, f"Stopped during image loading after {i} document(s)")
+                _log(task_id, f"Stopped during request building after {i} document(s)")
                 return
+            key = str(doc.id)
             try:
-                img_bytes = load_first_page(doc.filepath, max_size=max_size)
-                b64 = base64.b64encode(img_bytes).decode()
-                key = str(doc.id)
-                doc_id_map[key] = doc.id
-                jsonl_lines.append(json.dumps({
-                    "key": key,
-                    "request": {
-                        "contents": [{
-                            "parts": [
-                                {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-                                {"text": VISION_FULL_PROMPT},
-                            ],
-                        }],
-                        "generation_config": {"max_output_tokens": 16384},
-                    },
-                }))
-                _log(task_id, f"✓ Loaded: {doc.filename}")
+                if _needs_vision(doc):
+                    img_bytes = load_first_page(doc.filepath, max_size=max_size)
+                    b64 = base64.b64encode(img_bytes).decode()
+                    doc_id_map[key] = doc.id
+                    doc_mode_map[key] = "vision"
+                    jsonl_lines.append(json.dumps({
+                        "key": key,
+                        "request": {
+                            "contents": [{
+                                "parts": [
+                                    {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+                                    {"text": VISION_FULL_PROMPT},
+                                ],
+                            }],
+                            "generation_config": {"max_output_tokens": 16384},
+                        },
+                    }))
+                    vision_count += 1
+                    _log(task_id, f"🖼️ {doc.filename}: image sent (vision OCR + analysis)")
+                else:
+                    text_snippet = doc.ocr_text.strip()[:4000]
+                    doc_id_map[key] = doc.id
+                    doc_mode_map[key] = "text"
+                    jsonl_lines.append(json.dumps({
+                        "key": key,
+                        "request": {
+                            "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
+                            "contents": [{
+                                "parts": [{"text": f"OCR Text:\n{text_snippet}"}],
+                            }],
+                            "generation_config": {"max_output_tokens": 1024},
+                        },
+                    }))
+                    text_count += 1
+                    _log(task_id, f"📝 {doc.filename}: {len(text_snippet)} chars (text-only, no image)")
             except Exception as exc:
-                _log(task_id, f"✗ {doc.filename}: cannot load image — {exc}", "error")
+                _log(task_id, f"❌ {doc.filename}: cannot build request — {exc}", "error")
             _set_progress(task_id, i + 1, total)
 
         if not jsonl_lines:
-            _log(task_id, "No document images could be loaded", "error")
+            _log(task_id, "No requests could be built", "error")
             _finish(task_id, "error")
             return
 
+        _log(task_id, f"📊 {vision_count} via image, {text_count} via text-only")
         jsonl_bytes = ("\n".join(jsonl_lines)).encode()
 
         # ── 4. Upload JSONL via Files API (resumable upload) ──────────────────
-        _log(task_id, f"Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
+        _log(task_id, f"📤 Uploading batch ({len(jsonl_lines)} requests) to Gemini…")
         async with httpx.AsyncClient(timeout=180) as client:
             start_resp = await client.post(
                 f"{GEMINI_BATCH_BASE}/upload/v1beta/files",
@@ -493,7 +534,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             start_resp.raise_for_status()
             upload_url = start_resp.headers.get("x-goog-upload-url")
             if not upload_url:
-                _log(task_id, "Gemini did not return an upload URL", "error")
+                _log(task_id, "❌ Gemini did not return an upload URL", "error")
                 _finish(task_id, "error")
                 return
 
@@ -509,7 +550,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             upload_resp.raise_for_status()
             input_file_name = upload_resp.json()["file"]["name"]   # files/xxxx
 
-        _log(task_id, f"Uploaded input file: {input_file_name}")
+        _log(task_id, f"☁️ Uploaded input file: {input_file_name}")
 
         # ── 5. Create batch job ──────────────────────────────────────────────
         async with httpx.AsyncClient(timeout=60) as client:
@@ -527,7 +568,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             batch_data = batch_resp.json()
 
         batch_job_name = batch_data["name"]   # e.g. batches/xxxx
-        _log(task_id, f"Batch job created: {batch_job_name}")
+        _log(task_id, f"🚀 Batch job created: {batch_job_name}")
 
         # Save job name so it's visible in result_summary during polling
         db = SessionLocal()
@@ -543,8 +584,14 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         finally:
             db.close()
 
+    if resume_job_id:
+        # Fresh path counted vision_count/text_count while building requests;
+        # resume reconstructs them from the recomputed doc_mode_map instead.
+        vision_count = sum(1 for v in doc_mode_map.values() if v == "vision")
+        text_count = sum(1 for v in doc_mode_map.values() if v == "text")
+
     # ── 6. Poll until complete ────────────────────────────────────────────────
-    _log(task_id, f"Job submitted. Polling every {poll_interval}s… (up to 48 h)")
+    _log(task_id, f"⏳ Job submitted. Polling every {poll_interval}s… (up to 48 h)")
 
     job_data: dict = {}
     while True:
@@ -564,13 +611,13 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
 
         meta = job_data.get("metadata") or {}
         job_status = meta.get("state") or job_data.get("state") or "JOB_STATE_UNSPECIFIED"
-        _log(task_id, f"Status: {job_status}")
+        _log(task_id, f"⏳ Status: {job_status}")
 
         if job_status == "JOB_STATE_SUCCEEDED" or job_data.get("done"):
             break
         if job_status in ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
             err = (job_data.get("error") or {}).get("message", job_status)
-            _log(task_id, f"Batch job ended with status: {job_status} — {err}", "error")
+            _log(task_id, f"❌ Batch job ended with status: {job_status} — {err}", "error")
             _finish(task_id, "error", {"batch_job_id": batch_job_name, "status": job_status})
             return
         # Still pending (JOB_STATE_PENDING / JOB_STATE_RUNNING) — keep polling
@@ -583,11 +630,11 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         or (job_data.get("dest") or {}).get("fileName")
     )
     if not output_file_name:
-        _log(task_id, "Batch completed but no responses file in response", "error")
+        _log(task_id, "❌ Batch completed but no responses file in response", "error")
         _finish(task_id, "error")
         return
 
-    _log(task_id, f"Downloading results from {output_file_name}…")
+    _log(task_id, f"📥 Downloading results from {output_file_name}…")
     async with httpx.AsyncClient(timeout=180) as client:
         results_resp = await client.get(
             f"{GEMINI_BATCH_BASE}/download/v1beta/{output_file_name}:download",
@@ -603,12 +650,12 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         _batch_dir = _cfg.docintell_dir / "batch_results"
         _batch_dir.mkdir(parents=True, exist_ok=True)
         (_batch_dir / f"task_{task_id}.jsonl").write_text(results_text, encoding="utf-8")
-        _log(task_id, f"Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
+        _log(task_id, f"💾 Raw results saved → .docintell/batch_results/task_{task_id}.jsonl")
     except Exception as _save_exc:
-        _log(task_id, f"Could not save raw results file: {_save_exc}", "warning")
+        _log(task_id, f"⚠️ Could not save raw results file: {_save_exc}", "warning")
 
-    # ── 8. Save OCR text to documents ────────────────────────────────────────
-    _log(task_id, "Saving OCR results to documents…")
+    # ── 8. Save results to documents (branches on per-doc mode) ───────────────
+    _log(task_id, "💾 Saving results…")
     processed = 0
     failed_count = 0
     tokens_in = 0
@@ -626,11 +673,16 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                 if not doc_id:
                     continue
 
+                mode = doc_mode_map.get(key, "vision")
+                mode_icon = "🖼️" if mode == "vision" else "📝"
+
                 if result_obj.get("error"):
                     err_msg = result_obj["error"].get("message", "Unknown Gemini error")
-                    _log(task_id, f"✗ Doc {doc_id}: {err_msg}", "error")
+                    _log(task_id, f"❌ {mode_icon} Doc {doc_id}: {err_msg}", "error")
                     doc = db.query(Document).filter(Document.id == doc_id).first()
-                    if doc:
+                    if doc and mode == "vision":
+                        # Only a vision request can leave OCR itself undone — a failed
+                        # text-only request just means analysis stays pending.
                         doc.ocr_status = "error"
                         doc.ocr_error = err_msg
                         db.commit()
@@ -647,18 +699,19 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                 tokens_out += usage.get("candidatesTokenCount", 0)
 
                 doc = db.query(Document).filter(Document.id == doc_id).first()
-                if doc:
-                    parse_error: str | None = None
-                    parsed = None
-                    try:
-                        parsed = parse_llm_json(text)
-                    except Exception as exc:
-                        parse_error = str(exc)
+                if not doc:
+                    continue
 
-                    if parsed and isinstance(parsed, dict) and parsed.get("text"):
-                        doc.ocr_text = parsed["text"]
-                        doc.ocr_status = "done"
-                        doc.ocr_model = f"{model} (batch)"
+                parse_error: str | None = None
+                parsed = None
+                try:
+                    parsed = parse_llm_json(text)
+                except Exception as exc:
+                    parse_error = str(exc)
+
+                if mode == "text":
+                    # Text-only request — OCR text already existed; only analysis fields expected.
+                    if parsed and isinstance(parsed, dict):
                         doc.summary = parsed.get("summary", "")
                         doc.document_type = parsed.get("document_type", "unclassified")
                         doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
@@ -683,32 +736,74 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         if short_title:
                             doc.short_title = short_title
                         doc.analysis_status = "done"
-                        doc.analysis_model = f"{model} (batch)"
+                        doc.analysis_model = f"{model} (batch, text-only)"
                         db.commit()
-                        # Re-embed now that summary + OCR text exist.
                         from .indexer import _run_embedding
                         await _run_embedding(doc, db)
-                        _log(task_id, f"✓ OCR + analysis saved for doc {doc_id}")
+                        _log(task_id, f"✅ {mode_icon} {doc.filename} → {doc.document_type} (text-only, no image sent)")
                         processed += 1
                     else:
-                        # Save raw text as OCR only; leave analysis pending
-                        doc.ocr_text = text
-                        doc.ocr_status = "done"
-                        doc.ocr_model = f"{model} (batch)"
-                        db.commit()
-                        if parse_error:
-                            _log(task_id, f"⚠ Doc {doc_id}: JSON parse error — {parse_error}", "error")
-                        elif not parsed:
-                            _log(task_id, f"⚠ Doc {doc_id}: response produced no JSON", "error")
-                        else:
-                            keys = list(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
-                            _log(task_id, f"⚠ Doc {doc_id}: parsed JSON missing 'text' field (got keys: {keys})", "error")
+                        _log(task_id, f"⚠️ {mode_icon} Doc {doc_id}: JSON parse error — {parse_error or 'no JSON'}", "error")
                         preview = text[:400].replace("\n", " ")
                         _log(task_id, f"  Model response preview: {preview}", "error")
-                        processed += 1
+                        failed_count += 1
+                    continue
+
+                # mode == "vision" — full transcription + analysis expected.
+                if parsed and isinstance(parsed, dict) and parsed.get("text"):
+                    doc.ocr_text = parsed["text"]
+                    doc.ocr_status = "done"
+                    doc.ocr_model = f"{model} (batch)"
+                    doc.summary = parsed.get("summary", "")
+                    doc.document_type = parsed.get("document_type", "unclassified")
+                    doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                    tags = parsed.get("tags") or []
+                    doc.tags = json.dumps(tags, ensure_ascii=False)
+                    doc.language = parsed.get("language", "")
+                    doc.organization = parsed.get("organization")
+                    amount = parsed.get("amount")
+                    doc.amount = float(amount) if amount is not None else None
+                    doc.amount_currency = parsed.get("amount_currency")
+                    doc.person_first_name = parsed.get("person_first_name")
+                    doc.person_last_name = parsed.get("person_last_name")
+                    raw_date = parsed.get("document_date")
+                    if raw_date:
+                        try:
+                            doc.document_date = datetime.strptime(raw_date, "%Y-%m-%d")
+                        except ValueError:
+                            doc.document_date = None
+                    else:
+                        doc.document_date = None
+                    short_title = parsed.get("short_title", "")
+                    if short_title:
+                        doc.short_title = short_title
+                    doc.analysis_status = "done"
+                    doc.analysis_model = f"{model} (batch)"
+                    db.commit()
+                    # Re-embed now that summary + OCR text exist.
+                    from .indexer import _run_embedding
+                    await _run_embedding(doc, db)
+                    _log(task_id, f"✅ {mode_icon} {doc.filename} → {doc.document_type} (image sent)")
+                    processed += 1
+                else:
+                    # Save raw text as OCR only; leave analysis pending
+                    doc.ocr_text = text
+                    doc.ocr_status = "done"
+                    doc.ocr_model = f"{model} (batch)"
+                    db.commit()
+                    if parse_error:
+                        _log(task_id, f"⚠️ {mode_icon} Doc {doc_id}: JSON parse error — {parse_error}", "error")
+                    elif not parsed:
+                        _log(task_id, f"⚠️ {mode_icon} Doc {doc_id}: response produced no JSON", "error")
+                    else:
+                        keys = list(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
+                        _log(task_id, f"⚠️ {mode_icon} Doc {doc_id}: parsed JSON missing 'text' field (got keys: {keys})", "error")
+                    preview = text[:400].replace("\n", " ")
+                    _log(task_id, f"  Model response preview: {preview}", "error")
+                    processed += 1
 
             except Exception as exc:
-                _log(task_id, f"✗ Result parse error: {exc}", "error")
+                _log(task_id, f"❌ Result parse error: {exc}", "error")
                 failed_count += 1
     finally:
         db.close()
@@ -716,6 +811,8 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     summary = {
         "processed": processed,
         "failed": failed_count,
+        "vision_count": vision_count,
+        "text_count": text_count,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "batch_job_id": batch_job_name,
@@ -730,6 +827,6 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     )
     _finish(task_id, "done", summary)
     _log(task_id, (
-        f"Done — {processed} OCR+analyzed, {failed_count} failed, "
-        f"{tokens_in}+{tokens_out} tokens (batch discount applied)"
+        f"✅ Done — {processed} processed ({vision_count} via image, {text_count} via text-only), "
+        f"{failed_count} failed, {tokens_in}+{tokens_out} tokens (batch discount applied)"
     ))

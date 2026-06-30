@@ -137,7 +137,10 @@ def usage_summary(
         "total_cost": float(totals[1] or 0),
         "total_tokens_in": int(totals[2] or 0),
         "total_tokens_out": int(totals[3] or 0),
-        "by_type": sorted(breakdown("usage_type"), key=lambda x: -x["count"]),
+        "by_type": sorted(
+            [b for b in breakdown("usage_type") if b["key"] != "embedding"],
+            key=lambda x: -x["count"],
+        ),
         "by_provider": sorted(breakdown("provider_name"), key=lambda x: -x["cost"]),
         "by_model": sorted(breakdown("model"), key=lambda x: -x["cost"]),
         "by_day": sorted(breakdown("day"), key=lambda x: (x["key"] or "")),

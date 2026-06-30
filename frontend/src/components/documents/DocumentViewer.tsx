@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical,
-  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints, Search,
+  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints,
+  Filter, FolderOpen,
 } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
@@ -24,6 +25,8 @@ interface Props {
   hasNext?: boolean;
   isEmbedded?: boolean;
   onTagClick?: (value: string) => void;
+  onCategoryClick?: (category: string) => void;
+  onDirectoryClick?: (directory: string) => void;
 }
 
 function formatDate(iso?: string) {
@@ -35,7 +38,7 @@ function formatDate(iso?: string) {
 
 // ── Main viewer ─────────────────────────────────────────────────────────────
 
-export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext, isEmbedded, onTagClick }: Props) {
+export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext, isEmbedded, onTagClick, onCategoryClick, onDirectoryClick }: Props) {
   const { t } = useT();
   const navigate = useNavigate();
   const { advancedMode } = useAdvancedMode();
@@ -228,6 +231,9 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   };
 
   if (!doc) return null;
+
+  const pathParts = doc.relative_path?.split("/") ?? [];
+  const directory = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : null;
 
   const isPdf = doc.mime_type === "application/pdf";
   const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
@@ -508,14 +514,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                       isManual={displayManual}
                       onSaved={(t) => { setLocalType(t); setLocalManual(true); }}
                     />
-                    {onTagClick && displayType && displayType !== "unclassified" && displayType !== "other" && (
+                    {onCategoryClick && displayType && displayType !== "unclassified" && displayType !== "other" && (
                       <button
                         className="icon-btn"
                         style={{ width: 24, height: 24, flexShrink: 0 }}
-                        onClick={() => onTagClick(displayType)}
-                        title={`Search: ${formatTypeName(displayType)}`}
+                        onClick={() => onCategoryClick(displayType)}
+                        title={`${t.filters.type}: ${formatTypeName(displayType)}`}
                       >
-                        <Search size={12} />
+                        <Filter size={12} />
                       </button>
                     )}
                   </div>
@@ -582,7 +588,19 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 {doc.relative_path && (
                   <div className="viewer-meta-row">
                     <span className="viewer-meta-label">Path</span>
-                    <span className="text-mono text-sm viewer-meta-path">{doc.relative_path}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span className="text-mono text-sm viewer-meta-path">{doc.relative_path}</span>
+                      {onDirectoryClick && directory && (
+                        <button
+                          className="icon-btn"
+                          style={{ width: 24, height: 24, flexShrink: 0 }}
+                          onClick={() => onDirectoryClick(directory)}
+                          title={`${t.filters.folder}: ${directory}`}
+                        >
+                          <FolderOpen size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
                 <div className="viewer-meta-row">

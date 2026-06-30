@@ -10,6 +10,17 @@ import "./UsageTab.css";
 
 const DIMENSIONS = ["usage_type", "provider_name", "model", "day"] as const;
 const METRICS = ["count", "cost", "tokens"] as const;
+const PERIODS = ["all", "today", "yesterday"] as const;
+type Period = typeof PERIODS[number];
+
+// Day boundaries in UTC, matching the server's `day` grouping (SQLite strftime on stored UTC timestamps).
+function periodRange(period: Period): { since?: string; until?: string } {
+  if (period === "all") return {};
+  const d = new Date();
+  if (period === "yesterday") d.setUTCDate(d.getUTCDate() - 1);
+  const ymd = d.toISOString().slice(0, 10);
+  return { since: `${ymd} 00:00:00`, until: `${ymd} 23:59:59` };
+}
 
 function fmtCost(n: number): string {
   return "$" + (n || 0).toFixed(n < 1 ? 4 : 2);
@@ -54,6 +65,7 @@ export function UsageTab() {
   const [row, setRow] = useState<string>("usage_type");
   const [col, setCol] = useState<string>("provider_name");
   const [metric, setMetric] = useState<string>("cost");
+  const [period, setPeriod] = useState<Period>("all");
   const [loading, setLoading] = useState(false);
 
   const dimLabel: Record<string, string> = {
@@ -62,21 +74,25 @@ export function UsageTab() {
   const metricLabel: Record<string, string> = {
     count: u.metricCount, cost: u.metricCost, tokens: u.metricTokens,
   };
+  const periodLabel: Record<Period, string> = {
+    all: u.periodAll, today: u.periodToday, yesterday: u.periodYesterday,
+  };
 
   const load = () => {
     setLoading(true);
+    const range = periodRange(period);
     Promise.all([
-      getUsageSummary(),
-      getUsagePivot({ row, col, metric }),
-      listUsage({ limit: 100 }),
+      getUsageSummary(range),
+      getUsagePivot({ row, col, metric, ...range }),
+      listUsage({ limit: 100, ...range }),
     ])
       .then(([s, p, r]) => { setSummary(s); setPivot(p); setRows(r); })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
-  useEffect(() => { getUsagePivot({ row, col, metric }).then(setPivot).catch(() => {}); }, [row, col, metric]);
+  useEffect(load, [period]);
+  useEffect(() => { getUsagePivot({ row, col, metric, ...periodRange(period) }).then(setPivot).catch(() => {}); }, [row, col, metric]);
 
   const handleClear = async () => {
     if (!window.confirm(u.clearConfirm)) return;
@@ -91,7 +107,13 @@ export function UsageTab() {
           <h3 className="admin-section-title">{u.title}</h3>
           <p className="text-xs text-muted">{u.hint}</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <label className="usage-period-select">
+            {u.period}
+            <select value={period} onChange={e => setPeriod(e.target.value as Period)}>
+              {PERIODS.map(p => <option key={p} value={p}>{periodLabel[p]}</option>)}
+            </select>
+          </label>
           <Button variant="ghost" size="sm" icon={<RefreshCw size={13} />} loading={loading} onClick={load}>
             {u.refresh}
           </Button>

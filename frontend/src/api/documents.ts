@@ -164,7 +164,7 @@ export const getUsagePivot = (params: {
 };
 
 export const listUsage = (params: {
-  usage_type?: string; provider_type?: string; limit?: number;
+  usage_type?: string; provider_type?: string; limit?: number; since?: string; until?: string;
 } = {}) => {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])

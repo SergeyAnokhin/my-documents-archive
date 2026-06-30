@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2, SendHorizonal } from "lucide-react";
+import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2, SendHorizonal, FolderOpen, Filter, X } from "lucide-react";
 import { SearchBar } from "../components/search/SearchBar";
 import { AIAnswer } from "../components/search/AIAnswer";
 import { DocumentCard } from "../components/documents/DocumentCard";
@@ -32,6 +32,8 @@ export function HomePage() {
   const [filterLang, setFilterLang] = useState<string | null>(null);
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterQuality, setFilterQuality] = useState<string | null>(null);
+  const [filterDirectory, setFilterDirectory] = useState<string | null>(null);
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
   // Quality counts for the filter dropdown
   const [qualityCounts, setQualityCounts] = useState<Record<string, number>>({});
@@ -77,6 +79,8 @@ export function HomePage() {
         ...(filterYear ? { year: filterYear } : {}),
         ...(filterLang ? { language: filterLang } : {}),
         ...(filterQuality ? { quality: filterQuality } : {}),
+        ...(filterDirectory ? { folder: filterDirectory } : {}),
+        ...(filterCategory ? { document_type: filterCategory } : {}),
       });
       setResults(res.items);
       setTotal(res.total);
@@ -85,7 +89,7 @@ export function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [query, mode, filterYear, filterLang, filterQuality]);
+  }, [query, mode, filterYear, filterLang, filterQuality, filterDirectory, filterCategory]);
 
   useEffect(() => {
     const id = setTimeout(doSearch, query ? 350 : 0);
@@ -113,7 +117,7 @@ export function HomePage() {
   useEffect(() => {
     if (mode !== "ask") doSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterYear, filterLang, filterQuality]);
+  }, [filterYear, filterLang, filterQuality, filterDirectory, filterCategory]);
 
   // Fetch embedded doc IDs on mount and whenever a library change occurs
   useEffect(() => {
@@ -211,6 +215,20 @@ export function HomePage() {
     setQuery(value);
   };
 
+  const handleDirectoryFilter = (directory: string) => {
+    setViewerIdx(null);
+    setAiViewerIdx(null);
+    if (mode === "ask") setMode("search");
+    setFilterDirectory(directory);
+  };
+
+  const handleCategoryFilter = (category: string) => {
+    setViewerIdx(null);
+    setAiViewerIdx(null);
+    if (mode === "ask") setMode("search");
+    setFilterCategory(category);
+  };
+
   // ── Sync ────────────────────────────────────────────────────────────────────
 
   const handleSync = async () => {
@@ -290,6 +308,24 @@ export function HomePage() {
               <span className="toolbar-count text-sm text-muted">
                 {total > 0 ? `${total} documents` : ""}
               </span>
+              {filterDirectory && (
+                <span className="tag">
+                  <FolderOpen size={11} />
+                  {t.filters.folder}: {filterDirectory}
+                  <button className="tag-remove" onClick={() => setFilterDirectory(null)} title="Remove filter">
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
+              {filterCategory && (
+                <span className="tag">
+                  <Filter size={11} />
+                  {t.filters.type}: {filterCategory}
+                  <button className="tag-remove" onClick={() => setFilterCategory(null)} title="Remove filter">
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
               {advancedMode && (
                 <>
                   <FilterDropdown
@@ -413,6 +449,7 @@ export function HomePage() {
                   mode="list"
                   onClick={() => setViewerIdx(i)}
                   onTagClick={handleTagSearch}
+                  onCategoryClick={handleCategoryFilter}
                   thumbVersion={thumbVersions[r.document.id]}
                   devMode={devMode}
                   isEmbedded={embeddedIds.has(r.document.id)}
@@ -430,6 +467,7 @@ export function HomePage() {
                   gridSize={gridSize}
                   onClick={() => setViewerIdx(i)}
                   onTagClick={handleTagSearch}
+                  onCategoryClick={handleCategoryFilter}
                   thumbVersion={thumbVersions[r.document.id]}
                   devMode={devMode}
                   isEmbedded={embeddedIds.has(r.document.id)}
@@ -451,6 +489,8 @@ export function HomePage() {
         hasNext={viewerIdx !== null && viewerIdx < results.length - 1}
         isEmbedded={viewerDoc ? embeddedIds.has(viewerDoc.id) : undefined}
         onTagClick={handleTagSearch}
+        onCategoryClick={handleCategoryFilter}
+        onDirectoryClick={handleDirectoryFilter}
       />
 
       {/* Document viewer — AI sources */}
@@ -463,6 +503,8 @@ export function HomePage() {
         hasNext={aiViewerIdx !== null && aiAnswer !== null && aiViewerIdx < aiAnswer.sources.length - 1}
         isEmbedded={aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
         onTagClick={handleTagSearch}
+        onCategoryClick={handleCategoryFilter}
+        onDirectoryClick={handleDirectoryFilter}
       />
 
       {/* Keyboard shortcuts help */}

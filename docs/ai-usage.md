@@ -53,7 +53,12 @@ recording must not break the calling pipeline.
 | `GET /api/admin/usage` | recent rows (filter by `usage_type`/`provider_type`, `limit`) |
 | `DELETE /api/admin/usage` | clear the ledger |
 
-Charts are plain CSS bars (no chart library). The pivot row/column/metric are user-selectable.
+Charts are plain CSS bars (no chart library). The pivot row/column/metric are user-selectable
+(`day` is one of the dimensions, so the pivot can be broken down per day). A **Period** selector
+(All time / Today / Yesterday) sets `since`/`until` — in UTC day boundaries, matching the `day`
+grouping — and is applied to all three reads (summary, pivot, recent rows). The "By usage type"
+chart excludes `embedding` (free, high-volume, would dominate the bars); it still counts toward
+totals and appears in the pivot table when `usage_type` is selected as a dimension.
 
 ## 3. Provider config export / import
 

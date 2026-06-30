@@ -64,6 +64,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+.usage-period-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .75rem;
+  color: var(--color-ink-muted);
+}
+.usage-period-select select {
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-size: .8125rem;
+}
+
 .usage-pivot-controls {
   display: flex;
   align-items: flex-end;
