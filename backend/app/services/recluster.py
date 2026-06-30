@@ -182,17 +182,18 @@ async def _name_cluster(
                 "You are a document archivist.",
                 user_msg,
             )
+            log.info("LLM raw response (attempt %d): %s", attempt, text[:500])
             data = json.loads(strip_code_fences(text))
             slug = str(data.get("slug", "unclassified")).lower().replace(" ", "_").strip()
             icon = str(data.get("icon", "")).strip()
 
             if icon not in ALLOWED_ICONS:
-                log.debug("Unknown icon '%s' (attempt %d), retrying…", icon, attempt)
+                log.warning("Unknown icon '%s' (attempt %d), retrying…", icon, attempt)
                 excluded.add(icon)
                 continue
 
             if icon in excluded:
-                log.debug("Conflicting icon '%s' (attempt %d), retrying…", icon, attempt)
+                log.warning("Conflicting icon '%s' (attempt %d), retrying…", icon, attempt)
                 excluded.add(icon)
                 continue
 
@@ -372,6 +373,23 @@ async def run_recluster(
                 taken_icons.add(icon)
             _tlog(f"  Cluster {cid + 1}/{k} → {type_slug} ({icon})")
             _progress(cid + 1, k)
+
+        # Log final cluster table
+        _tlog("Cluster naming results:")
+        for cid in range(k):
+            slug, icon = cluster_names[cid]
+            size = sum(1 for lbl in labels if lbl == cid)
+            _tlog(f"  [{cid + 1}/{k}] slug={slug!r}  icon={icon}  docs={size}")
+
+        # Safety guard: if ALL clusters failed to name, abort without touching docs
+        named = [(s, i) for s, i in cluster_names.values() if s != "unclassified"]
+        if not named:
+            _tlog(
+                "ALL cluster naming calls failed — no changes applied. "
+                "Check that the selected provider is working correctly.",
+                "warning",
+            )
+            return {"total": len(docs), "clusters": k, "applied": 0}
 
         # Step 7: save icons for the new types
         _save_cluster_icons(cluster_names, db)

@@ -229,23 +229,24 @@ async def _call_openai_compatible(provider, user_msg: str, system: str = ANALYSI
 
 
 async def _call_gemini(provider, user_msg: str, system: str = ANALYSIS_SYSTEM, json_mode: bool = False) -> tuple[str, int, int, float]:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     model_name = getattr(provider, "model", None) or "gemini-2.5-flash"
-    genai.configure(api_key=provider.api_key)
-    gm = genai.GenerativeModel(model_name, system_instruction=system)
-    gen_cfg: dict = {"max_output_tokens": 1024}
+    client = genai.Client(api_key=provider.api_key)
+    cfg_kwargs: dict = {"max_output_tokens": 1024, "system_instruction": system}
     if json_mode:
-        gen_cfg["response_mime_type"] = "application/json"
-    resp = await asyncio.to_thread(
-        gm.generate_content, user_msg,
-        generation_config=gen_cfg,
+        cfg_kwargs["response_mime_type"] = "application/json"
+    resp = await client.aio.models.generate_content(
+        model=model_name,
+        contents=user_msg,
+        config=types.GenerateContentConfig(**cfg_kwargs),
     )
     um = getattr(resp, "usage_metadata", None)
     tin  = int(getattr(um, "prompt_token_count", 0) or 0)
     tout = int(getattr(um, "candidates_token_count", 0) or 0)
     cost = estimate_cost(model_name, tin, tout)
     log.info("🤖 [ai] type=gemini model=%s max_output_tokens=%s json=%s → %d/%d tok  $%.5f",
-             model_name, gen_cfg["max_output_tokens"], json_mode, tin, tout, cost)
+             model_name, cfg_kwargs["max_output_tokens"], json_mode, tin, tout, cost)
     return resp.text, tin, tout, cost
 
 
