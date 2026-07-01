@@ -203,6 +203,7 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
     setTasks(prev => [...prev, task]);
     setShowCreate(false);
     onPreCreateConsumed?.();
+    load();
   };
 
   const handleCloseCreate = () => {
@@ -496,7 +497,7 @@ function TaskCard({
               <Square size={13} />
               <span>{t.tasks.stop}</span>
             </button>
-          ) : (
+          ) : task.status !== "done" && (
             <button className="task-btn task-btn--run" onClick={onRun} disabled={isStarting}>
               {isStarting ? <span className="task-btn-spinner" /> : <Play size={13} />}
               <span>{isStarting ? "…" : task.status === "stopped" ? t.tasks.resume : t.tasks.run}</span>
@@ -648,6 +649,7 @@ function CreateTaskModal({ t, onCreated, onClose, initialType, initialTitle, ini
         config.force = true;
       }
       const task = await createTask({ task_type: selectedType, title: title.trim(), config });
+      await runTask(task.id);
       onCreated(task);
     } catch { /* ignore */ } finally {
       setSaving(false);
@@ -1103,7 +1105,7 @@ function BatchMonitorModal({ tasks, t, onRefresh, onLogs, onClose }: BatchMonito
                         <Square size={13} />
                         <span>{t.tasks.stop}</span>
                       </button>
-                    ) : canResume ? (
+                    ) : task.status !== "done" && (canResume ? (
                       <button
                         className="task-btn task-btn--run"
                         onClick={() => handleResume(task)}
@@ -1118,7 +1120,7 @@ function BatchMonitorModal({ tasks, t, onRefresh, onLogs, onClose }: BatchMonito
                         <Play size={13} />
                         <span>{task.status === "stopped" ? t.tasks.resume : t.tasks.run}</span>
                       </button>
-                    )}
+                    ))}
                   </div>
                 </div>
               </div>
