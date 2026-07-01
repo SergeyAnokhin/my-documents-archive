@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, Check, Loader2, SendHorizonal, FolderOpen, Filter, X } from "lucide-react";
 import { SearchBar } from "../components/search/SearchBar";
-import { AIAnswer } from "../components/search/AIAnswer";
-import { DocumentCard } from "../components/documents/DocumentCard";
 import { DocumentViewer } from "../components/documents/DocumentViewer";
 import { UploadZone } from "../components/documents/UploadZone";
 import { KeyboardHelp } from "../components/ui/KeyboardHelp";
-import { Button } from "../components/ui/Button";
-import { FilterDropdown } from "../components/search/FilterDropdown";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { useAdvancedMode } from "../contexts/AdvancedModeContext";
 import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts } from "../api/documents";
 import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
+import { HomePageToolbar } from "./home/HomePageToolbar";
+import { HomePageAIMode } from "./home/HomePageAIMode";
+import { HomePageResults } from "./home/HomePageResults";
 import "./HomePage.css";
 
 const GRID_SIZES: GridSize[] = ["sm", "md", "lg", "xl"];
@@ -303,100 +301,26 @@ export function HomePage() {
 
         {/* Toolbar — hidden in ask mode */}
         {mode !== "ask" && (
-          <div className="home-toolbar">
-            <div className="toolbar-left">
-              <span className="toolbar-count text-sm text-muted">
-                {total > 0 ? `${total} documents` : ""}
-              </span>
-              {filterDirectory && (
-                <span className="tag">
-                  <FolderOpen size={11} />
-                  {t.filters.folder}: {filterDirectory}
-                  <button className="tag-remove" onClick={() => setFilterDirectory(null)} title="Remove filter">
-                    <X size={10} />
-                  </button>
-                </span>
-              )}
-              {filterCategory && (
-                <span className="tag">
-                  <Filter size={11} />
-                  {t.filters.type}: {filterCategory}
-                  <button className="tag-remove" onClick={() => setFilterCategory(null)} title="Remove filter">
-                    <X size={10} />
-                  </button>
-                </span>
-              )}
-              {advancedMode && (
-                <>
-                  <FilterDropdown
-                    label={t.filters.quality}
-                    clearLabel={t.filters.allDocuments}
-                    options={[
-                      { value: "no_ocr",       label: t.filters.qualityNoOcr,       count: qualityCounts["no_ocr"] },
-                      { value: "no_embedding", label: t.filters.qualityNoEmbedding, count: qualityCounts["no_embedding"] },
-                      { value: "no_analysis",  label: t.filters.qualityNoAnalysis,  count: qualityCounts["no_analysis"] },
-                      { value: "no_summary",   label: t.filters.qualityNoSummary,   count: qualityCounts["no_summary"] },
-                      { value: "no_tags",      label: t.filters.qualityNoTags,      count: qualityCounts["no_tags"] },
-                      { value: "no_category",  label: t.filters.qualityNoCategory,  count: qualityCounts["no_category"] },
-                      { value: "complete",     label: t.filters.qualityComplete },
-                    ]}
-                    value={filterQuality}
-                    onSelect={setFilterQuality}
-                  />
-                  {filterQuality && filterQuality !== "complete" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<SendHorizonal size={13} />}
-
-                      onClick={handleDispatch}
-                    >
-                      {t.filters.qualityDispatch}
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="toolbar-right">
-              <Button
-                variant="ghost" size="sm"
-                icon={<RefreshCw size={14} />}
-                loading={syncing}
-                onClick={handleSync}
-              >
-                {t.syncButton}
-              </Button>
-              <Button
-                variant="secondary" size="sm"
-                icon={<Plus size={14} />}
-                onClick={() => setShowUpload((v) => !v)}
-              >
-                {t.uploadTitle}
-              </Button>
-              <div className="view-toggle">
-                <button
-                  className={`view-btn${viewMode === "list" ? " active" : ""}`}
-                  onClick={() => setViewMode("list")}
-                  title={t.viewList}
-                >
-                  <LayoutList size={16} />
-                </button>
-                <button
-                  className={`view-btn${viewMode === "grid" ? " active" : ""}`}
-                  onClick={() => setViewMode("grid")}
-                  title={t.viewGrid}
-                >
-                  <LayoutGrid size={16} />
-                </button>
-                {viewMode === "grid" && (
-                  <button className="view-btn" onClick={cycleGridSize} title="Change grid size">
-                    <ChevronDown size={14} />
-                    <span className="text-xs">{gridSize.toUpperCase()}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <HomePageToolbar
+            t={t}
+            total={total}
+            filterDirectory={filterDirectory}
+            onClearDirectory={() => setFilterDirectory(null)}
+            filterCategory={filterCategory}
+            onClearCategory={() => setFilterCategory(null)}
+            advancedMode={advancedMode}
+            qualityCounts={qualityCounts}
+            filterQuality={filterQuality}
+            onFilterQuality={setFilterQuality}
+            onDispatch={handleDispatch}
+            syncing={syncing}
+            onSync={handleSync}
+            onToggleUpload={() => setShowUpload((v) => !v)}
+            viewMode={viewMode}
+            onViewMode={setViewMode}
+            gridSize={gridSize}
+            onCycleGridSize={cycleGridSize}
+          />
         )}
 
         {/* Upload zone (collapsible) */}
@@ -408,74 +332,32 @@ export function HomePage() {
 
         {/* ── AI mode content ── */}
         {mode === "ask" && (
-          <div className="ai-mode-content">
-            {aiLoading && <AISearchProgress t={t} />}
-            {!aiLoading && aiAnswer && (
-              <AIAnswer
-                answer={aiAnswer.answer}
-                sources={aiAnswer.sources}
-                sourceSimilarities={aiAnswer.source_similarities}
-                cost={aiAnswer.cost}
-                noProvider={aiAnswer.no_provider}
-                onDocClick={(i) => setAiViewerIdx(i)}
-                tokensIn={aiAnswer.tokens_in}
-                tokensOut={aiAnswer.tokens_out}
-                modelName={aiAnswer.model_name}
-                docsSent={aiAnswer.docs_sent}
-                devMode={devMode}
-                debug={aiAnswer.debug}
-                thumbVersions={thumbVersions}
-              />
-            )}
-            {!aiLoading && !aiAnswer && (
-              <AskHint t={t} />
-            )}
-          </div>
+          <HomePageAIMode
+            t={t}
+            aiLoading={aiLoading}
+            aiAnswer={aiAnswer}
+            devMode={devMode}
+            thumbVersions={thumbVersions}
+            onDocClick={(i) => setAiViewerIdx(i)}
+          />
         )}
 
         {/* ── Regular search content ── */}
         {mode !== "ask" && (
-          loading ? (
-            <DocumentSkeleton viewMode={viewMode} gridSize={gridSize} />
-          ) : results.length === 0 ? (
-            <EmptyState query={query} onUpload={() => setShowUpload(true)} />
-          ) : viewMode === "list" ? (
-            <div className="doc-list">
-              {results.map((r, i) => (
-                <DocumentCard
-                  key={r.document.id}
-                  doc={r.document}
-                  highlight={r.highlight}
-                  mode="list"
-                  onClick={() => setViewerIdx(i)}
-                  onTagClick={handleTagSearch}
-                  onCategoryClick={handleCategoryFilter}
-                  thumbVersion={thumbVersions[r.document.id]}
-                  devMode={devMode}
-                  isEmbedded={embeddedIds.has(r.document.id)}
-                  score={r.score > 0 ? r.score : undefined}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className={`doc-grid doc-grid-size-${gridSize}`}>
-              {results.map((r, i) => (
-                <DocumentCard
-                  key={r.document.id}
-                  doc={r.document}
-                  mode="grid"
-                  gridSize={gridSize}
-                  onClick={() => setViewerIdx(i)}
-                  onTagClick={handleTagSearch}
-                  onCategoryClick={handleCategoryFilter}
-                  thumbVersion={thumbVersions[r.document.id]}
-                  devMode={devMode}
-                  isEmbedded={embeddedIds.has(r.document.id)}
-                  score={r.score > 0 ? r.score : undefined}
-                />
-              ))}
-            </div>
-          )
+          <HomePageResults
+            loading={loading}
+            results={results}
+            query={query}
+            viewMode={viewMode}
+            gridSize={gridSize}
+            devMode={devMode}
+            embeddedIds={embeddedIds}
+            thumbVersions={thumbVersions}
+            onUpload={() => setShowUpload(true)}
+            onOpen={(i) => setViewerIdx(i)}
+            onTagClick={handleTagSearch}
+            onCategoryClick={handleCategoryFilter}
+          />
         )}
       </div>
 
@@ -510,91 +392,5 @@ export function HomePage() {
       {/* Keyboard shortcuts help */}
       <KeyboardHelp open={showHelp} onClose={() => setShowHelp(false)} />
     </main>
-  );
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-const _STEP_DELAYS = [0, 320, 680, 1050]; // ms when each step becomes active
-
-function AISearchProgress({ t }: { t: ReturnType<typeof useT>["t"] }) {
-  const [activeIdx, setActiveIdx] = useState(0);
-
-  useEffect(() => {
-    const timers = _STEP_DELAYS.slice(1).map((ms, i) =>
-      window.setTimeout(() => setActiveIdx(i + 1), ms)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
-  const steps = [
-    t.aiSearch.stepText,
-    t.aiSearch.stepSemantic,
-    t.aiSearch.stepRank,
-    t.aiSearch.stepLlm,
-  ];
-
-  return (
-    <div className="ai-search-progress">
-      {steps.map((label, i) => {
-        const done   = i < activeIdx;
-        const active = i === activeIdx;
-        return (
-          <div key={i} className={`ai-progress-step${done ? " done" : active ? " active" : ""}`}>
-            <span className="ai-step-icon">
-              {done   ? <Check size={13} />
-               : active ? <Loader2 size={13} className="ai-step-spin" />
-               : null}
-            </span>
-            <span>{label}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function AskHint({ t }: { t: ReturnType<typeof useT>["t"] }) {
-  return (
-    <div className="ask-hint">
-      <div className="ask-hint-icon">✨</div>
-      <p className="ask-hint-text text-muted">{t.aiSearch.placeholder}</p>
-    </div>
-  );
-}
-
-function EmptyState({ query, onUpload }: { query: string; onUpload: () => void }) {
-  const { t } = useT();
-  return (
-    <div className="empty-state">
-      <div className="empty-state-icon">📂</div>
-      <h2 className="empty-state-title">{query ? t.noResults : t.noDocuments}</h2>
-      <p className="empty-state-hint text-muted">{query ? t.noResultsHint : t.noDocumentsHint}</p>
-      {!query && (
-        <Button variant="primary" onClick={onUpload} icon={<Plus size={16} />}>
-          {t.uploadTitle}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function DocumentSkeleton({ viewMode, gridSize }: { viewMode: ViewMode; gridSize: GridSize }) {
-  const count = 8;
-  if (viewMode === "list") {
-    return (
-      <div className="doc-list">
-        {Array.from({ length: count }).map((_, i) => (
-          <div key={i} className="skeleton" style={{ height: 80, borderRadius: 12 }} />
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className={`doc-grid doc-grid-size-${gridSize}`}>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="skeleton" style={{ borderRadius: 12, aspectRatio: "3/4" }} />
-      ))}
-    </div>
   );
 }

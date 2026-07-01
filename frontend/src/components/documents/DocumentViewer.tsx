@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Download, ChevronLeft, ChevronRight, FileText, Tag, RefreshCw, FlaskConical,
-  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, X, Scissors, Check, Waypoints,
-  Filter, FolderOpen,
+  Download, ChevronLeft, ChevronRight, FileText, FlaskConical,
+  ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, Scissors, Check,
 } from "lucide-react";
 import type { Document } from "../../types";
 import { Modal } from "../ui/Modal";
@@ -11,9 +10,11 @@ import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
-import { TypePicker, formatTypeName } from "./TypePicker";
 import { useImageEdit } from "../../hooks/useImageEdit";
 import { resolveImgSrc } from "./imgSrc";
+import { MetadataTab } from "./MetadataTab";
+import { TextTab } from "./TextTab";
+import { DevTab } from "./DevTab";
 import "./DocumentViewer.css";
 
 interface Props {
@@ -27,13 +28,6 @@ interface Props {
   onTagClick?: (value: string) => void;
   onCategoryClick?: (category: string) => void;
   onDirectoryClick?: (directory: string) => void;
-}
-
-function formatDate(iso?: string) {
-  if (!iso) return null;
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric", month: "long", day: "numeric",
-  });
 }
 
 // ── Main viewer ─────────────────────────────────────────────────────────────
@@ -501,256 +495,35 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
 
           <div className="viewer-tab-body">
             {activeTab === "preview" && (
-              <div className="viewer-meta-list">
-                {doc.summary && <p className="viewer-summary">{doc.summary}</p>}
-
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Type</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <TypePicker
-                      docId={doc.id}
-                      currentType={displayType}
-                      isManual={displayManual}
-                      onSaved={(t) => { setLocalType(t); setLocalManual(true); }}
-                    />
-                    {onCategoryClick && displayType && displayType !== "unclassified" && displayType !== "other" && (
-                      <button
-                        className="icon-btn"
-                        style={{ width: 24, height: 24, flexShrink: 0 }}
-                        onClick={() => onCategoryClick(displayType)}
-                        title={`${t.filters.type}: ${formatTypeName(displayType)}`}
-                      >
-                        <Filter size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {displayTags.length > 0 && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label"><Tag size={13}/> Tags</span>
-                    <div className="viewer-tags">
-                      {displayTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className={`tag${onTagClick ? " tag-clickable" : ""}`}
-                          onClick={onTagClick ? () => onTagClick(tag) : undefined}
-                          title={onTagClick ? `Search: ${tag}` : undefined}
-                        >
-                          {tag}
-                          <button className="tag-remove" onClick={(e) => { e.stopPropagation(); handleRemoveTag(tag); }} title="Remove tag">
-                            <X size={10} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {doc.language && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Language</span>
-                    <span>{doc.language}</span>
-                  </div>
-                )}
-                {doc.organization && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Organization</span>
-                    <span>{doc.organization}</span>
-                  </div>
-                )}
-                {(doc.person_first_name || doc.person_last_name) && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Person</span>
-                    <span>{[doc.person_first_name, doc.person_last_name].filter(Boolean).join(" ")}</span>
-                  </div>
-                )}
-                {displayDate && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Date</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {formatDate(displayDate)}
-                      <button className="tag-remove" onClick={handleRemoveDate} title="Remove date">
-                        <X size={10} />
-                      </button>
-                    </span>
-                  </div>
-                )}
-                {doc.amount != null && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Amount</span>
-                    <span>{doc.amount} {doc.amount_currency ?? ""}</span>
-                  </div>
-                )}
-
-                <div className="viewer-meta-divider" />
-
-                {doc.relative_path && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Path</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span className="text-mono text-sm viewer-meta-path">{doc.relative_path}</span>
-                      {onDirectoryClick && directory && (
-                        <button
-                          className="icon-btn"
-                          style={{ width: 24, height: 24, flexShrink: 0 }}
-                          onClick={() => onDirectoryClick(directory)}
-                          title={`${t.filters.folder}: ${directory}`}
-                        >
-                          <FolderOpen size={12} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Filename</span>
-                  <span className="text-mono text-sm">{doc.filename}</span>
-                </div>
-                {doc.added_at && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Added</span>
-                    <span>{formatDate(doc.added_at)}</span>
-                  </div>
-                )}
-                {doc.file_size && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Size</span>
-                    <span>{(doc.file_size / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
-              </div>
+              <MetadataTab
+                doc={doc}
+                t={t}
+                displayType={displayType}
+                displayManual={displayManual}
+                displayTags={displayTags}
+                displayDate={displayDate}
+                directory={directory}
+                onTagClick={onTagClick}
+                onCategoryClick={onCategoryClick}
+                onDirectoryClick={onDirectoryClick}
+                onRemoveTag={handleRemoveTag}
+                onRemoveDate={handleRemoveDate}
+                onTypeSaved={(newType) => { setLocalType(newType); setLocalManual(true); }}
+              />
             )}
 
-            {activeTab === "text" && (
-              <div className="viewer-ocr-text text-sm">
-                {doc.vision_description && (
-                  <div style={{ marginBottom: 16 }}>
-                    <p className="text-xs text-muted" style={{ marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      AI Vision
-                    </p>
-                    <p style={{ lineHeight: 1.6 }}>{doc.vision_description}</p>
-                    <hr style={{ margin: "12px 0", borderColor: "var(--color-border)" }} />
-                  </div>
-                )}
-                <p className="text-xs text-muted" style={{ marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  OCR
-                </p>
-                <div className="text-mono">
-                  {doc.ocr_text || <em className="text-muted">{t.noSummary}</em>}
-                </div>
-              </div>
-            )}
+            {activeTab === "text" && <TextTab doc={doc} t={t} />}
 
             {activeTab === "dev" && (
-              <div className="viewer-meta-list">
-                <p className="text-xs text-muted" style={{ marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  {t.pipelineStatus}
-                </p>
-
-                {/* OCR */}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">OCR</span>
-                  <span className={`status-dot ${doc.ocr_status}`} style={{ marginRight: 6 }} />
-                  <span className="text-sm">{doc.ocr_status}</span>
-                </div>
-                {doc.ocr_error && (
-                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
-                    {doc.ocr_error}
-                  </p>
-                )}
-
-                {/* Vision */}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Vision</span>
-                  <span className={`status-dot ${doc.vision_status}`} style={{ marginRight: 6 }} />
-                  <span className="text-sm">{doc.vision_status}</span>
-                </div>
-                {doc.vision_error && (
-                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
-                    {doc.vision_error}
-                  </p>
-                )}
-
-                {/* Analysis */}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Analysis</span>
-                  <span className={`status-dot ${doc.analysis_status}`} style={{ marginRight: 6 }} />
-                  <span className="text-sm">{doc.analysis_status}</span>
-                </div>
-                {doc.analysis_error && (
-                  <p className="text-xs" style={{ color: "var(--color-error, #c0392b)", marginBottom: 8, marginLeft: 8 }}>
-                    {doc.analysis_error}
-                  </p>
-                )}
-
-                {/* Embedding status */}
-                <div className="viewer-meta-row">
-                  <span className="viewer-meta-label">Embedding</span>
-                  {isEmbedded === undefined ? (
-                    <span className="text-sm text-muted">—</span>
-                  ) : isEmbedded ? (
-                    <span className="text-sm" style={{ color: "#0d9488", display: "flex", alignItems: "center", gap: 4 }}>
-                      <Waypoints size={13} /> indexed
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted">not indexed</span>
-                  )}
-                </div>
-
-                {/* OCR model attribution */}
-                {doc.ocr_model && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">{t.lab.ocrModel}</span>
-                    <span className="text-sm text-mono">{doc.ocr_model}</span>
-                  </div>
-                )}
-
-                {/* Classification info */}
-                {doc.classification_source && (
-                  <div className="viewer-meta-row">
-                    <span className="viewer-meta-label">Classification</span>
-                    <span className="text-sm text-muted">
-                      {doc.classification_source}
-                      {doc.classification_confidence != null && (
-                        <> · {Math.round(doc.classification_confidence * 100)}% conf</>
-                      )}
-                    </span>
-                  </div>
-                )}
-
-                {/* Costs */}
-                {((doc.api_cost_vision ?? 0) > 0 || (doc.api_cost_analysis ?? 0) > 0) && (
-                  <div className="viewer-meta-row" style={{ marginTop: 8 }}>
-                    <span className="viewer-meta-label">API cost</span>
-                    <span className="text-xs text-muted">
-                      vision ${(doc.api_cost_vision ?? 0).toFixed(5)} · analysis ${(doc.api_cost_analysis ?? 0).toFixed(5)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<RefreshCw size={13} />}
-                    loading={devLoading === "reclassify"}
-                    onClick={handleReclassify}
-                  >
-                    {t.reclassify}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<RefreshCw size={13} />}
-                    loading={devLoading === "reindex"}
-                    onClick={handleReindex}
-                  >
-                    {t.reindex}
-                  </Button>
-                </div>
-                {devMsg && <p className="text-xs text-muted" style={{ marginTop: 8 }}>{devMsg}</p>}
-              </div>
+              <DevTab
+                doc={doc}
+                t={t}
+                isEmbedded={isEmbedded}
+                devLoading={devLoading}
+                devMsg={devMsg}
+                onReclassify={handleReclassify}
+                onReindex={handleReindex}
+              />
             )}
           </div>
 

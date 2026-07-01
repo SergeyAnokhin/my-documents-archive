@@ -266,15 +266,17 @@ def get_task_logs(task_id: int, limit: int = 200, db: Session = Depends(get_db))
 
 
 # ── Background runners ────────────────────────────────────────────────────────
-# Shared runtime helpers live in services/task_runtime.py; batch OCR runners in
-# services/batch_ocr.py. Imported under the local names the runners below use.
+# Shared runtime helpers live in services/task_runtime.py; batch OCR runners are
+# split one-per-provider in services/batch_ocr_mistral.py / batch_ocr_gemini.py
+# (shared scope-filter/routing helpers live in services/batch_ocr.py).
 from ..services.task_runtime import (  # noqa: E402
     finish as _finish,
     is_stopped as _is_stopped,
     log_task as _log,
     set_progress as _set_progress,
 )
-from ..services.batch_ocr import run_batch_ocr_gemini, run_batch_ocr_mistral  # noqa: E402
+from ..services.batch_ocr_mistral import run_batch_ocr_mistral  # noqa: E402
+from ..services.batch_ocr_gemini import run_batch_ocr_gemini  # noqa: E402
 from ..services.batch_analysis import run_batch_analysis_gemini  # noqa: E402
 from ..services.image_compress import run_compress_images  # noqa: E402
 
