@@ -462,10 +462,11 @@ async def _recluster(task_id: int, config: dict) -> None:
     from ..services.recluster import run_recluster
 
     max_clusters = int(config.get("max_clusters", 40))
+    min_clusters = int(config.get("min_clusters", 2))
     provider_id = config.get("provider_id")
     provider_id = int(provider_id) if provider_id else None
-    _log(task_id, f"Starting: cluster-based recategorization (max_clusters={max_clusters})")
-    result = await run_recluster(task_id=task_id, max_clusters=max_clusters, provider_id=provider_id)
+    _log(task_id, f"Starting: cluster-based recategorization (min_clusters={min_clusters}, max_clusters={max_clusters})")
+    result = await run_recluster(task_id=task_id, max_clusters=max_clusters, min_clusters=min_clusters, provider_id=provider_id)
     _finish(task_id, "done", result)
     _log(task_id, f"Done — {result.get('applied', 0)} documents in {result.get('clusters', 0)} clusters")
 

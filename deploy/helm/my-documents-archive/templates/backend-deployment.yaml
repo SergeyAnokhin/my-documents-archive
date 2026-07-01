@@ -39,11 +39,16 @@ spec:
               value: {{ .Values.backend.libraryPath | quote }}
             - name: BACKUP_PREFIX
               value: {{ .Values.backend.backup.prefix | quote }}
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            failureThreshold: 30  # up to 60s total (30 * 2s) to start
+            periodSeconds: 2
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 10
             periodSeconds: 10
           volumeMounts:
             - name: nas                                    # source documents (SMB)

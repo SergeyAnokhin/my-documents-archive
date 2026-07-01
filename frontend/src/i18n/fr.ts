@@ -419,6 +419,7 @@ export const fr: Translations = {
     selectType: "Sélectionner le type de tâche",
     createTask: "Créer la tâche",
     configLimit: "Limite (documents)",
+    configMinClusters: "Min clusters",
     configMaxClusters: "Max clusters",
     configAnalysisProvider: "Fournisseur d'analyse",
     noAnalysisProvider: "Aucun fournisseur d'analyse configuré — ajoutez-en un dans les paramètres AI",

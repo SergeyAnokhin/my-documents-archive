@@ -427,6 +427,7 @@ export const en = {
     selectType: "Select task type",
     createTask: "Create Task",
     configLimit: "Limit (documents)",
+    configMinClusters: "Min clusters",
     configMaxClusters: "Max clusters",
     configAnalysisProvider: "Analysis provider",
     noAnalysisProvider: "No analysis providers configured — add one in AI Settings",

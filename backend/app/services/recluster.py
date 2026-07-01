@@ -68,8 +68,8 @@ def _strip_for_clustering(
 
 # ── K selection ───────────────────────────────────────────────────────────────
 
-def _k_range(n: int, max_clusters: int = 40) -> tuple[int, int]:
-    k_min = max(2, int(math.sqrt(n / 20)))
+def _k_range(n: int, max_clusters: int = 40, min_clusters: int = 2) -> tuple[int, int]:
+    k_min = max(min_clusters, int(math.sqrt(n / 20)))
     # k_max: at most max_clusters, at least 5 docs per cluster, at least k_min+2
     k_max = min(max_clusters, max(k_min + 2, n // 5))
     return k_min, k_max
@@ -279,6 +279,7 @@ def _save_cluster_data(cluster_names: dict[int, tuple[str, str, str, str, str]],
 async def run_recluster(
     task_id: Optional[int] = None,
     max_clusters: int = 40,
+    min_clusters: int = 2,
     provider_id: Optional[int] = None,
 ) -> dict:
     """
@@ -368,8 +369,8 @@ async def run_recluster(
         if n < 5:
             k = n
         else:
-            k_min, k_max = _k_range(n, max_clusters)
-            _tlog(f"Selecting k in [{k_min}, {k_max}] via silhouette score (cap={max_clusters})…")
+            k_min, k_max = _k_range(n, max_clusters, min_clusters)
+            _tlog(f"Selecting k in [{k_min}, {k_max}] via silhouette score (min={min_clusters}, cap={max_clusters})…")
             k = _best_k(embeddings, k_min, k_max)
 
         _tlog(f"Clustering {n} documents into k={k} groups…")
