@@ -11,6 +11,7 @@ export interface Document {
   ocr_text?: string;
   vision_description?: string;
   summary?: string;
+  title?: string;
   document_type?: string;
   classification_confidence?: number;
   classification_source?: "auto" | "manual";

@@ -12,6 +12,7 @@ import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
 import { useImageEdit } from "../../hooks/useImageEdit";
 import { resolveImgSrc } from "./imgSrc";
+import { isWordDoc } from "./typeIcons";
 import { MetadataTab } from "./MetadataTab";
 import { TextTab } from "./TextTab";
 import { DevTab } from "./DevTab";
@@ -229,6 +230,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   const directory = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : null;
 
   const isPdf = doc.mime_type === "application/pdf";
+  const isWord = isWordDoc(doc.mime_type);
   const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
   const vParam = doc.updated_at ? new Date(doc.updated_at).getTime() : "";
   const docUrl = `/api/documents/${doc.id}/download?inline=1${vParam ? `&v=${vParam}` : ""}`;
@@ -277,7 +279,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   const lab = t.lab;
 
   return (
-    <Modal open={!!doc} onClose={onClose} size="xl" title={doc.filename}>
+    <Modal open={!!doc} onClose={onClose} size="xl" title={doc.title || doc.filename}>
       <div className="viewer-layout">
         {/* Left — document */}
         <div className="viewer-preview">
@@ -400,6 +402,10 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
 
           {isPdf ? (
             <iframe src={docUrl} title={doc.filename} className="viewer-pdf" />
+          ) : isWord && doc.ocr_text ? (
+            <div className="viewer-text-preview">
+              <pre>{doc.ocr_text}</pre>
+            </div>
           ) : rawImgSrc ? (
             <div
               className="viewer-canvas"
@@ -451,7 +457,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
             </div>
           ) : (
             <div className="viewer-thumb-placeholder">
-              <FileText size={64} />
+              <FileText size={64} className={isWord ? "icon-word" : ""} />
             </div>
           )}
 

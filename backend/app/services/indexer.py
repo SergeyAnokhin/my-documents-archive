@@ -51,13 +51,20 @@ async def index_document(document_id: int, force_full: bool = False) -> None:
             mode_row = db.query(AppSettings).filter(AppSettings.key == "auto_process_mode").first()
             mode = mode_row.value if mode_row else "full"
 
-        _run_thumbnail(doc, db)
+        is_docx = _is_docx(doc)
+
+        if not is_docx:
+            _run_thumbnail(doc, db)
 
         if mode != "manual":
-            await _run_ocr(doc, db)
+            if is_docx:
+                await _run_docx_extract(doc, db)
+            else:
+                await _run_ocr(doc, db)
 
         if mode == "full":
-            await _run_vision(doc, db)
+            if not is_docx:
+                await _run_vision(doc, db)
             await _run_analysis(doc, db)
 
         await _run_embedding(doc, db)
@@ -99,6 +106,37 @@ async def _run_ocr(doc: Document, db: Session) -> None:
         doc.ocr_error = str(e)
         _log(db, doc, "ocr", "error", str(e), level="error")
         log.warning("OCR failed for doc %s: %s", doc.id, e)
+
+    db.commit()
+
+
+# ── Step 1b — Native text extraction (.docx) ─────────────────────────────────
+
+def _is_docx(doc: Document) -> bool:
+    return Path(doc.filepath).suffix.lower() == ".docx"
+
+
+async def _run_docx_extract(doc: Document, db: Session) -> None:
+    """Docx equivalent of _run_ocr — no OCR engine involved, text is native."""
+    if doc.ocr_status == "done":
+        return
+
+    doc.ocr_status = "pending"
+    db.commit()
+
+    try:
+        from .docx_extract import extract_docx_text
+        text = await asyncio.to_thread(extract_docx_text, doc.filepath)
+        doc.ocr_text = text
+        doc.ocr_model = "native"
+        doc.ocr_status = "done"
+        doc.vision_status = "skipped"  # no page image exists for docx — Vision never applies
+        _log(db, doc, "ocr", "done", "native docx text extraction", level="trace")
+    except Exception as e:
+        doc.ocr_status = "error"
+        doc.ocr_error = str(e)
+        _log(db, doc, "ocr", "error", str(e), level="error")
+        log.warning("Docx extraction failed for doc %s: %s", doc.id, e)
 
     db.commit()
 
@@ -253,9 +291,12 @@ async def index_pending_batch(limit: int = 50) -> dict:
         processed = errors = 0
         for doc in pending:
             try:
-                await _run_ocr(doc, db)
-                _run_thumbnail(doc, db)
-                await _run_vision(doc, db)
+                if _is_docx(doc):
+                    await _run_docx_extract(doc, db)
+                else:
+                    await _run_ocr(doc, db)
+                    _run_thumbnail(doc, db)
+                    await _run_vision(doc, db)
                 await _run_analysis(doc, db)
                 await _run_embedding(doc, db)
                 doc.indexed_at = datetime.utcnow()
@@ -428,6 +469,7 @@ def _apply_analysis_result(doc: Document, result: AnalysisResult, db: Session) -
     new_type = result.document_type
 
     doc.summary                   = result.summary
+    doc.title                     = result.title or None
     doc.document_type             = new_type
     doc.classification_confidence = result.document_type_confidence
     doc.classification_source     = "auto"

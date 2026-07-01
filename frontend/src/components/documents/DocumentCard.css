@@ -254,3 +254,8 @@
   justify-content: center;
   color: var(--color-ink-faint);
 }
+
+/* MS Word brand blue — signals a .docx file where no visual thumbnail exists */
+.icon-word {
+  color: #2b579a;
+}

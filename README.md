@@ -1,6 +1,6 @@
 # DocIntel — Smart Document Archive
 
-Personal web app for smart search across scanned family documents (Russian, French, English).
+Personal web app for smart search across scanned family documents and Word (.docx) files (Russian, French, English).
 
 ## Prerequisites
 

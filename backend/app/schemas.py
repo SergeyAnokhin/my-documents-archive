@@ -22,6 +22,7 @@ class DocumentOut(BaseModel):
     ocr_text: Optional[str] = None
     vision_description: Optional[str] = None
     summary: Optional[str] = None
+    title: Optional[str] = None
     document_type: Optional[str] = None
     classification_confidence: Optional[float] = None
     classification_source: Optional[str] = None

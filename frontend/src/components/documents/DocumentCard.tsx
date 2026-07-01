@@ -1,7 +1,7 @@
 import { FileText, Calendar, Tag, Sparkles, ScanText, Cpu, Waypoints } from "lucide-react";
 import type { Document } from "../../types";
 import { useT } from "../../i18n";
-import { iconForType, labelForType } from "./typeIcons";
+import { iconForType, labelForType, isWordDoc } from "./typeIcons";
 import { formatTypeName } from "./TypePicker";
 import "./DocumentCard.css";
 
@@ -10,11 +10,12 @@ import "./DocumentCard.css";
 // full AI analysis. Drives the ProcessingBadge indicator.
 type ProcLevel = "pending" | "error" | "tesseract" | "easyocr" | "local" | "ai-ocr" | "analyzed";
 
-/** An ocr_model that names neither local engine was produced by an AI model. */
+/** An ocr_model that names neither local engine nor native (.docx) extraction
+ *  was produced by an AI model. */
 function isAiOcr(model?: string): boolean {
   if (!model) return false;
   const m = model.toLowerCase();
-  return !m.includes("tesseract") && !m.includes("easyocr");
+  return !m.includes("tesseract") && !m.includes("easyocr") && m !== "native";
 }
 
 function processingLevel(doc: Document): ProcLevel {
@@ -116,7 +117,7 @@ function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number
   }
   return (
     <div className="doc-thumb-placeholder">
-      <FileText size={28} />
+      <FileText size={28} className={isWordDoc(doc.mime_type) ? "icon-word" : ""} />
     </div>
   );
 }
@@ -134,7 +135,7 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
         </div>
         <div className="doc-list-body">
           <div className="doc-list-top">
-            <span className="doc-filename truncate">{doc.filename}</span>
+            <span className="doc-filename truncate">{doc.title || doc.filename}</span>
             <div className="doc-list-meta">
               {date && <span className="doc-date text-sm text-muted"><Calendar size={12} /> {date}</span>}
               {showScore && <ScoreChip score={score} />}
@@ -194,7 +195,7 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
         </div>
       </div>
       <div className="doc-grid-footer">
-        <span className="doc-filename truncate text-sm">{doc.filename}</span>
+        <span className="doc-filename truncate text-sm">{doc.title || doc.filename}</span>
         {gridSize !== "sm" && date && (
           <span className="doc-date text-xs text-muted">{date}</span>
         )}

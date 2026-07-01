@@ -2,12 +2,28 @@
 
 `_apply_analysis_result` is the single helper shared by Step 3 (vision-as-analysis)
 and Step 4 (text analysis); both call it so the two paths populate identical columns.
-"""
-from datetime import datetime
 
+`_is_docx`/`_run_docx_extract` are the native-text branch used for .docx files:
+no OCR/Vision/Thumbnail step ever runs for them (see docs/code-map.md — Key Data
+Flow). `_run_docx_extract` commits, so it's driven against a real in-memory
+SQLite DB rather than db=None (matches the harness used in test_batch_ocr.py).
+"""
+import asyncio
+from datetime import datetime
+from unittest.mock import patch
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base
 from app.models import Document
 from app.services.ai_analysis import AnalysisResult
-from app.services.indexer import _apply_analysis_result, _is_unclassified
+from app.services.indexer import (
+    _apply_analysis_result,
+    _is_docx,
+    _is_unclassified,
+    _run_docx_extract,
+)
 
 
 def test_apply_analysis_result_writes_all_metadata_columns():
@@ -16,6 +32,7 @@ def test_apply_analysis_result_writes_all_metadata_columns():
     doc = Document(filename="x.pdf", filepath="/x.pdf", source="sync")
     result = AnalysisResult(
         summary="a summary",
+        title="A Short Title",
         document_type="invoice",
         document_type_confidence=0.9,
         tags=["a", "b"],
@@ -36,6 +53,15 @@ def test_apply_analysis_result_writes_all_metadata_columns():
     assert doc.organization == "ACME"
     assert doc.amount == 150.5
     assert doc.document_date == datetime(2024, 3, 15)
+    assert doc.title == "A Short Title"
+
+
+def test_apply_analysis_result_empty_title_stored_as_none():
+    # Rule: an empty/absent title normalises to None on the Document column,
+    # so the frontend's `doc.title || doc.filename` fallback kicks in cleanly.
+    doc = Document(filename="x.pdf", filepath="/x.pdf", source="sync")
+    _apply_analysis_result(doc, AnalysisResult(document_type="letter"), db=None)
+    assert doc.title is None
 
 
 def test_apply_analysis_result_ignores_invalid_date():
@@ -56,3 +82,55 @@ def test_is_unclassified_predicate():
     assert _is_unclassified(Document(filename="a", filepath="/a", document_type="unclassified"))
     assert _is_unclassified(Document(filename="a", filepath="/a", document_type="other"))
     assert not _is_unclassified(Document(filename="a", filepath="/a", document_type="invoice"))
+
+
+# ── .docx native-text branch ─────────────────────────────────────────────────
+
+def test_is_docx_checks_extension():
+    # Rule: only a .docx extension (case-insensitive) routes to the native-
+    # extraction branch — everything else (including no extension) does not.
+    assert _is_docx(Document(filename="a.docx", filepath="/lib/a.docx"))
+    assert _is_docx(Document(filename="a.DOCX", filepath="/lib/a.DOCX"))
+    assert not _is_docx(Document(filename="a.pdf", filepath="/lib/a.pdf"))
+    assert not _is_docx(Document(filename="a", filepath="/lib/a"))
+
+
+def _make_session(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    return sessionmaker(bind=engine)()
+
+
+def test_run_docx_extract_sets_native_marker_and_done_status(tmp_path):
+    # Rule: a successful native extraction sets ocr_status=done, ocr_model=
+    # "native" (so the frontend never mistakes it for AI-OCR — see
+    # DocumentCard.tsx isAiOcr()), and vision_status=skipped (no page image
+    # exists for docx, so Vision is architecturally unreachable).
+    db = _make_session(tmp_path)
+    doc = Document(filename="a.docx", filepath=str(tmp_path / "a.docx"), source="sync")
+    db.add(doc)
+    db.commit()
+
+    with patch("app.services.docx_extract.extract_docx_text", return_value="extracted text"):
+        asyncio.run(_run_docx_extract(doc, db))
+
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.ocr_text == "extracted text"
+    assert doc.vision_status == "skipped"
+
+
+def test_run_docx_extract_marks_error_on_failure(tmp_path):
+    # Rule: an extraction failure (corrupt/encrypted file) sets ocr_status=
+    # error and records the exception message, mirroring services/ocr.py's
+    # extract_text() failure contract — it never raises out of the pipeline.
+    db = _make_session(tmp_path)
+    doc = Document(filename="a.docx", filepath=str(tmp_path / "a.docx"), source="sync")
+    db.add(doc)
+    db.commit()
+
+    with patch("app.services.docx_extract.extract_docx_text", side_effect=ValueError("corrupt file")):
+        asyncio.run(_run_docx_extract(doc, db))
+
+    assert doc.ocr_status == "error"
+    assert doc.ocr_error == "corrupt file"

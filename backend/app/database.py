@@ -53,6 +53,7 @@ def _apply_migrations(eng) -> None:
             "ALTER TABLE documents ADD COLUMN classification_source TEXT",
             "ALTER TABLE documents ADD COLUMN manually_classified INTEGER DEFAULT 0",
             "ALTER TABLE documents ADD COLUMN ocr_model TEXT",
+            "ALTER TABLE documents ADD COLUMN title TEXT",
             "ALTER TABLE indexing_log ADD COLUMN level TEXT DEFAULT 'info'",
         ]:
             try:

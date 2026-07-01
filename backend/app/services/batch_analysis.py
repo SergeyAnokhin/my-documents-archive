@@ -362,6 +362,8 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     continue
 
                 doc.summary = parsed.get("summary", "")
+                title = parsed.get("title", "")
+                doc.title = " ".join(title.split()[:10])[:150] if title else None
                 doc.document_type = parsed.get("document_type") or "unclassified"
                 doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
                 doc.classification_source = "auto"

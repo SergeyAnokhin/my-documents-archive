@@ -12,6 +12,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+// File-format (not content-type) helper — used to distinguish a Word document
+// from the generic FileText fallback when no thumbnail/visual preview exists.
+export const WORD_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export function isWordDoc(mime?: string): boolean {
+  return mime === WORD_MIME;
+}
+
 // Maps each document_type slug from the AI taxonomy (see backend
 // services/ai_analysis.py) to a lucide icon that visually evokes the class.
 const TYPE_ICONS: Record<string, LucideIcon> = {

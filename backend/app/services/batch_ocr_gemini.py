@@ -375,6 +375,8 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     # Text-only request — OCR text already existed; only analysis fields expected.
                     if parsed and isinstance(parsed, dict):
                         doc.summary = parsed.get("summary", "")
+                        title = parsed.get("title", "")
+                        doc.title = " ".join(title.split()[:10])[:150] if title else None
                         doc.document_type = parsed.get("document_type", "unclassified")
                         doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
                         doc.tags = parsed.get("tags") or []
@@ -416,6 +418,8 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     doc.ocr_status = "done"
                     doc.ocr_model = f"{model} (batch)"
                     doc.summary = parsed.get("summary", "")
+                    title = parsed.get("title", "")
+                    doc.title = " ".join(title.split()[:10])[:150] if title else None
                     doc.document_type = parsed.get("document_type", "unclassified")
                     doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
                     doc.tags = parsed.get("tags") or []

@@ -22,6 +22,7 @@ class Document(Base):
     ocr_text = Column(Text, nullable=True)
     vision_description = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
+    title = Column(String(150), nullable=True)  # short AI-generated display title, a few words
 
     # Classification
     document_type = Column(String(128), nullable=True)

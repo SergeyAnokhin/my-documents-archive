@@ -52,6 +52,7 @@ Analyze this scanned document image. Return a single JSON object with these fiel
 
 "text": verbatim transcription of ALL visible text, preserving line breaks and reading order
 "summary": 2-3 sentence summary in the document's original language
+"title": a short, human-readable document title, a few words (max ~10 words), in the document's original language
 "document_type": the single most specific type from this list:
 {DOCUMENT_TYPES_BLOCK}
 "document_type_confidence": 0.0-1.0 confidence in the type assignment
@@ -72,6 +73,7 @@ Return ONLY the raw JSON object. No markdown fences, no explanation."""
 class VisionFullResponse(BaseModel):
     text: str
     summary: str
+    title: str
     document_type: str
     document_type_confidence: float
     tags: list[str]

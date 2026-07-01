@@ -73,6 +73,24 @@ def test_parse_result_applies_documented_defaults():
     assert r.tags == []
 
 
+def test_parse_result_truncates_title_to_ten_words():
+    # Doc:  docs/code-map.md → services/ai_analysis.py; ANALYSIS_SYSTEM prompt
+    #       asks for "a few words (max ~10 words)" — this is the safety net for
+    #       a non-compliant LLM response.
+    # Rule: title is truncated to at most 10 words (and 150 chars) regardless
+    #       of what the model actually returns.
+    words = " ".join(f"word{i}" for i in range(20))
+    r = _parse_result(f'{{"title": "{words}"}}')
+    assert r.title == " ".join(f"word{i}" for i in range(10))
+
+
+def test_parse_result_absent_title_defaults_to_empty_string():
+    # Doc:  none — defensive default, mirrors short_title's existing behavior.
+    # Rule: a missing "title" key never raises; it normalises to "".
+    r = _parse_result("{}")
+    assert r.title == ""
+
+
 def test_parse_result_raises_on_non_json():
     # Doc:  none — general test. `analyze_document()` relies on a parse failure
     #       raising so it can fail over to the next provider (see its try/except).

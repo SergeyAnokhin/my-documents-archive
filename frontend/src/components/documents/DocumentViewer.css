@@ -89,6 +89,26 @@
   justify-content: center;
 }
 
+/* MS Word brand blue — signals a .docx file where no visual thumbnail exists */
+.icon-word {
+  color: #2b579a;
+}
+
+.viewer-text-preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-6);
+}
+.viewer-text-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-ink);
+}
+
 /* ── Nav arrows ──────────────────────────────────────────────────────────── */
 
 .viewer-nav {

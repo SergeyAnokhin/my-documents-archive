@@ -50,6 +50,7 @@ def _record(provider, usage_type: str, tokens_in: int, tokens_out: int,
 ANALYSIS_SYSTEM = f"""\
 You are a document analysis assistant. Analyze the document text and return a JSON object with:
 - "summary": 2-3 sentence summary in the document's original language
+- "title": a short, human-readable document title, a few words (max ~10 words), in the document's original language (e.g. "French Passport Renewal — Ivan Petrov, 2024")
 - "document_type": the single most specific type from this list:
 {DOCUMENT_TYPES_BLOCK}
   Use "unclassified" if the document does not clearly fit any listed category.
@@ -90,6 +91,7 @@ Rules:
 @dataclass
 class AnalysisResult:
     summary: str = ""
+    title: str = ""
     document_type: str = "unclassified"
     document_type_confidence: float = 0.0
     tags: list = field(default_factory=list)
@@ -262,6 +264,7 @@ def coerce_analysis_fields(data: dict) -> AnalysisResult:
     confidence = data.get("document_type_confidence")
     return AnalysisResult(
         summary=str(data.get("summary") or ""),
+        title=" ".join(str(data.get("title") or "").split()[:10])[:150],
         document_type=str(data.get("document_type") or "unclassified"),
         document_type_confidence=float(confidence) if confidence is not None else 0.0,
         tags=[str(t) for t in (data.get("tags") or [])],
