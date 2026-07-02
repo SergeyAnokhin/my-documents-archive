@@ -12,6 +12,7 @@ const shortcuts = [
   { key: "← →",    action_en: "Prev / next document",  action_ru: "Предыдущий / следующий" },
   { key: "1",       action_en: "List view",             action_ru: "Режим списка" },
   { key: "2",       action_en: "Grid view",             action_ru: "Режим сетки" },
+  { key: "3",       action_en: "Folder view",           action_ru: "Режим папок" },
   { key: "+ −",    action_en: "Larger / smaller grid", action_ru: "Размер сетки" },
   { key: "?",       action_en: "Show shortcuts",        action_ru: "Показать сокращения" },
 ];

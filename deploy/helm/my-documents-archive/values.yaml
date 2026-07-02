@@ -22,7 +22,8 @@ backend:
   backup:
     enabled: true
     intervalSeconds: 300    # max once per 5 min
-    keep: 2                 # docintell.db.backup.1 (newest) + .2 (previous)
+    keep: 2                 # initial/fallback only — overridden at runtime by the
+                             # admin Backup tab (app_settings.backup_keep)
     prefix: docintell.db.backup
   # Source document library, mounted from the NAS over SMB.
   # Mounted AT libraryPath; the state PVC overlays libraryPath/.docintell.

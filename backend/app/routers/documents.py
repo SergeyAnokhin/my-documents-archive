@@ -7,8 +7,9 @@ from pathlib import Path
 
 from ..database import get_db
 from ..models import Document
-from ..schemas import DocumentOut, DocumentList, PatchTypeRequest, PatchDateRequest
+from ..schemas import DocumentOut, DocumentList, FolderTreeNode, PatchTypeRequest, PatchDateRequest
 from ..services.storage import infer_document_date
+from ..services.folder_tree import build_folder_tree
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -47,6 +48,12 @@ def list_documents(
         .all()
     )
     return DocumentList(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/tree", response_model=FolderTreeNode)
+def get_folder_tree(db: Session = Depends(get_db)):
+    """Full library folder structure for the Explorer-style folder-browse view."""
+    return build_folder_tree(db)
 
 
 @router.get("/tags", response_model=list[str])

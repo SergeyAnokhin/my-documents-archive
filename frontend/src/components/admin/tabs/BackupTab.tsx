@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { RefreshCw, RotateCcw, HardDriveDownload } from "lucide-react";
 import { Button } from "../../ui/Button";
 import { useT } from "../../../i18n";
-import { listBackups, createBackup, restoreBackup } from "../../../api/documents";
+import { listBackups, createBackup, restoreBackup, getBackupKeep, updateBackupKeep } from "../../../api/documents";
 import type { BackupInfo } from "../../../types";
 
 function fmtSize(bytes: number): string {
@@ -19,12 +19,20 @@ export function BackupTab() {
   const [creating, setCreating] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  const [keep, setKeep] = useState("2");
+  const [keepRange, setKeepRange] = useState({ min: 1, max: 30 });
+  const [savingKeep, setSavingKeep] = useState(false);
 
   const load = () => {
     setLoading(true);
     listBackups().then(setBackups).catch(() => {}).finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    getBackupKeep()
+      .then(res => { setKeep(String(res.keep)); setKeepRange({ min: res.min, max: res.max }); })
+      .catch(() => {});
+  }, []);
 
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 5000); };
 
@@ -38,6 +46,20 @@ export function BackupTab() {
       flash(e instanceof Error ? e.message : t.error);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSaveKeep = async () => {
+    const val = parseInt(keep, 10);
+    if (!val || val < keepRange.min || val > keepRange.max) return;
+    setSavingKeep(true);
+    try {
+      await updateBackupKeep(val);
+      flash(b.keepSaved.replace("{{n}}", String(val)));
+    } catch (e: unknown) {
+      flash(e instanceof Error ? e.message : t.error);
+    } finally {
+      setSavingKeep(false);
     }
   };
 
@@ -58,6 +80,24 @@ export function BackupTab() {
     <div className="admin-section">
       <h3 className="admin-section-title">{b.title}</h3>
       <p className="text-xs text-muted" style={{ marginBottom: 12 }}>{b.hint}</p>
+
+      <div className="provider-item" style={{ marginBottom: 12 }}>
+        <div style={{ flex: 1 }}>
+          <span className="provider-name">{b.keepLabel}</span>
+          <p className="text-xs text-muted" style={{ marginTop: 2 }}>{b.keepHint}</p>
+        </div>
+        <input
+          type="number"
+          min={keepRange.min}
+          max={keepRange.max}
+          value={keep}
+          onChange={e => setKeep(e.target.value)}
+          style={{ width: 60 }}
+        />
+        <Button variant="secondary" size="sm" loading={savingKeep} onClick={handleSaveKeep}>
+          {b.keepSave}
+        </Button>
+      </div>
 
       <div className="admin-actions" style={{ marginBottom: 12 }}>
         <Button variant="secondary" icon={<RefreshCw size={15} />} loading={loading} onClick={load}>

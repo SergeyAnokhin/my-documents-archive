@@ -221,7 +221,17 @@ export interface LabApplyResult {
   file_size: number;
 }
 
+export interface FolderTreeNode {
+  name: string;
+  path: string;
+  folders: FolderTreeNode[];
+  documents: Document[];
+  doc_count: number;
+  total_count: number;
+}
+
 export type ViewMode = "list" | "grid";
+export type LayoutMode = "flat" | "folders";
 export type GridSize = "sm" | "md" | "lg" | "xl";
 export type SearchMode = "search" | "ask";
 
@@ -321,6 +331,12 @@ export interface BackupInfo {
   name: string;
   size: number;
   modified: string;
+}
+
+export interface BackupKeepInfo {
+  keep: number;
+  min: number;
+  max: number;
 }
 
 // ── AI provider config export/import ────────────────────────────────────────────

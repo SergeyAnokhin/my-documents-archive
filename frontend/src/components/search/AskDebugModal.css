@@ -150,8 +150,6 @@
   font-family: var(--font-mono, monospace);
   word-break: break-all;
 }
-.dbg-row-drop { opacity: 0.55; }
-
 .dbg-badge {
   display: inline-block;
   font-size: 0.625rem;
@@ -162,7 +160,6 @@
 }
 .dbg-badge--sent { background: color-mix(in srgb, #22c55e 22%, var(--color-surface)); color: var(--color-ink); }
 .dbg-badge--retr { background: color-mix(in srgb, #6366f1 18%, var(--color-surface)); color: var(--color-ink); }
-.dbg-badge--drop { background: var(--color-tag); color: var(--color-ink-muted); }
 .dbg-badge--ft   { background: color-mix(in srgb, #f59e0b 20%, var(--color-surface)); color: var(--color-ink); }
 
 .dbg-details {

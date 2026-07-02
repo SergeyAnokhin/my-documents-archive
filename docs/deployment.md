@@ -68,10 +68,15 @@ Templates: [backend-deployment.yaml](../deploy/helm/my-documents-archive/templat
 
 A **sidecar** ([backup.py](../backend/backup.py)) in the backend pod copies the
 SQLite DB from the local PVC to the NAS document root every `intervalSeconds`
-(default 300), only when the DB changed, rotating the `keep` newest copies
-(`docintell.db.backup.1` = newest, `.2` = previous). Configured via
-`backend.backup.*` in `values.yaml`; `BACKUP_DIR`/`BACKUP_PREFIX` are passed to
-**both** the sidecar and the backend container so list/restore stay in sync.
+(default 300), only when the DB changed, rotating the newest N copies
+(`docintell.db.backup.1` = newest, `.2` = previous, ...). `intervalSeconds` is
+still deploy-time only, via `backend.backup.*` in `values.yaml`. N (how many
+to keep) is now **runtime-configurable** from the admin Backup tab — it reads
+and writes the `backup_keep` row in `app_settings`, which the sidecar re-reads
+on every run; `backend.backup.keep` in `values.yaml` (env `BACKUP_KEEP`) is
+only the initial/fallback value used until that row is set. `BACKUP_DIR`/
+`BACKUP_PREFIX` are passed to **both** the sidecar and the backend container
+so list/restore stay in sync.
 
 **Restore** (advanced-mode UI: Admin → **Backup** tab): lists snapshots and
 restores one. Backend [services/db_backup.py](../backend/app/services/db_backup.py)

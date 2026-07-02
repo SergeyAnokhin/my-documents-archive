@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { SearchBar } from "../components/search/SearchBar";
 import { DocumentViewer } from "../components/documents/DocumentViewer";
 import { UploadZone } from "../components/documents/UploadZone";
@@ -6,11 +6,12 @@ import { KeyboardHelp } from "../components/ui/KeyboardHelp";
 import { useT } from "../i18n";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { useAdvancedMode } from "../contexts/AdvancedModeContext";
-import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts } from "../api/documents";
-import type { SearchMode, ViewMode, GridSize, SearchResult, AIAnswerResponse } from "../types";
+import { searchDocuments, syncLibrary, askDocuments, fetchEmbeddedIds, fetchQualityCounts, getFolderTree, getDocument } from "../api/documents";
+import type { SearchMode, ViewMode, LayoutMode, GridSize, SearchResult, AIAnswerResponse, Document, FolderTreeNode } from "../types";
 import { HomePageToolbar } from "./home/HomePageToolbar";
 import { HomePageAIMode } from "./home/HomePageAIMode";
 import { HomePageResults } from "./home/HomePageResults";
+import { HomePageFolderResults } from "./home/HomePageFolderResults";
 import "./HomePage.css";
 
 const GRID_SIZES: GridSize[] = ["sm", "md", "lg", "xl"];
@@ -47,6 +48,13 @@ export function HomePage() {
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [gridSize, setGridSize] = useState<GridSize>("md");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("flat");
+
+  // Folder browser (Explorer-style) state
+  const [folderTree, setFolderTree] = useState<FolderTreeNode | null>(null);
+  const [folderTreeLoading, setFolderTreeLoading] = useState(false);
+  const [folderViewerIdx, setFolderViewerIdx] = useState<number | null>(null);
+  const [folderViewerDoc, setFolderViewerDoc] = useState<Document | null>(null);
 
   // Viewer (regular search results)
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
@@ -137,6 +145,47 @@ export function HomePage() {
     return () => window.removeEventListener("docintell:library-changed", handler);
   }, []);
 
+  // ── Folder browser (Explorer-style) ─────────────────────────────────────────
+
+  const loadFolderTree = useCallback(() => {
+    setFolderTreeLoading(true);
+    getFolderTree().then(setFolderTree).catch(() => {}).finally(() => setFolderTreeLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (layoutMode === "folders" && !folderTree) loadFolderTree();
+  }, [layoutMode, folderTree, loadFolderTree]);
+
+  useEffect(() => {
+    const handler = () => { if (layoutMode === "folders") loadFolderTree(); };
+    window.addEventListener("docintell:library-changed", handler);
+    return () => window.removeEventListener("docintell:library-changed", handler);
+  }, [layoutMode, loadFolderTree]);
+
+  // Flattened, depth-first list of every document in the tree — used for
+  // prev/next navigation in the viewer (mirrors FolderTreeView's render order).
+  const flatTreeDocs = useMemo(() => {
+    const out: Document[] = [];
+    const walk = (node: FolderTreeNode) => {
+      node.folders.forEach(walk);
+      out.push(...node.documents);
+    };
+    if (folderTree) walk(folderTree);
+    return out;
+  }, [folderTree]);
+
+  useEffect(() => {
+    if (folderViewerIdx === null) { setFolderViewerDoc(null); return; }
+    const doc = flatTreeDocs[folderViewerIdx];
+    if (!doc) return;
+    getDocument(doc.id).then(setFolderViewerDoc).catch(() => setFolderViewerDoc(doc));
+  }, [folderViewerIdx, flatTreeDocs]);
+
+  const openFolderDoc = (doc: Document) => {
+    const idx = flatTreeDocs.findIndex((d) => d.id === doc.id);
+    setFolderViewerIdx(idx >= 0 ? idx : null);
+  };
+
   // ── AI ask ──────────────────────────────────────────────────────────────────
 
   const doAsk = useCallback(async () => {
@@ -209,6 +258,8 @@ export function HomePage() {
   const handleTagSearch = (value: string) => {
     setViewerIdx(null);
     setAiViewerIdx(null);
+    setFolderViewerIdx(null);
+    setLayoutMode("flat");
     if (mode === "ask") setMode("search");
     setQuery(value);
   };
@@ -216,6 +267,8 @@ export function HomePage() {
   const handleDirectoryFilter = (directory: string) => {
     setViewerIdx(null);
     setAiViewerIdx(null);
+    setFolderViewerIdx(null);
+    setLayoutMode("flat");
     if (mode === "ask") setMode("search");
     setFilterDirectory(directory);
   };
@@ -223,6 +276,8 @@ export function HomePage() {
   const handleCategoryFilter = (category: string) => {
     setViewerIdx(null);
     setAiViewerIdx(null);
+    setFolderViewerIdx(null);
+    setLayoutMode("flat");
     if (mode === "ask") setMode("search");
     setFilterCategory(category);
   };
@@ -254,22 +309,26 @@ export function HomePage() {
 
   // Keyboard shortcuts
   useKeyboard({
-    "/":          () => { document.querySelector<HTMLInputElement>(".search-input")?.focus(); },
+    "/":          () => { document.querySelector<HTMLTextAreaElement>(".search-input")?.focus(); },
     "Escape":     () => {
       if (aiViewerIdx !== null) { setAiViewerIdx(null); return; }
       if (viewerIdx !== null)   { setViewerIdx(null);   return; }
+      if (folderViewerIdx !== null) { setFolderViewerIdx(null); return; }
       setQuery("");
     },
     "ArrowLeft":  () => {
       if (aiViewerIdx !== null && aiViewerIdx > 0) setAiViewerIdx(aiViewerIdx - 1);
       else if (viewerIdx !== null && viewerIdx > 0) setViewerIdx(viewerIdx - 1);
+      else if (folderViewerIdx !== null && folderViewerIdx > 0) setFolderViewerIdx(folderViewerIdx - 1);
     },
     "ArrowRight": () => {
       if (aiViewerIdx !== null && aiAnswer && aiViewerIdx < aiAnswer.sources.length - 1) setAiViewerIdx(aiViewerIdx + 1);
       else if (viewerIdx !== null && viewerIdx < results.length - 1) setViewerIdx(viewerIdx + 1);
+      else if (folderViewerIdx !== null && folderViewerIdx < flatTreeDocs.length - 1) setFolderViewerIdx(folderViewerIdx + 1);
     },
-    "1":          () => setViewMode("list"),
-    "2":          () => setViewMode("grid"),
+    "1":          () => { setLayoutMode("flat"); setViewMode("list"); },
+    "2":          () => { setLayoutMode("flat"); setViewMode("grid"); },
+    "3":          () => setLayoutMode("folders"),
     "+":          () => cycleGridSize(),
     "-":          () => { const idx = GRID_SIZES.indexOf(gridSize); setGridSize(GRID_SIZES[Math.max(0, idx - 1)]); },
     "?":          () => setShowHelp(true),
@@ -316,8 +375,10 @@ export function HomePage() {
             syncing={syncing}
             onSync={handleSync}
             onToggleUpload={() => setShowUpload((v) => !v)}
+            layoutMode={layoutMode}
             viewMode={viewMode}
-            onViewMode={setViewMode}
+            onViewMode={(m) => { setLayoutMode("flat"); setViewMode(m); }}
+            onFolderMode={() => setLayoutMode("folders")}
             gridSize={gridSize}
             onCycleGridSize={cycleGridSize}
           />
@@ -343,7 +404,7 @@ export function HomePage() {
         )}
 
         {/* ── Regular search content ── */}
-        {mode !== "ask" && (
+        {mode !== "ask" && layoutMode === "flat" && (
           <HomePageResults
             loading={loading}
             results={results}
@@ -355,6 +416,22 @@ export function HomePage() {
             thumbVersions={thumbVersions}
             onUpload={() => setShowUpload(true)}
             onOpen={(i) => setViewerIdx(i)}
+            onTagClick={handleTagSearch}
+            onCategoryClick={handleCategoryFilter}
+          />
+        )}
+
+        {/* ── Folder browser (Explorer-style) ── */}
+        {mode !== "ask" && layoutMode === "folders" && (
+          <HomePageFolderResults
+            loading={folderTreeLoading}
+            tree={folderTree}
+            viewMode={viewMode}
+            gridSize={gridSize}
+            devMode={devMode}
+            embeddedIds={embeddedIds}
+            thumbVersions={thumbVersions}
+            onOpen={openFolderDoc}
             onTagClick={handleTagSearch}
             onCategoryClick={handleCategoryFilter}
           />
@@ -384,6 +461,20 @@ export function HomePage() {
         hasPrev={aiViewerIdx !== null && aiViewerIdx > 0}
         hasNext={aiViewerIdx !== null && aiAnswer !== null && aiViewerIdx < aiAnswer.sources.length - 1}
         isEmbedded={aiViewerDoc ? embeddedIds.has(aiViewerDoc.id) : undefined}
+        onTagClick={handleTagSearch}
+        onCategoryClick={handleCategoryFilter}
+        onDirectoryClick={handleDirectoryFilter}
+      />
+
+      {/* Document viewer — folder browser */}
+      <DocumentViewer
+        doc={folderViewerDoc}
+        onClose={() => setFolderViewerIdx(null)}
+        onPrev={() => setFolderViewerIdx((i) => (i !== null ? i - 1 : null))}
+        onNext={() => setFolderViewerIdx((i) => (i !== null ? i + 1 : null))}
+        hasPrev={folderViewerIdx !== null && folderViewerIdx > 0}
+        hasNext={folderViewerIdx !== null && folderViewerIdx < flatTreeDocs.length - 1}
+        isEmbedded={folderViewerDoc ? embeddedIds.has(folderViewerDoc.id) : undefined}
         onTagClick={handleTagSearch}
         onCategoryClick={handleCategoryFilter}
         onDirectoryClick={handleDirectoryFilter}

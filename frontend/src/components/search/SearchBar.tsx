@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
+import { useRef, useState, useEffect, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Search, X, Mic, MicOff, History, Clock } from "lucide-react";
 import type { SearchMode } from "../../types";
 import { useT } from "../../i18n";
@@ -7,6 +7,9 @@ import { useSearchHistory } from "../../hooks/useSearchHistory";
 import "./SearchBar.css";
 
 const LANG_BCP47: Record<string, string> = { en: "en-US", ru: "ru-RU", fr: "fr-FR" };
+
+// Matches .search-input's max-height in SearchBar.css (~5 lines).
+const MAX_INPUT_HEIGHT = 140;
 
 const LANG_OPTIONS: DropdownOption[] = [
   { value: "ru", label: "Русский" },
@@ -46,7 +49,7 @@ export function SearchBar({
   depth, onDepthChange, devMode, onDevModeChange,
 }: Props) {
   const { t, lang } = useT();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null);
@@ -85,6 +88,17 @@ export function SearchBar({
 
   useEffect(() => () => { recogRef.current?.stop(); }, []);
 
+  // Auto-grow the textarea with content, up to a max height (CSS caps it at ~5 lines).
+  // The scrollbar is only shown once content actually exceeds that cap — otherwise a
+  // single short line shows a spurious scrollbar from sub-pixel height rounding.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+    el.style.overflowY = el.scrollHeight > MAX_INPUT_HEIGHT ? "auto" : "hidden";
+  }, [value]);
+
   // Close history dropdown on outside click
   useEffect(() => {
     if (!showHistory) return;
@@ -104,11 +118,22 @@ export function SearchBar({
       ? t.aiSearch.placeholder
       : t.searchPlaceholder;
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     if (value.trim()) hist.save(value.trim());
     setShowHistory(false);
     onSubmit();
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    submit();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
   };
 
   return (
@@ -117,13 +142,14 @@ export function SearchBar({
       <div className="search-input-outer" ref={historyRef}>
         <div className={`search-input-wrap${listening ? " search-input-wrap--listening" : ""}`}>
           <Search size={18} className="search-icon" aria-hidden="true" />
-          <input
+          <textarea
             ref={inputRef}
-            type="search"
+            rows={1}
             className={`search-input${hasSpeech ? " search-input--has-mic" : ""}`}
             placeholder={placeholder}
             value={value}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
             aria-label={placeholder}
             autoComplete="off"
           />

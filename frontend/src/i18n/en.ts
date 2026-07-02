@@ -66,6 +66,7 @@ export const en = {
   syncNoChanges: "No changes",
   viewList: "List",
   viewGrid: "Grid",
+  viewFolders: "Folders",
 
   // Document card
   noSummary: "Document not yet analyzed",
@@ -202,6 +203,10 @@ export const en = {
       empty: "No backups found yet.",
       confirm: "Restore the database from \"{{name}}\"? The current database will be replaced.",
       restored: "Database restored from {{name}}. Reload the page to see the changes.",
+      keepLabel: "Backups to keep",
+      keepHint: "How many of the newest snapshots to retain — older ones are deleted automatically. Applies to both the automatic backup (every 5 min) and manual creation.",
+      keepSave: "Save",
+      keepSaved: "Now keeping {{n}} backups.",
     },
     sources: {
       title: "Watched Folders",

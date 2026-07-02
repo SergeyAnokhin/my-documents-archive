@@ -63,3 +63,38 @@ def test_restore_rejects_path_traversal(tmp_path, monkeypatch):
         db_backup.restore_backup("../evil.db")        # escapes the backup dir
     with pytest.raises(ValueError):
         db_backup.restore_backup("not-a-backup.db")   # wrong prefix
+
+
+def test_create_backup_respects_appsettings_keep_over_env(tmp_path, monkeypatch):
+    # Doc:  docs/code-map.md → db_backup.py ("keep is an AppSettings row, overriding
+    #       BACKUP_KEEP"). Frontend Backup tab writes this row via PATCH /backups/keep.
+    # Rule: an AppSettings "backup_keep" row takes priority over the BACKUP_KEEP env var,
+    #       and old snapshots past the new (lower) keep count are pruned.
+    from app.database import Base, get_engine
+    from app.models import AppSettings
+
+    monkeypatch.setattr(settings, "library_path", str(tmp_path))
+    monkeypatch.setenv("BACKUP_DIR", str(tmp_path))
+    monkeypatch.setenv("BACKUP_KEEP", "5")  # should be overridden by the DB setting
+
+    db_file = tmp_path / ".docintell" / "docintell.db"
+    db_file.parent.mkdir(parents=True)
+    _make_sqlite(db_file, "live")
+    # Pre-existing snapshots at .3/.4 must be pruned once keep=2 applies.
+    for n in (1, 2, 3, 4):
+        _make_sqlite(tmp_path / f"docintell.db.backup.{n}", f"old{n}")
+
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    from sqlalchemy.orm import Session
+    db = Session(bind=engine)
+    try:
+        db.add(AppSettings(key="backup_keep", value="2"))
+        db.commit()
+
+        db_backup.create_backup(db)
+    finally:
+        db.close()
+
+    names = sorted(p.name for p in tmp_path.glob("docintell.db.backup.*"))
+    assert names == ["docintell.db.backup.1", "docintell.db.backup.2"]

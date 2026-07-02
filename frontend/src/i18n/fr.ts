@@ -66,6 +66,7 @@ export const fr: Translations = {
   syncNoChanges: "Aucun changement",
   viewList: "Liste",
   viewGrid: "Grille",
+  viewFolders: "Dossiers",
 
   noSummary: "Document pas encore analysé",
   noDate: "Date inconnue",
@@ -197,6 +198,10 @@ export const fr: Translations = {
       empty: "Aucune sauvegarde trouvée pour l'instant.",
       confirm: "Restaurer la base depuis « {{name}} » ? La base actuelle sera remplacée.",
       restored: "Base restaurée depuis {{name}}. Rechargez la page pour voir les changements.",
+      keepLabel: "Sauvegardes à conserver",
+      keepHint: "Nombre des instantanés les plus récents à conserver — les plus anciens sont supprimés automatiquement. S'applique à la sauvegarde automatique (toutes les 5 min) comme à la création manuelle.",
+      keepSave: "Enregistrer",
+      keepSaved: "{{n}} sauvegardes conservées désormais.",
     },
     sources: {
       title: "Dossiers surveillés",

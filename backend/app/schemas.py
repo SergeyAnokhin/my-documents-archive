@@ -5,6 +5,15 @@ from pathlib import Path
 from typing import Optional, List, Any
 
 
+def _compute_relative_path(filepath: str) -> Optional[str]:
+    try:
+        from .config import settings
+        lib = Path(settings.library_path).resolve()
+        return Path(filepath).relative_to(lib).as_posix()
+    except (ValueError, Exception):
+        return None
+
+
 class DocumentBase(BaseModel):
     filename: str
     filepath: str
@@ -60,12 +69,7 @@ class DocumentOut(BaseModel):
     @model_validator(mode="after")
     def compute_relative_path(self) -> "DocumentOut":
         if self.filepath and self.relative_path is None:
-            try:
-                from .config import settings
-                lib = Path(settings.library_path).resolve()
-                self.relative_path = Path(self.filepath).relative_to(lib).as_posix()
-            except (ValueError, Exception):
-                pass
+            self.relative_path = _compute_relative_path(self.filepath)
         return self
 
     model_config = {"from_attributes": True}
@@ -126,6 +130,64 @@ class WatchedFolderOut(BaseModel):
     last_synced_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Folder tree (Explorer-style browse view) ────────────────────────────────
+# A lighter document representation than DocumentOut: omits ocr_text /
+# vision_description (can be large) since the tree endpoint returns every
+# document in the library in one response. The viewer re-fetches the full
+# document (GET /documents/{id}) when a tree item is opened.
+class FolderTreeDoc(BaseModel):
+    id: int
+    filename: str
+    filepath: str
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    document_date: Optional[datetime] = None
+    added_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    summary: Optional[str] = None
+    title: Optional[str] = None
+    document_type: Optional[str] = None
+    manually_classified: bool = False
+    tags: Optional[List[str]] = []
+    language: Optional[str] = None
+    thumbnail_path: Optional[str] = None
+    ocr_status: str = "pending"
+    vision_status: str = "pending"
+    analysis_status: str = "pending"
+    ocr_model: Optional[str] = None
+    relative_path: Optional[str] = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def parse_tags(cls, v):
+        if isinstance(v, str):
+            try:
+                return _json.loads(v)
+            except Exception:
+                return []
+        return v or []
+
+    @model_validator(mode="after")
+    def compute_relative_path(self) -> "FolderTreeDoc":
+        if self.filepath and self.relative_path is None:
+            self.relative_path = _compute_relative_path(self.filepath)
+        return self
+
+    model_config = {"from_attributes": True}
+
+
+class FolderTreeNode(BaseModel):
+    name: str            # folder name (empty string for the library root)
+    path: str            # relative path from the library root, forward-slash separated
+    folders: List["FolderTreeNode"] = []
+    documents: List[FolderTreeDoc] = []
+    doc_count: int = 0     # documents directly inside this folder
+    total_count: int = 0   # documents in this folder + all descendants
+
+
+FolderTreeNode.model_rebuild()
 
 
 class WatchedFolderCreate(BaseModel):
@@ -474,3 +536,7 @@ class BackupInfo(BaseModel):
 
 class RestoreRequest(BaseModel):
     name: str
+
+
+class BackupKeepUpdate(BaseModel):
+    keep: int

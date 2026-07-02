@@ -7,6 +7,10 @@ writes them; here an advanced user can list them and restore one from the UI.
 Restore is done with the sqlite3 online backup API into a temp file, then an
 atomic ``os.replace`` over the live DB — and a ``docintell.db.pre-restore``
 safety snapshot is taken first, so a restore is reversible.
+
+How many snapshots to retain (``keep``) is an AppSettings row (``backup_keep``,
+set from the Backup tab), overriding the ``BACKUP_KEEP`` env var default. The
+sidecar reads the same AppSettings row directly (see `backend/backup.py`).
 """
 import os
 import shutil
@@ -14,10 +18,13 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 from ..config import settings
 from ..database import engine
 
 PREFIX = os.environ.get("BACKUP_PREFIX", "docintell.db.backup")
+KEEP_MIN, KEEP_MAX = 1, 30
 
 
 def _backup_dir() -> Path:
@@ -42,6 +49,29 @@ def list_backups() -> list[dict]:
     return out
 
 
+def get_keep_count(db: Session | None = None) -> int:
+    """Number of newest backups to retain. AppSettings ``backup_keep`` takes
+    priority over the ``BACKUP_KEEP`` env var; clamped to [KEEP_MIN, KEEP_MAX]."""
+    if db is not None:
+        from ..models import AppSettings
+        row = db.query(AppSettings).filter(AppSettings.key == "backup_keep").first()
+        if row and row.value:
+            try:
+                return max(KEEP_MIN, min(KEEP_MAX, int(row.value)))
+            except (ValueError, TypeError):
+                pass
+    return max(KEEP_MIN, min(KEEP_MAX, int(os.environ.get("BACKUP_KEEP", "2"))))
+
+
+def _prune_beyond(d: Path, keep: int) -> None:
+    """Delete any numbered snapshot past the current keep count (e.g. left over
+    after the admin lowers the setting)."""
+    for p in d.glob(f"{PREFIX}.*"):
+        suffix = p.name[len(PREFIX) + 1:]
+        if suffix.isdigit() and int(suffix) > keep:
+            p.unlink()
+
+
 def _sqlite_copy(src: Path, dst: Path) -> None:
     """Consistent page-level copy of a SQLite DB (works on a live source)."""
     s = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
@@ -55,14 +85,14 @@ def _sqlite_copy(src: Path, dst: Path) -> None:
         s.close()
 
 
-def create_backup() -> dict:
+def create_backup(db: Session | None = None) -> dict:
     d = _backup_dir()
     d.mkdir(parents=True, exist_ok=True)
     db_path = Path(settings.db_path)
     if not db_path.exists():
         raise FileNotFoundError("Database file not found")
 
-    keep = max(1, int(os.environ.get("BACKUP_KEEP", "2")))
+    keep = get_keep_count(db)
 
     # Write to a local tmp (state PVC) first — SQLite file locking fails on SMB mounts.
     # After the consistent copy is done, move it to the NAS destination as a plain file.
@@ -79,6 +109,7 @@ def create_backup() -> dict:
             if cur.exists():
                 cur.rename(d / f"{PREFIX}.{i + 1}")
         shutil.copy2(local_tmp, d / f"{PREFIX}.1")
+        _prune_beyond(d, keep)
     finally:
         if local_tmp.exists():
             local_tmp.unlink()

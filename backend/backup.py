@@ -2,8 +2,8 @@
 
 Runs next to the backend in the same pod. Every BACKUP_INTERVAL_SECONDS it checks
 whether the DB changed since the last backup and, if so, writes a consistent copy
-to the NAS document root (BACKUP_DIR), rotating so only the BACKUP_KEEP newest
-copies are kept:  <prefix>.1 = newest, <prefix>.2 = previous, ...
+to the NAS document root (BACKUP_DIR), rotating so only the newest N copies are
+kept:  <prefix>.1 = newest, <prefix>.2 = previous, ...
 
 - The DB lives on the fast local-path PVC; backups go to the SMB/NAS root.
 - Uses the sqlite3 online backup API, so the copy is consistent even while the
@@ -11,6 +11,9 @@ copies are kept:  <prefix>.1 = newest, <prefix>.2 = previous, ...
 - "after each change, at most once per interval": the loop sleeps the full
   interval, then backs up only if the DB changed -> never more than once per
   interval, and an unchanged DB is skipped.
+- How many copies to keep (N) is read fresh from the `app_settings` table
+  (row `backup_keep`, set from the admin Backup tab) on every run, falling
+  back to the BACKUP_KEEP env var if that row is missing or unreadable.
 """
 
 import logging
@@ -26,8 +29,34 @@ LIBRARY = os.environ.get("LIBRARY_PATH", "/data/library")
 DB = pathlib.Path(LIBRARY) / ".docintell" / "docintell.db"
 DEST_DIR = pathlib.Path(os.environ.get("BACKUP_DIR", LIBRARY))
 INTERVAL = int(os.environ.get("BACKUP_INTERVAL_SECONDS", "300"))
-KEEP = max(1, int(os.environ.get("BACKUP_KEEP", "2")))
+KEEP_ENV_DEFAULT = max(1, int(os.environ.get("BACKUP_KEEP", "2")))
+KEEP_MIN, KEEP_MAX = 1, 30
 PREFIX = os.environ.get("BACKUP_PREFIX", "docintell.db.backup")
+
+
+def _current_keep() -> int:
+    """Read backup_keep from app_settings (set via the admin Backup tab); falls
+    back to KEEP_ENV_DEFAULT if the row is missing, unreadable, or invalid."""
+    try:
+        con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        try:
+            row = con.execute("SELECT value FROM app_settings WHERE key = 'backup_keep'").fetchone()
+        finally:
+            con.close()
+        if row and row[0]:
+            return max(KEEP_MIN, min(KEEP_MAX, int(row[0])))
+    except Exception:
+        pass
+    return KEEP_ENV_DEFAULT
+
+
+def _prune_beyond(keep: int) -> None:
+    """Delete any numbered snapshot past the current keep count (e.g. left over
+    after the admin lowers the setting)."""
+    for p in DEST_DIR.glob(f"{PREFIX}.*"):
+        suffix = p.name[len(PREFIX) + 1:]
+        if suffix.isdigit() and int(suffix) > keep:
+            p.unlink()
 
 
 def signature() -> tuple | None:
@@ -43,6 +72,7 @@ def signature() -> tuple | None:
 
 
 def do_backup() -> None:
+    keep = _current_keep()
     DEST_DIR.mkdir(parents=True, exist_ok=True)
     tmp = DEST_DIR / f"{PREFIX}.tmp"
     if tmp.exists():
@@ -60,19 +90,20 @@ def do_backup() -> None:
         src.close()
 
     # Rotate: drop oldest, shift the rest up by one, new copy becomes .1
-    oldest = DEST_DIR / f"{PREFIX}.{KEEP}"
+    oldest = DEST_DIR / f"{PREFIX}.{keep}"
     if oldest.exists():
         oldest.unlink()
-    for i in range(KEEP - 1, 0, -1):
+    for i in range(keep - 1, 0, -1):
         cur = DEST_DIR / f"{PREFIX}.{i}"
         if cur.exists():
             cur.rename(DEST_DIR / f"{PREFIX}.{i + 1}")
     tmp.rename(DEST_DIR / f"{PREFIX}.1")
-    log.info("backup written to %s.1 (rotated, keep=%d)", PREFIX, KEEP)
+    _prune_beyond(keep)
+    log.info("backup written to %s.1 (rotated, keep=%d)", PREFIX, keep)
 
 
 def main() -> None:
-    log.info("db-backup started: db=%s dest=%s interval=%ss keep=%d", DB, DEST_DIR, INTERVAL, KEEP)
+    log.info("db-backup started: db=%s dest=%s interval=%ss keep=%d (default)", DB, DEST_DIR, INTERVAL, KEEP_ENV_DEFAULT)
     last = None
     while True:
         time.sleep(INTERVAL)

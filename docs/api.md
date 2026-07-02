@@ -8,6 +8,7 @@ Base URL: `http://localhost:8000`
 |--------|------|-------------|
 | GET | `/api/documents` | List documents. Params: `page`, `page_size`, `year`, `month`, `document_type`, `language`, `ocr_status` |
 | GET | `/api/documents/tags` | Distinct tags across the whole library (sorted `string[]`) — powers the tag-input autocomplete |
+| GET | `/api/documents/tree` | Full library folder structure (`FolderTreeNode`, recursive: `name`, `path`, `folders`, `documents`, `doc_count`, `total_count`) for the Explorer-style folder-browse view. `documents` uses the lighter `FolderTreeDoc` shape (omits `ocr_text`/`vision_description`) since every document in the library is returned in one response |
 | GET | `/api/documents/{id}` | Get single document |
 | DELETE | `/api/documents/{id}` | **Hard-deletes** the document: removes the source file from disk, its thumbnail, its ChromaDB embedding, and the DB row |
 | PATCH | `/api/documents/{id}/tags` | Replace tags (body: `string[]`) |
@@ -95,7 +96,10 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | PATCH | `/api/admin/settings` | Upsert settings. Body: `{key: value, ...}`. Key: `enable_ai_vision` (`"true"`/`"false"`) |
 | GET | `/api/admin/log` | Recent log entries. Param: `limit` (default 100). Each entry has a `level` (`trace|debug|info|warning|error`); the Log tab filters client-side by minimum severity |
 | GET | `/api/admin/backups` | List DB backup snapshots `[{name, size, modified}]`, newest first. Surfaced in the advanced-mode Backup tab |
+| POST | `/api/admin/backups` | Create a snapshot now (same rotation as the sidecar). Returns `{created}` |
 | POST | `/api/admin/backups/restore` | Restore the DB from a snapshot. Body: `{name}`. Replaces the live DB (saves a `docintell.db.pre-restore` copy first); 400 on unknown/invalid name |
+| GET | `/api/admin/backups/keep` | Current retention count: `{keep, min, max}` (`AppSettings` row `backup_keep`, falling back to the `BACKUP_KEEP` env var) |
+| PATCH | `/api/admin/backups/keep` | Set how many newest snapshots to retain. Body: `{keep}`; 400 if outside `[min, max]` (1–30). Applies to both the sidecar and manual creation; snapshots past the new count are pruned on the next backup |
 
 `provider_type`: `"openai" | "gemini" | "deepseek" | "openrouter" | "mistral"`
 

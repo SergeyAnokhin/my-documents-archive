@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   Document,
   DocumentList,
+  FolderTreeNode,
   SearchResponse,
   AIAnswerResponse,
   IndexingStats,
@@ -22,6 +23,7 @@ import type {
   Task,
   TaskLog,
   BackupInfo,
+  BackupKeepInfo,
   ProvidersExport,
   ProvidersImport,
   UsageSummary,
@@ -50,6 +52,8 @@ export const updateTags = (id: number, tags: string[]) =>
   api.patch<Document>(`/documents/${id}/tags`, tags);
 
 export const fetchTags = () => api.get<string[]>("/documents/tags");
+
+export const getFolderTree = () => api.get<FolderTreeNode>("/documents/tree");
 
 export const clearDocumentDate = (id: number) =>
   api.patch<Document>(`/documents/${id}/date`, { date: null });
@@ -206,6 +210,9 @@ export const listBackups = () => api.get<BackupInfo[]>("/admin/backups");
 export const createBackup = () => api.post<{ created: string }>("/admin/backups");
 export const restoreBackup = (name: string) =>
   api.post<{ restored: string }>("/admin/backups/restore", { name });
+export const getBackupKeep = () => api.get<BackupKeepInfo>("/admin/backups/keep");
+export const updateBackupKeep = (keep: number) =>
+  api.patch<{ keep: number }>("/admin/backups/keep", { keep });
 
 // ── Indexing (per-document) ───────────────────────────────────────────────────
 

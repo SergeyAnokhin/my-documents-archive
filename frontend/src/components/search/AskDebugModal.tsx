@@ -27,15 +27,13 @@ function buildDebugText(d: AskDebug): string {
   if (d.fallback_newest) {
     lines.push("⚠ POOL EMPTY — answered from newest documents (no embeddings / no keyword hits)");
   }
+  const kept = d.semantic.filter((s) => s.sent || s.retrieved);
   lines.push("");
-  lines.push(`SEMANTIC RANKING (${d.semantic.length} embedded docs scored, closest first):`);
+  lines.push(`SEMANTIC RANKING (${kept.length}/${d.semantic.length} embedded docs scored, closest first, dropped omitted):`);
   lines.push("  #   sim     flags        type            file");
-  for (const s of d.semantic) {
+  for (const s of kept) {
     const sim = s.similarity != null ? s.similarity.toFixed(3) : "  -  ";
-    const flags = [
-      s.sent ? "SENT" : s.retrieved ? "retr" : "drop",
-      s.in_fulltext ? "+ft" : "   ",
-    ].join(" ");
+    const flags = [s.sent ? "SENT" : "retr", s.in_fulltext ? "+ft" : "   "].join(" ");
     lines.push(
       `  ${String(s.rank).padEnd(3)} ${sim.padEnd(7)} ${flags.padEnd(12)} ${(s.document_type ?? "-").padEnd(15)} ${s.filename} [id=${s.doc_id}]`,
     );
@@ -66,6 +64,7 @@ export function AskDebugModal({ debug, onClose }: Props) {
   };
 
   const td = t.aiSearch.debug;
+  const visibleSemantic = debug.semantic.filter((s) => s.sent || s.retrieved);
 
   return (
     <div className="dbg-overlay" onClick={onClose}>
@@ -114,11 +113,11 @@ export function AskDebugModal({ debug, onClose }: Props) {
             </span>
           </div>
 
-          {/* Semantic ranking table */}
+          {/* Semantic ranking table (dropped docs omitted — not sent to the LLM) */}
           <div className="dbg-section-title">
-            {td.ranking} ({debug.semantic.length})
+            {td.ranking} ({visibleSemantic.length}/{debug.semantic.length})
           </div>
-          {debug.semantic.length === 0 ? (
+          {visibleSemantic.length === 0 ? (
             <div className="dbg-empty">{td.noEmbeddings}</div>
           ) : (
             <table className="dbg-table">
@@ -132,16 +131,13 @@ export function AskDebugModal({ debug, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {debug.semantic.map((s) => (
-                  <tr
-                    key={s.doc_id}
-                    className={s.sent ? "dbg-row-sent" : s.retrieved ? "dbg-row-retr" : "dbg-row-drop"}
-                  >
+                {visibleSemantic.map((s) => (
+                  <tr key={s.doc_id} className={s.sent ? "dbg-row-sent" : "dbg-row-retr"}>
                     <td>{s.rank}</td>
                     <td className="dbg-sim">{s.similarity != null ? s.similarity.toFixed(3) : "—"}</td>
                     <td>
-                      <span className={`dbg-badge dbg-badge--${s.sent ? "sent" : s.retrieved ? "retr" : "drop"}`}>
-                        {s.sent ? td.sent : s.retrieved ? td.retrieved : td.dropped}
+                      <span className={`dbg-badge dbg-badge--${s.sent ? "sent" : "retr"}`}>
+                        {s.sent ? td.sent : td.retrieved}
                       </span>
                       {s.in_fulltext && <span className="dbg-badge dbg-badge--ft">ft</span>}
                     </td>

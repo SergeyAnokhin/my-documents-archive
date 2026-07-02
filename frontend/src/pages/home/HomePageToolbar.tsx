@@ -1,8 +1,8 @@
-import { LayoutList, LayoutGrid, RefreshCw, Plus, ChevronDown, SendHorizonal, FolderOpen, Filter, X } from "lucide-react";
+import { LayoutList, LayoutGrid, FolderTree, RefreshCw, Plus, ChevronDown, SendHorizonal, FolderOpen, Filter, X } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { FilterDropdown } from "../../components/search/FilterDropdown";
 import { useT } from "../../i18n";
-import type { GridSize, ViewMode } from "../../types";
+import type { GridSize, LayoutMode, ViewMode } from "../../types";
 
 interface Props {
   t: ReturnType<typeof useT>["t"];
@@ -19,8 +19,10 @@ interface Props {
   syncing: boolean;
   onSync: () => void;
   onToggleUpload: () => void;
+  layoutMode: LayoutMode;
   viewMode: ViewMode;
   onViewMode: (mode: ViewMode) => void;
+  onFolderMode: () => void;
   gridSize: GridSize;
   onCycleGridSize: () => void;
 }
@@ -28,7 +30,7 @@ interface Props {
 export function HomePageToolbar({
   t, total, filterDirectory, onClearDirectory, filterCategory, onClearCategory,
   advancedMode, qualityCounts, filterQuality, onFilterQuality, onDispatch,
-  syncing, onSync, onToggleUpload, viewMode, onViewMode, gridSize, onCycleGridSize,
+  syncing, onSync, onToggleUpload, layoutMode, viewMode, onViewMode, onFolderMode, gridSize, onCycleGridSize,
 }: Props) {
   return (
     <div className="home-toolbar">
@@ -102,20 +104,27 @@ export function HomePageToolbar({
         </Button>
         <div className="view-toggle">
           <button
-            className={`view-btn${viewMode === "list" ? " active" : ""}`}
+            className={`view-btn${layoutMode === "flat" && viewMode === "list" ? " active" : ""}`}
             onClick={() => onViewMode("list")}
             title={t.viewList}
           >
             <LayoutList size={16} />
           </button>
           <button
-            className={`view-btn${viewMode === "grid" ? " active" : ""}`}
+            className={`view-btn${layoutMode === "flat" && viewMode === "grid" ? " active" : ""}`}
             onClick={() => onViewMode("grid")}
             title={t.viewGrid}
           >
             <LayoutGrid size={16} />
           </button>
-          {viewMode === "grid" && (
+          <button
+            className={`view-btn${layoutMode === "folders" ? " active" : ""}`}
+            onClick={onFolderMode}
+            title={t.viewFolders}
+          >
+            <FolderTree size={16} />
+          </button>
+          {layoutMode === "flat" && viewMode === "grid" && (
             <button className="view-btn" onClick={onCycleGridSize} title="Change grid size">
               <ChevronDown size={14} />
               <span className="text-xs">{gridSize.toUpperCase()}</span>
