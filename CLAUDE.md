@@ -135,9 +135,13 @@ Rules:
 Documentation table in [`README.md`](README.md) as the index; before touching any
 feature area, find the relevant doc there and read it first.
 
-The [`docs/First_Specification.md`](docs/First_Specification.md) file is a high-level
-functional spec written for external handoff / rebuilding from scratch. **Do not read
-it during normal development work** — it is not code-level and costs tokens without
-adding information beyond the rest of `docs/`. Open it only when explicitly asked to
-work with the spec itself (e.g. "update the spec", "read the technical
-specification"). For all code tasks, the other `docs/` files are the source of truth.
+**[`docs/excluded-from-analysis/`](docs/excluded-from-analysis/README.md) is out of scope for normal work.**
+It holds meta/reference material — the full product spec, the generic k3s platform
+contract, and per-task document-processing pipeline diagrams — that costs tokens
+without helping day-to-day code tasks. Never read, list, or update files in that
+folder as part of routine exploration, doc updates, or the "обнови документацию"
+pass. Open something in it only when the user explicitly asks for that specific
+file or topic (e.g. "update the spec", "explain the Mistral OCR batch pipeline").
+The [`docs/excluded-from-analysis/First_Specification.md`](docs/excluded-from-analysis/First_Specification.md)
+file is a high-level functional spec written for external handoff / rebuilding
+from scratch — for all code tasks, the other `docs/` files are the source of truth.

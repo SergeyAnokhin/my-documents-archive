@@ -2,7 +2,7 @@
 
 How this repo ships to the home k3s cluster. The **generic platform contract**
 (cluster facts, GitOps loop, human-only steps) lives in the read-only
-[k3s-platform-deployment.md](k3s-platform-deployment.md) — *don't read/edit it
+[excluded-from-analysis/k3s-platform-deployment.md](excluded-from-analysis/k3s-platform-deployment.md) — *don't read/edit it
 during normal dev*. This doc records the **DocIntel-specific** mapping onto it.
 
 ## GitOps flow
@@ -83,7 +83,7 @@ After a restore the user reloads the page.
 ## Human-only steps
 
 All commands below are executed **once** on a machine with cluster access (`kubectl`).
-Generic platform contract — [k3s-platform-deployment.md §6](k3s-platform-deployment.md#6-human-only-checklist-cannot-be-done-by-the-agent).
+Generic platform contract — [excluded-from-analysis/k3s-platform-deployment.md §6](excluded-from-analysis/k3s-platform-deployment.md#6-human-only-checklist-cannot-be-done-by-the-agent).
 
 ### Step 1 — First build and making GHCR packages public
 

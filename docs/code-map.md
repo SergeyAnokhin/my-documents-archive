@@ -151,7 +151,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 
 ## Deployment (k3s + ArgoCD + GHCR)
 
-Platform contract lives in [k3s-platform-deployment.md](k3s-platform-deployment.md) (**read-only spec — don't read/edit during normal dev**). GitOps: push to `main` → GitHub Actions builds images → GHCR → bumps Helm tags → force-pushes `deploy` branch → ArgoCD syncs.
+Platform contract lives in [excluded-from-analysis/k3s-platform-deployment.md](excluded-from-analysis/k3s-platform-deployment.md) (**read-only spec — don't read/edit during normal dev**). GitOps: push to `main` → GitHub Actions builds images → GHCR → bumps Helm tags → force-pushes `deploy` branch → ArgoCD syncs.
 
 | File | Responsibility |
 |------|---------------|

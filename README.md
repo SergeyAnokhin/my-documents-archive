@@ -63,8 +63,7 @@ npm test
 | [docs/ai-usage.md](docs/ai-usage.md) | AI usage ledger, super-user usage screen (stats/charts/pivot), provider config export/import, classification outcome reporting |
 | [docs/compute-worker.md](docs/compute-worker.md) | External OCR worker: install (incl. Windows+conda MKL fix), endpoints, engine detection |
 | [docs/deployment.md](docs/deployment.md) | Ship to k3s: GitOps (GHCR→ArgoCD), NAS nested-mount storage, DB backup & restore, DNS via nip.io, HTTPS via cert-manager |
-| [docs/k3s-platform-deployment.md](docs/k3s-platform-deployment.md) | Generic k3s+ArgoCD+GHCR platform contract — **read-only spec; don't edit during normal dev** |
-| [docs/First_Specification.md](docs/First_Specification.md) | Full product specification — **large, high-level; read only when explicitly working on the spec, not for code tasks** |
+| [docs/excluded-from-analysis/](docs/excluded-from-analysis/README.md) | Meta/reference docs (platform spec, product spec, document-processing pipeline diagrams) — **excluded from normal analysis; open only when explicitly requested** |
 
 ## Project Structure
 
