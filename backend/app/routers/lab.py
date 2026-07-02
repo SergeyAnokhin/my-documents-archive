@@ -43,7 +43,10 @@ async def _auto_analyze(text: str, db: Session) -> dict | None:
         if result is None:
             return None
         return {
+            "summary": result.summary,
+            "title": result.title,
             "document_type": result.document_type,
+            "document_type_confidence": result.document_type_confidence,
             "document_date": result.document_date,
             "person_first_name": result.person_first_name,
             "person_last_name": result.person_last_name,
@@ -148,10 +151,16 @@ async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
 
     f = body.fields or {}
     if f:
+        if f.get("summary"):
+            doc.summary = f["summary"]
+        if f.get("title"):
+            doc.title = f["title"]
         if f.get("document_type"):
             doc.document_type = f["document_type"]
             doc.classification_source = "auto"
             doc.manually_classified = False
+        if f.get("document_type_confidence") is not None:
+            doc.classification_confidence = f["document_type_confidence"]
         if f.get("document_date"):
             try:
                 doc.document_date = _dt.strptime(f["document_date"], "%Y-%m-%d")

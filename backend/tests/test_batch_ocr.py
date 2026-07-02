@@ -87,6 +87,10 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "library_path", str(tmp_path))
     monkeypatch.setattr("app.services.indexer._run_embedding", AsyncMock())
     monkeypatch.setattr("app.services.ai_vision.load_first_page", lambda filepath, max_size=1024: b"fake-jpeg-bytes")
+    # The real poll loop awaits asyncio.sleep(poll_interval) (default 30s) between
+    # status checks; these tests assert end-state only, not polling cadence, so
+    # skip the real wait — without this each polling test takes ~30s for nothing.
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
     monkeypatch.setattr(batch_ocr_mistral, "_log", lambda *a, **k: None)
     monkeypatch.setattr(batch_ocr_gemini, "_log", lambda *a, **k: None)
 

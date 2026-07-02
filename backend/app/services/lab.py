@@ -324,7 +324,10 @@ def _parse_vision_analysis(raw: str) -> tuple[str, dict]:
         return raw.strip(), {}
     text = str(data.get("text") or "").strip()
     fields = {
+        "summary": data.get("summary"),
+        "title": data.get("title"),
         "document_type": data.get("document_type"),
+        "document_type_confidence": data.get("document_type_confidence"),
         "document_date": data.get("document_date"),
         "person_first_name": data.get("person_first_name"),
         "person_last_name": data.get("person_last_name"),

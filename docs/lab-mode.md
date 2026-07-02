@@ -31,7 +31,7 @@ cost) with the recognized text. Re-running a method replaces its previous card
 |--------|--------------|-------|
 | `tesseract` | In-process (backend, pytesseract) | Always available |
 | `easyocr` | External compute worker `/ocr?engine=easyocr` | Only if the worker is reachable (`GET /lab/methods` probes `/health`) |
-| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in openai/gemini/openrouter/mistral) | Uses the combined `VISION_ANALYSIS_PROMPT` — returns JSON with `text` (transcription) + `fields` (document_type, date, names, org, amount, language, tags). Mistral OCR ignores the prompt and returns plain text; `_parse_vision_analysis()` falls back gracefully. |
+| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in openai/gemini/openrouter/mistral) | Uses the combined `VISION_ANALYSIS_PROMPT` — returns JSON with `text` (transcription) + `fields` (summary, title, document_type(+confidence), date, names, org, amount, language, tags). Mistral OCR ignores the prompt and returns plain text; `_parse_vision_analysis()` falls back gracefully. |
 
 All methods operate on the same first-page JPEG produced by
 `ai_vision.load_first_page()`, so comparisons are fair.
@@ -47,7 +47,9 @@ transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summa
   vision-capable provider type.
 - **Text-only** (`use_image=false`): only the transcriptions are sent; the model
   judges internal readability/coherence. Works with any premium provider.
-- **`fields`**: the judge also extracts structured metadata (document_type, date, names, etc.)
+- **`fields`**: the judge also extracts structured metadata (document_type, date, names, org,
+  amount, language, tags — **not** `summary`/`title`, unlike the vision/OCR-analysis paths;
+  the judge only compares transcription quality, it doesn't re-summarize the document)
   from its own analysis — shown in the UI and can be saved to the document.
 
 ## Endpoints (`/api/lab`, [`backend/app/routers/lab.py`](../backend/app/routers/lab.py))
@@ -58,7 +60,7 @@ transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summa
 | POST | `/lab/ocr` | `{ doc_id, method }` | `{ method, text, ms }` |
 | POST | `/lab/vision` | `{ doc_id, provider_id }` | `{ provider_id, name, model_name, text, fields, cost, ms }` |
 | POST | `/lab/judge` | `{ doc_id, provider_id, use_image, candidates[] }` | `{ rankings[], best, summary, corrected, fields, cost, ms }` |
-| POST | `/lab/save` | `{ doc_id, text, fields?, model_name }` | `{ ok, doc_id }` — writes OCR text + extracted fields (incl. `tags`, replacing the document's existing tags outright — not merged) + attribution to the document |
+| POST | `/lab/save` | `{ doc_id, text, fields?, model_name }` | `{ ok, doc_id }` — writes OCR text + extracted fields (`summary`, `title`, `document_type`(+confidence), `tags`, etc. — each field is replaced outright, not merged, when present in the result) + attribution to the document |
 
 ## Code map
 

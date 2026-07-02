@@ -69,3 +69,8 @@ response parsing (is the provider's response correctly turned into internal data
   invariants. Do not test trivial getters or UI markup.
 - Backend tests must not touch the real library: monkeypatch `settings.library_path`
   to a `tmp_path` (see `test_storage.py`).
+- Tests that drive a real poll loop (`batch_ocr_mistral`/`batch_ocr_gemini`/`batch_analysis`,
+  which `await asyncio.sleep(poll_interval)` — default 30s — between status checks) must
+  monkeypatch `asyncio.sleep` to a no-op (see the `env` fixture in `test_batch_ocr.py`/
+  `test_batch_analysis.py`). Forgetting this doesn't fail the test, it just makes it take
+  ~30s for nothing — the single biggest cause of a slow full test run in this repo.

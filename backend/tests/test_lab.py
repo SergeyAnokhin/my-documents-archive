@@ -65,6 +65,20 @@ def test_parse_vision_analysis_includes_tags():
     assert fields["tags"] == ["passport", "identity_documents"]
 
 
+def test_parse_vision_analysis_includes_summary_title_and_confidence():
+    # Same class of bug as tags: VISION_FULL_PROMPT asks the model for summary/
+    # title/document_type_confidence and it returns them, but the lab silently
+    # dropped them before /api/lab/save ever saw them.
+    raw = (
+        '{"text": "Hello world", "summary": "A short summary.", "title": "My Doc", '
+        '"document_type_confidence": 0.87}'
+    )
+    _, fields = _parse_vision_analysis(raw)
+    assert fields["summary"] == "A short summary."
+    assert fields["title"] == "My Doc"
+    assert fields["document_type_confidence"] == 0.87
+
+
 def test_parse_vision_analysis_fallback_plain_text():
     # Mistral OCR and other models that return plain text should be handled gracefully
     raw = "Just plain text from Mistral OCR"

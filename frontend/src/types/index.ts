@@ -132,7 +132,10 @@ export interface LogEntry {
 // ── Lab extracted fields ───────────────────────────────────────────────────
 
 export interface ExtractedFields {
+  summary?: string;
+  title?: string;
   document_type?: string;
+  document_type_confidence?: number;
   document_date?: string;       // YYYY-MM-DD
   person_first_name?: string;
   person_last_name?: string;

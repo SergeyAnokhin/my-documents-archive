@@ -10,6 +10,8 @@ export function FieldChips({
   onRemove?: (key: string) => void;
 }) {
   const chips: { key: string; value: string }[] = [];
+  if (fields.title) chips.push({ key: "title", value: fields.title });
+  if (fields.summary) chips.push({ key: "summary", value: fields.summary });
   if (fields.document_type) chips.push({ key: "type", value: fields.document_type.replace(/_/g, " ") });
   if (fields.document_date) chips.push({ key: "date", value: fields.document_date });
   const name = [fields.person_first_name, fields.person_last_name].filter(Boolean).join(" ");
@@ -25,7 +27,7 @@ export function FieldChips({
   return (
     <div className="lab-field-chips">
       {chips.map(c => (
-        <span key={c.key} className={`lab-field-chip lab-field-chip--${c.key}`} title={c.key}>
+        <span key={c.key} className={`lab-field-chip lab-field-chip--${c.key}`} title={c.value}>
           {c.value}
           {onRemove && (
             <button
