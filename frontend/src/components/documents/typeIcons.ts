@@ -19,6 +19,12 @@ export function isWordDoc(mime?: string): boolean {
   return mime === WORD_MIME;
 }
 
+// Same idea as isWordDoc, for plain-text (.txt) files — also has no visual page.
+export const TEXT_MIME = "text/plain";
+export function isTextDoc(mime?: string): boolean {
+  return mime === TEXT_MIME;
+}
+
 // Maps each document_type slug from the AI taxonomy (see backend
 // services/ai_analysis.py) to a lucide icon that visually evokes the class.
 const TYPE_ICONS: Record<string, LucideIcon> = {

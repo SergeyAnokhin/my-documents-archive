@@ -22,9 +22,13 @@ def test_guess_mime_falls_back_by_extension():
 def test_is_supported_checks_extension_case_insensitive():
     # Doc:  docs/testing.md row: "supported-extension check".
     # Rule: the supported-type gate is by extension, case-insensitive (.JPG == .jpg).
+    # .docx/.txt are native-text formats (no OCR/Vision — see indexer.py); everything
+    # else outside SUPPORTED_EXTENSIONS (e.g. .xyz) is rejected.
     assert storage.is_supported(Path("a.JPG")) is True
     assert storage.is_supported(Path("a.pdf")) is True
-    assert storage.is_supported(Path("a.txt")) is False
+    assert storage.is_supported(Path("a.docx")) is True
+    assert storage.is_supported(Path("a.TXT")) is True
+    assert storage.is_supported(Path("a.xyz")) is False
 
 
 def test_save_uploaded_file_avoids_name_collision(tmp_path, monkeypatch):

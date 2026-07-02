@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Download, ChevronLeft, ChevronRight, FileText, FlaskConical, Trash2,
+  Download, Share2, ChevronLeft, ChevronRight, FileText, FlaskConical, Trash2,
   ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, Scissors, Check,
 } from "lucide-react";
 import type { Document } from "../../types";
@@ -12,7 +12,7 @@ import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
 import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate, deleteDocument } from "../../api/documents";
 import { useImageEdit } from "../../hooks/useImageEdit";
 import { resolveImgSrc } from "./imgSrc";
-import { isWordDoc } from "./typeIcons";
+import { isWordDoc, isTextDoc } from "./typeIcons";
 import { MetadataTab } from "./MetadataTab";
 import { TextTab } from "./TextTab";
 import { DevTab } from "./DevTab";
@@ -41,6 +41,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   const [devMsg, setDevMsg] = useState("");
   const [devLoading, setDevLoading] = useState<"reindex" | "reclassify" | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   // Local type state so badge updates immediately after save
   const [localType, setLocalType] = useState<string | undefined>(undefined);
@@ -186,6 +187,18 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
     }
   };
 
+  const handleShare = async () => {
+    if (!doc) return;
+    const url = `${window.location.origin}/api/documents/${doc.id}/download?inline=1`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   const flashDev = (msg: string) => { setDevMsg(msg); setTimeout(() => setDevMsg(""), 4000); };
 
   const handleReindex = async () => {
@@ -255,6 +268,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
 
   const isPdf = doc.mime_type === "application/pdf";
   const isWord = isWordDoc(doc.mime_type);
+  const isText = isTextDoc(doc.mime_type);
   const isImageMime = doc.mime_type?.startsWith("image/") ?? false;
   const vParam = doc.updated_at ? new Date(doc.updated_at).getTime() : "";
   const docUrl = `/api/documents/${doc.id}/download?inline=1${vParam ? `&v=${vParam}` : ""}`;
@@ -426,7 +440,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
 
           {isPdf ? (
             <iframe src={docUrl} title={doc.filename} className="viewer-pdf" />
-          ) : isWord && doc.ocr_text ? (
+          ) : (isWord || isText) && doc.ocr_text ? (
             <div className="viewer-text-preview">
               <pre>{doc.ocr_text}</pre>
             </div>
@@ -575,6 +589,14 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 {t.download}
               </Button>
             </a>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Share2 size={14} />}
+              onClick={handleShare}
+            >
+              {shareCopied ? t.linkCopied : t.share}
+            </Button>
             <Button
               variant="danger"
               size="sm"

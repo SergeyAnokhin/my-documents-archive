@@ -52,34 +52,36 @@ no image) and a `📊 N via image, M via text-only` summary before upload. The
 final `result_summary` includes `vision_count` / `text_count` alongside
 `processed`/`failed`.
 
-## `.docx` documents (no page image)
+## `.docx`/`.txt` documents (no page image)
 
 Both batch runners select documents purely by `ocr_status`/`ocr_text` state —
-they don't filter by file format. A `.docx` has no rendered page, so neither
-provider can OCR it; each runner detects it (`indexer._is_docx`) and extracts
-its text natively via `docx_extract.extract_docx_text()` (free, local, no
-API call) **before** deciding what to send:
+they don't filter by file format. A `.docx`/`.txt` has no rendered page, so
+neither provider can OCR it; each runner detects it (`indexer._is_native_text`)
+and extracts its text natively via `indexer._extract_native_text()` — which
+dispatches to `docx_extract.extract_docx_text()` or `text_extract.extract_text_file()`
+by extension (free, local, no API call) — **before** deciding what to send:
 
-- **`batch_ocr_mistral`**: the `.docx` is extracted and marked
+- **`batch_ocr_mistral`**: the document is extracted and marked
   `ocr_status="done"`, `ocr_model="native"`, `vision_status="skipped"` —  it is
   **excluded from the Mistral JSONL entirely** (there's nothing to send to
   `/v1/ocr`). Its count is folded into `result_summary["processed"]` and
   surfaced separately as `result_summary["native"]`. If every document in the
-  scope turns out to be `.docx`, the task finishes `"done"` without ever
+  scope turns out to be `.docx`/`.txt`, the task finishes `"done"` without ever
   calling the Mistral API.
 - **`batch_ocr_gemini`**: since this runner also handles analysis, the
   extracted text simply makes `_needs_vision(doc)` become `False`, so the
-  `.docx` falls through into the existing **text-only** branch (see Hybrid
+  document falls through into the existing **text-only** branch (see Hybrid
   routing above) and still gets analysis via the same batch job — no separate
   handling needed downstream.
 
-A failed native extraction (corrupt/encrypted file) sets `ocr_status="error"`
-with the exception message, same contract as an OCR failure, and the document
-is excluded from that run's batch request.
+A failed native extraction (corrupt/encrypted docx, unreadable txt) sets
+`ocr_status="error"` with the exception message, same contract as an OCR
+failure, and the document is excluded from that run's batch request.
 
 **Practical effect**: your normal two-step habit (batch OCR → batch analysis)
-works unchanged for a mixed batch of scans and Word documents — `.docx` files
-just skip the OCR/vision step for free instead of being silently dropped.
+works unchanged for a mixed batch of scans, Word documents, and plain text —
+`.docx`/`.txt` files just skip the OCR/vision step for free instead of being
+silently dropped.
 
 ## Provider batch support
 
@@ -186,7 +188,7 @@ Useful for debugging parse errors or auditing what the provider returned.
 | `batch_job_id` | ✓ | Remote job id (hidden from the card's result chips) |
 | `cost_usd` | Mistral only | Per-page OCR cost with batch discount |
 | `tokens_in` / `tokens_out` | Gemini only | Summed from `usageMetadata` |
-| `native` | Mistral only, when present | Count of `.docx` documents handled via native text extraction (already folded into `processed`) |
+| `native` | Mistral only, when present | Count of `.docx`/`.txt` documents handled via native text extraction (already folded into `processed`) |
 
 While a job polls, `Task.result_summary` is `{"phase": "polling", "batch_job_id", "doc_count"}`
 so the card shows the remote job id.

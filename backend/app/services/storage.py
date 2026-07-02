@@ -24,9 +24,10 @@ SUPPORTED_MIME_TYPES = {
     "image/heif",
     "image/webp",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
 }
 
-SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".docx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".heif", ".webp", ".docx", ".txt"}
 
 
 def get_library_path() -> Path:
@@ -59,6 +60,7 @@ def guess_mime(path: Path) -> str:
             ".heif": "image/heif",
             ".webp": "image/webp",
             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt": "text/plain",
         }
         mime = mapping.get(ext, "application/octet-stream")
     return mime

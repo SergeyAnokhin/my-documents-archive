@@ -57,6 +57,14 @@ def test_parse_vision_analysis_json():
     assert fields["document_type"] == "invoice"
 
 
+def test_parse_vision_analysis_includes_tags():
+    # Tags must survive into the fields dict so /api/lab/save can persist them
+    # (previously dropped, so re-running Vision + Save never updated a doc's tags).
+    raw = '{"text": "Hello world", "tags": ["passport", "identity_documents"]}'
+    _, fields = _parse_vision_analysis(raw)
+    assert fields["tags"] == ["passport", "identity_documents"]
+
+
 def test_parse_vision_analysis_fallback_plain_text():
     # Mistral OCR and other models that return plain text should be handled gracefully
     raw = "Just plain text from Mistral OCR"

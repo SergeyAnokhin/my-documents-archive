@@ -7,6 +7,7 @@ and Step 4 (text analysis); both call it so the two paths populate identical col
 no OCR/Vision/Thumbnail step ever runs for them (see docs/code-map.md — Key Data
 Flow). `_run_docx_extract` commits, so it's driven against a real in-memory
 SQLite DB rather than db=None (matches the harness used in test_batch_ocr.py).
+`_is_txt`/`_run_txt_extract` are the same branch for plain .txt files.
 """
 import asyncio
 from datetime import datetime
@@ -21,8 +22,11 @@ from app.services.ai_analysis import AnalysisResult
 from app.services.indexer import (
     _apply_analysis_result,
     _is_docx,
+    _is_native_text,
+    _is_txt,
     _is_unclassified,
     _run_docx_extract,
+    _run_txt_extract,
     _run_vision,
 )
 
@@ -135,6 +139,57 @@ def test_run_docx_extract_marks_error_on_failure(tmp_path):
 
     assert doc.ocr_status == "error"
     assert doc.ocr_error == "corrupt file"
+
+
+# ── .txt native-text branch ──────────────────────────────────────────────────
+
+def test_is_txt_checks_extension():
+    # Rule: only a .txt extension (case-insensitive) routes to the native-
+    # extraction branch — everything else (including no extension) does not.
+    assert _is_txt(Document(filename="a.txt", filepath="/lib/a.txt"))
+    assert _is_txt(Document(filename="a.TXT", filepath="/lib/a.TXT"))
+    assert not _is_txt(Document(filename="a.pdf", filepath="/lib/a.pdf"))
+    assert not _is_txt(Document(filename="a", filepath="/lib/a"))
+
+
+def test_is_native_text_covers_docx_and_txt_only():
+    # Rule: _is_native_text (used to skip Thumbnail/Vision) is true for docx
+    # and txt only — both formats have no page image to render or send.
+    assert _is_native_text(Document(filename="a.docx", filepath="/lib/a.docx"))
+    assert _is_native_text(Document(filename="a.txt", filepath="/lib/a.txt"))
+    assert not _is_native_text(Document(filename="a.pdf", filepath="/lib/a.pdf"))
+
+
+def test_run_txt_extract_sets_native_marker_and_done_status(tmp_path):
+    # Rule: mirrors _run_docx_extract — ocr_status=done, ocr_model="native",
+    # vision_status=skipped (no page image exists for a text file).
+    db = _make_session(tmp_path)
+    doc = Document(filename="a.txt", filepath=str(tmp_path / "a.txt"), source="sync")
+    db.add(doc)
+    db.commit()
+
+    with patch("app.services.text_extract.extract_text_file", return_value="extracted text"):
+        asyncio.run(_run_txt_extract(doc, db))
+
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.ocr_text == "extracted text"
+    assert doc.vision_status == "skipped"
+
+
+def test_run_txt_extract_marks_error_on_failure(tmp_path):
+    # Rule: an extraction failure (unreadable file) sets ocr_status=error and
+    # records the exception message, mirroring _run_docx_extract's contract.
+    db = _make_session(tmp_path)
+    doc = Document(filename="a.txt", filepath=str(tmp_path / "a.txt"), source="sync")
+    db.add(doc)
+    db.commit()
+
+    with patch("app.services.text_extract.extract_text_file", side_effect=OSError("unreadable")):
+        asyncio.run(_run_txt_extract(doc, db))
+
+    assert doc.ocr_status == "error"
+    assert doc.ocr_error == "unreadable"
 
 
 # ── Step 3 — Vision vs. fuller OCR/native text ───────────────────────────────

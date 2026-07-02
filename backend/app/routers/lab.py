@@ -51,6 +51,7 @@ async def _auto_analyze(text: str, db: Session) -> dict | None:
             "amount": result.amount,
             "amount_currency": result.amount_currency,
             "language": result.language,
+            "tags": result.tags,
         }
     except Exception:
         return None
@@ -171,6 +172,8 @@ async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
             doc.amount_currency = f["amount_currency"] or None
         if f.get("language"):
             doc.language = f["language"]
+        if f.get("tags"):
+            doc.tags = list(f["tags"])
         doc.analysis_status = "done"
 
     db.commit()

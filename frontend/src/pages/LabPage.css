@@ -618,6 +618,7 @@
 .lab-field-chip--org  { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 .lab-field-chip--amount { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 .lab-field-chip--lang { background: var(--color-tag); color: var(--color-ink-muted); }
+.lab-field-chip--tags { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
 
 /* Dark mode chip overrides */
 @media (prefers-color-scheme: dark) {
@@ -626,6 +627,7 @@
   .lab-field-chip--person { background: #451a03; color: #fcd34d; border-color: #92400e; }
   .lab-field-chip--org  { background: #2e1065; color: #c4b5fd; border-color: #5b21b6; }
   .lab-field-chip--amount { background: #450a0a; color: #fca5a5; border-color: #991b1b; }
+  .lab-field-chip--tags { background: #1e3a8a; color: #bfdbfe; border-color: #1e40af; }
 }
 
 /* Save button on cards */

@@ -52,18 +52,22 @@ async def index_document(document_id: int, force_full: bool = False) -> None:
             mode = mode_row.value if mode_row else "full"
 
         is_docx = _is_docx(doc)
+        is_txt = _is_txt(doc)
+        is_native_text = is_docx or is_txt
 
-        if not is_docx:
+        if not is_native_text:
             _run_thumbnail(doc, db)
 
         if mode != "manual":
             if is_docx:
                 await _run_docx_extract(doc, db)
+            elif is_txt:
+                await _run_txt_extract(doc, db)
             else:
                 await _run_ocr(doc, db)
 
         if mode == "full":
-            if not is_docx:
+            if not is_native_text:
                 await _run_vision(doc, db)
             await _run_analysis(doc, db)
 
@@ -110,10 +114,32 @@ async def _run_ocr(doc: Document, db: Session) -> None:
     db.commit()
 
 
-# ── Step 1b — Native text extraction (.docx) ─────────────────────────────────
+# ── Step 1b — Native text extraction (.docx / .txt) ──────────────────────────
 
 def _is_docx(doc: Document) -> bool:
     return Path(doc.filepath).suffix.lower() == ".docx"
+
+
+def _is_txt(doc: Document) -> bool:
+    return Path(doc.filepath).suffix.lower() == ".txt"
+
+
+def _is_native_text(doc: Document) -> bool:
+    """True for formats with no page image — docx and plain text."""
+    return _is_docx(doc) or _is_txt(doc)
+
+
+def _extract_native_text(filepath: str) -> str:
+    """Dispatch to the right native-text extractor by file extension.
+
+    Shared by the batch OCR runners (batch_ocr_mistral.py/batch_ocr_gemini.py),
+    which have no page image to send for either format.
+    """
+    if filepath.lower().endswith(".docx"):
+        from .docx_extract import extract_docx_text
+        return extract_docx_text(filepath)
+    from .text_extract import extract_text_file
+    return extract_text_file(filepath)
 
 
 async def _run_docx_extract(doc: Document, db: Session) -> None:
@@ -137,6 +163,31 @@ async def _run_docx_extract(doc: Document, db: Session) -> None:
         doc.ocr_error = str(e)
         _log(db, doc, "ocr", "error", str(e), level="error")
         log.warning("Docx extraction failed for doc %s: %s", doc.id, e)
+
+    db.commit()
+
+
+async def _run_txt_extract(doc: Document, db: Session) -> None:
+    """Plain-text equivalent of _run_docx_extract — the file already IS the text."""
+    if doc.ocr_status == "done":
+        return
+
+    doc.ocr_status = "pending"
+    db.commit()
+
+    try:
+        from .text_extract import extract_text_file
+        text = await asyncio.to_thread(extract_text_file, doc.filepath)
+        doc.ocr_text = text
+        doc.ocr_model = "native"
+        doc.ocr_status = "done"
+        doc.vision_status = "skipped"  # no page image exists for a text file — Vision never applies
+        _log(db, doc, "ocr", "done", "native text file read", level="trace")
+    except Exception as e:
+        doc.ocr_status = "error"
+        doc.ocr_error = str(e)
+        _log(db, doc, "ocr", "error", str(e), level="error")
+        log.warning("Text extraction failed for doc %s: %s", doc.id, e)
 
     db.commit()
 
@@ -304,6 +355,8 @@ async def index_pending_batch(limit: int = 50) -> dict:
             try:
                 if _is_docx(doc):
                     await _run_docx_extract(doc, db)
+                elif _is_txt(doc):
+                    await _run_txt_extract(doc, db)
                 else:
                     await _run_ocr(doc, db)
                     _run_thumbnail(doc, db)

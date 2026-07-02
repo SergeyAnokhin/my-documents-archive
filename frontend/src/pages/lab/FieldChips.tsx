@@ -20,6 +20,7 @@ export function FieldChips({
     chips.push({ key: "amount", value: amt });
   }
   if (fields.language) chips.push({ key: "lang", value: fields.language });
+  if (fields.tags && fields.tags.length > 0) chips.push({ key: "tags", value: fields.tags.join(", ") });
   if (chips.length === 0) return null;
   return (
     <div className="lab-field-chips">

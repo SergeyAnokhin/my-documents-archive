@@ -152,6 +152,7 @@ export function LabPage() {
       org: ["organization"],
       amount: ["amount", "amount_currency"],
       lang: ["language"],
+      tags: ["tags"],
     };
     setResults(prev => prev.map(r => {
       if (r.id !== resultId || !r.fields) return r;

@@ -140,6 +140,7 @@ export interface ExtractedFields {
   amount?: number;
   amount_currency?: string;
   language?: string;
+  tags?: string[];
 }
 
 // ── Lab (OCR calibration) ───────────────────────────────────────────────────

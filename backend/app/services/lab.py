@@ -98,6 +98,7 @@ Also extract structured metadata from the best/corrected transcription and the i
 - "amount": numeric monetary value (no currency symbol), or null
 - "amount_currency": ISO 4217 code ("USD", "EUR", "RUB"), or null
 - "language": ISO 639-1 code ("ru", "en", "fr", etc.)
+- "tags": array of 3-7 keyword strings
 
 IMPORTANT: Write ALL evaluation text (comments, summary, corrected content) in {lang_name}.
 Do NOT translate the original transcribed texts themselves.
@@ -116,7 +117,8 @@ Return ONLY a raw JSON object — no prose, no markdown, no explanation before o
     "organization": "<name or null>",
     "amount": <number or null>,
     "amount_currency": "<code or null>",
-    "language": "<ISO code>"
+    "language": "<ISO code>",
+    "tags": ["<keyword>", ...]
   }}
 }}
 Use the exact labels provided. Order "rankings" best-first.
@@ -330,6 +332,7 @@ def _parse_vision_analysis(raw: str) -> tuple[str, dict]:
         "amount": data.get("amount"),
         "amount_currency": data.get("amount_currency"),
         "language": data.get("language"),
+        "tags": data.get("tags"),
     }
     return text, fields
 

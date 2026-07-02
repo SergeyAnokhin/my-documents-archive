@@ -16,12 +16,12 @@ request shapes (JSONL lines, upload/create payloads), the status-polling
 interpretation, and the result-line parsing (success/error branches,
 vision-vs-text-only field handling).
 
-`.docx` documents have no page image to send to either provider — both runners
-extract their text natively (`docx_extract.extract_docx_text`, no OCR/LLM call)
-before building any request. For Mistral (OCR-only) this means the `.docx` is
-excluded from the JSONL entirely; for Gemini (which also handles analysis) the
-extracted text routes the document into the existing text-only branch, so it
-still gets analysis via the batch job.
+`.docx`/`.txt` documents have no page image to send to either provider — both
+runners extract their text natively (`indexer._extract_native_text`, no OCR/LLM
+call) before building any request. For Mistral (OCR-only) this means the
+document is excluded from the JSONL entirely; for Gemini (which also handles
+analysis) the extracted text routes the document into the existing text-only
+branch, so it still gets analysis via the batch job.
 
 Each test carries:
   Doc:  which documented area it protects
@@ -589,7 +589,7 @@ def test_gemini_resume_job_id_skips_submission(env):
     assert env.get_doc(doc_id).summary == "resumed"
 
 
-# ══════════════════════ .docx native-extraction routing ═════════════════════════
+# ═══════════════════ .docx/.txt native-extraction routing ═══════════════════════
 
 def _forbid_httpx():
     def _ctor(*a, **k):
@@ -604,7 +604,7 @@ def test_mistral_docx_extracted_natively_not_sent_to_mistral(env, monkeypatch):
     env.make_provider("mistral")
     task_id = env.make_task("batch_ocr_mistral")
     doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
-    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text", lambda path: "docx body text")
+    monkeypatch.setattr(batch_ocr_mistral, "_extract_native_text", lambda path: "docx body text")
 
     with patch("httpx.AsyncClient", _forbid_httpx()):
         asyncio.run(run_batch_ocr_mistral(task_id, {}))
@@ -629,7 +629,7 @@ def test_mistral_mixed_batch_docx_excluded_pdf_included(env, monkeypatch):
     task_id = env.make_task("batch_ocr_mistral")
     docx_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
     pdf_id = env.add_doc(filename="b.pdf", filepath="/lib/b.pdf", ocr_text=None)
-    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text", lambda path: "docx body text")
+    monkeypatch.setattr(batch_ocr_mistral, "_extract_native_text", lambda path: "docx body text")
 
     result_line = json.dumps({
         "custom_id": str(pdf_id),
@@ -656,7 +656,7 @@ def test_mistral_docx_extraction_failure_marks_ocr_error(env, monkeypatch):
     env.make_provider("mistral")
     task_id = env.make_task("batch_ocr_mistral")
     doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
-    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text",
+    monkeypatch.setattr(batch_ocr_mistral, "_extract_native_text",
                          lambda path: (_ for _ in ()).throw(ValueError("corrupt file")))
 
     with patch("httpx.AsyncClient", _forbid_httpx()):
@@ -676,7 +676,7 @@ def test_gemini_docx_routed_to_text_only_after_native_extraction(env, monkeypatc
     env.make_provider("gemini")
     task_id = env.make_task("batch_ocr_gemini")
     doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
-    monkeypatch.setattr(batch_ocr_gemini, "extract_docx_text", lambda path: "docx body text")
+    monkeypatch.setattr(batch_ocr_gemini, "_extract_native_text", lambda path: "docx body text")
 
     captured = _run_gemini(env, task_id, {})
 
@@ -700,7 +700,7 @@ def test_gemini_docx_extraction_failure_marks_ocr_error_and_excluded(env, monkey
     env.make_provider("gemini")
     task_id = env.make_task("batch_ocr_gemini")
     doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
-    monkeypatch.setattr(batch_ocr_gemini, "extract_docx_text",
+    monkeypatch.setattr(batch_ocr_gemini, "_extract_native_text",
                          lambda path: (_ for _ in ()).throw(ValueError("corrupt file")))
 
     asyncio.run(run_batch_ocr_gemini(task_id, {}))
@@ -709,3 +709,50 @@ def test_gemini_docx_extraction_failure_marks_ocr_error_and_excluded(env, monkey
     assert doc.ocr_status == "error"
     assert doc.ocr_error == "corrupt file"
     assert env.get_task(task_id).status == "error"
+
+
+def test_mistral_txt_extracted_natively_not_sent_to_mistral(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — .txt has no page image, same routing as .docx
+    # Rule: a .txt document is extracted natively (ocr_model="native") and the
+    #       task finishes "done" without ever calling the Mistral API.
+    env.make_provider("mistral")
+    task_id = env.make_task("batch_ocr_mistral")
+    doc_id = env.add_doc(filename="a.txt", filepath="/lib/a.txt", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_mistral, "_extract_native_text", lambda path: "plain text body")
+
+    with patch("httpx.AsyncClient", _forbid_httpx()):
+        asyncio.run(run_batch_ocr_mistral(task_id, {}))
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_text == "plain text body"
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.vision_status == "skipped"
+
+    task = env.get_task(task_id)
+    assert task.status == "done"
+    assert task.result_summary["native"] == 1
+
+
+def test_gemini_txt_routed_to_text_only_after_native_extraction(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — .txt has no page image; same routing as .docx
+    # Rule: a .txt document with no ocr_text yet is extracted natively first,
+    #       then built as a text-only (not vision) request using that text.
+    env.make_provider("gemini")
+    task_id = env.make_task("batch_ocr_gemini")
+    doc_id = env.add_doc(filename="a.txt", filepath="/lib/a.txt", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_gemini, "_extract_native_text", lambda path: "plain text body")
+
+    captured = _run_gemini(env, task_id, {})
+
+    lines = _jsonl_lines(captured["jsonl_bytes"])
+    assert len(lines) == 1
+    req = lines[0]["request"]
+    assert req["system_instruction"] == {"parts": [{"text": batch_ocr_gemini.ANALYSIS_SYSTEM}]}
+    assert req["contents"][0]["parts"][0]["text"] == "OCR Text:\nplain text body"
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_text == "plain text body"
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.vision_status == "skipped"

@@ -1,7 +1,7 @@
 import { FileText, Calendar, Tag, Sparkles, ScanText, Cpu, Waypoints } from "lucide-react";
 import type { Document } from "../../types";
 import { useT } from "../../i18n";
-import { iconForType, labelForType, isWordDoc } from "./typeIcons";
+import { iconForType, labelForType, isWordDoc, isTextDoc } from "./typeIcons";
 import { formatTypeName } from "./TypePicker";
 import "./DocumentCard.css";
 
@@ -115,8 +115,8 @@ function Thumbnail({ doc, thumbVersion, mode }: { doc: Document; thumbVersion?: 
     const url = `/thumbnails/${filename}${v ? `?v=${v}` : ""}`;
     return <img src={url} alt="" className="doc-thumb-img" loading="lazy" />;
   }
-  // .docx has no visual page to thumbnail — show the AI title large instead of a bare icon
-  if (mode === "grid" && isWordDoc(doc.mime_type) && doc.title) {
+  // .docx/.txt have no visual page to thumbnail — show the AI title large instead of a bare icon
+  if (mode === "grid" && (isWordDoc(doc.mime_type) || isTextDoc(doc.mime_type)) && doc.title) {
     return (
       <div className="doc-thumb-placeholder doc-thumb-title">
         <span className="doc-thumb-title-text">{doc.title}</span>
@@ -203,7 +203,7 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
         </div>
       </div>
       <div className="doc-grid-footer">
-        <span className="doc-filename truncate text-sm">{isWordDoc(doc.mime_type) ? doc.filename : (doc.title || doc.filename)}</span>
+        <span className="doc-filename truncate text-sm">{(isWordDoc(doc.mime_type) || isTextDoc(doc.mime_type)) ? doc.filename : (doc.title || doc.filename)}</span>
         {gridSize !== "sm" && date && (
           <span className="doc-date text-xs text-muted">{date}</span>
         )}
