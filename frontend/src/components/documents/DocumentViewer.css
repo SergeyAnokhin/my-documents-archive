@@ -1,6 +1,6 @@
 .viewer-layout {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 360px;
   gap: var(--sp-5);
   height: 76vh;
 }
