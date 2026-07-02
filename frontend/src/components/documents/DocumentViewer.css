@@ -263,7 +263,9 @@
   border-top: 1px solid var(--color-border-soft);
   flex-shrink: 0;
   display: flex;
-  gap: var(--sp-2);
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+  column-gap: var(--sp-2);
 }
 
 /* ── Image edit toolbar ──────────────────────────────────────────────────── */

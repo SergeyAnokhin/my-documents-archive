@@ -157,6 +157,13 @@ def _run_thumbnail(doc: Document, db: Session) -> None:
 
 # ── Step 3 — AI Vision ────────────────────────────────────────────────────────
 
+# Vision only sees the document's first page (services/ai_vision.py::load_first_page).
+# Its combined vision+analysis JSON is trusted as the source of summary/title/tags
+# only when that first page is effectively the only real text we have — otherwise
+# a cover/title page would overwrite a much fuller OCR/native-extracted document.
+VISION_ANALYSIS_OVERRIDE_MAX_OCR_LEN = 200
+
+
 async def _run_vision(doc: Document, db: Session) -> None:
     if doc.vision_status == "done":
         return
@@ -181,8 +188,10 @@ async def _run_vision(doc: Document, db: Session) -> None:
             doc.vision_description = text
             doc.api_cost_vision = cost
             doc.vision_status = "done"
-            if analysis:
-                # Capable model returned full structured analysis — skip Step 4.
+            has_fuller_text = len((doc.ocr_text or "").strip()) >= VISION_ANALYSIS_OVERRIDE_MAX_OCR_LEN
+            if analysis and not has_fuller_text:
+                # First page is effectively the only text available — trust
+                # the capable model's combined analysis and skip Step 4.
                 _apply_analysis_result(doc, analysis, db)
                 doc.analysis_status = "done"
                 _log(db, doc, "vision", "done",
@@ -190,7 +199,9 @@ async def _run_vision(doc: Document, db: Session) -> None:
                 _log(db, doc, "analysis", "done",
                      f"via vision: {doc.document_type}, {doc.language}", level="info")
             else:
-                # Mistral OCR or unparseable response — Analysis will run separately.
+                # Mistral OCR, unparseable response, or a fuller OCR/native text
+                # already exists — Step 4 analyzes the full document instead of
+                # relying on vision's first-page-only summary/title/tags.
                 _log(db, doc, "vision", "done", level="trace")
     except Exception as e:
         doc.vision_status = "error"

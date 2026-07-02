@@ -10,19 +10,20 @@ SQLite DB rather than db=None (matches the harness used in test_batch_ocr.py).
 """
 import asyncio
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import Document
+from app.models import AppSettings, Document
 from app.services.ai_analysis import AnalysisResult
 from app.services.indexer import (
     _apply_analysis_result,
     _is_docx,
     _is_unclassified,
     _run_docx_extract,
+    _run_vision,
 )
 
 
@@ -134,3 +135,48 @@ def test_run_docx_extract_marks_error_on_failure(tmp_path):
 
     assert doc.ocr_status == "error"
     assert doc.ocr_error == "corrupt file"
+
+
+# ── Step 3 — Vision vs. fuller OCR/native text ───────────────────────────────
+
+def _enable_vision(db):
+    db.add(AppSettings(key="enable_ai_vision", value="true"))
+    db.commit()
+
+
+def test_run_vision_applies_analysis_when_no_fuller_text_exists(tmp_path):
+    # Rule: when the document has no other real text (scan with no OCR text,
+    # or OCR text below the threshold), the capable model's combined
+    # vision+analysis JSON is trusted directly and Step 4 is skipped.
+    db = _make_session(tmp_path)
+    _enable_vision(db)
+    doc = Document(filename="a.pdf", filepath=str(tmp_path / "a.pdf"), source="sync", ocr_text="")
+    db.add(doc)
+    db.commit()
+
+    analysis = AnalysisResult(summary="s", title="T", document_type="invoice")
+    with patch("app.services.indexer.describe_document", AsyncMock(return_value=("page 1 text", analysis, 0.01))):
+        asyncio.run(_run_vision(doc, db))
+
+    assert doc.document_type == "invoice"
+    assert doc.analysis_status == "done"
+
+
+def test_run_vision_defers_to_step4_when_fuller_ocr_text_exists(tmp_path):
+    # Rule: when a fuller OCR/native text already exists (multi-page document,
+    # first page is just a cover/title), vision's page-1-only analysis must
+    # NOT overwrite it — Step 4 is left to run on the full text instead.
+    db = _make_session(tmp_path)
+    _enable_vision(db)
+    full_text = "Article 1. " * 40  # well above the override threshold
+    doc = Document(filename="a.pdf", filepath=str(tmp_path / "a.pdf"), source="sync", ocr_text=full_text)
+    db.add(doc)
+    db.commit()
+
+    analysis = AnalysisResult(summary="cover page only", title="Title Page", document_type="unclassified")
+    with patch("app.services.indexer.describe_document", AsyncMock(return_value=("Title Page", analysis, 0.01))):
+        asyncio.run(_run_vision(doc, db))
+
+    assert doc.document_type is None  # untouched — Step 4 will set it from full_text
+    assert doc.analysis_status != "done"
+    assert doc.vision_description == "Title Page"  # transcription is still recorded

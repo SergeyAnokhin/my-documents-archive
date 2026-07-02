@@ -16,6 +16,7 @@ import httpx
 from PIL import Image
 
 from ..config import settings
+from .pdf_extract import extract_pdf_text
 
 log = logging.getLogger(__name__)
 
@@ -25,11 +26,25 @@ log = logging.getLogger(__name__)
 async def extract_text(filepath: str, engines: list[str] | None = None) -> tuple[str, str]:
     """Return (text, engine) for the file.
 
+    For a PDF with a usable embedded text layer (born-digital, e.g. a contract
+    exported from Word), that text is returned directly as ("native") — no
+    rasterize+OCR needed. Scanned/image-only PDFs fall through to the OCR
+    engines below, same as before.
+
     engines: ordered list of engine names to try — "easyocr" | "tesseract".
     When None, falls back to settings.ocr_engine env-var behaviour (backwards compat).
     Raises when all engines fail or none are configured.
     """
     path = Path(filepath)
+
+    if path.suffix.lower() == ".pdf":
+        try:
+            native_text = extract_pdf_text(filepath)
+        except Exception as e:
+            log.warning("Native PDF text extraction failed for %s: %s", path, e)
+            native_text = None
+        if native_text is not None:
+            return native_text, "native"
 
     if engines is None:
         # Legacy env-var path

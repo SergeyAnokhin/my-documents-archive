@@ -193,3 +193,51 @@ def test_extract_text_raises_when_no_engines_configured():
     # Rule: an empty engines list raises rather than silently doing nothing.
     with pytest.raises(ValueError, match="No OCR engines configured"):
         asyncio.run(extract_text("/lib/a.pdf", engines=[]))
+
+
+# ── extract_text: native PDF text-layer fast-path ─────────────────────────────
+
+def test_extract_text_pdf_uses_native_text_layer_when_available(monkeypatch):
+    # Doc:  docs/code-map.md — services/ocr.py native PDF fast-path
+    # Rule: for a .pdf with a usable embedded text layer, extract_text returns
+    #       it as ("native") and never touches the OCR engines.
+    monkeypatch.setattr(ocr_module, "extract_pdf_text", MagicMock(return_value="the full contract text"))
+    tesseract_mock = MagicMock(side_effect=AssertionError("tesseract should not run"))
+    monkeypatch.setattr(ocr_module, "_local_tesseract", tesseract_mock)
+
+    text, engine = asyncio.run(extract_text("/lib/contract.pdf", engines=["tesseract"]))
+    assert (text, engine) == ("the full contract text", "native")
+
+
+def test_extract_text_pdf_falls_back_to_ocr_when_no_text_layer(monkeypatch):
+    # Doc:  docs/code-map.md — services/ocr.py native PDF fast-path
+    # Rule: a scanned PDF (extract_pdf_text returns None) falls through to the
+    #       normal OCR engine chain unchanged.
+    monkeypatch.setattr(ocr_module, "extract_pdf_text", MagicMock(return_value=None))
+    monkeypatch.setattr(ocr_module, "_local_tesseract", MagicMock(return_value="ocr text"))
+
+    text, engine = asyncio.run(extract_text("/lib/scan.pdf", engines=["tesseract"]))
+    assert (text, engine) == ("ocr text", "tesseract")
+
+
+def test_extract_text_pdf_falls_back_to_ocr_when_native_extraction_raises(monkeypatch):
+    # Doc:  docs/code-map.md — services/ocr.py native PDF fast-path
+    # Rule: a corrupt/encrypted PDF (extract_pdf_text raises) doesn't fail
+    #       extract_text — it falls back to OCR instead of propagating.
+    monkeypatch.setattr(ocr_module, "extract_pdf_text", MagicMock(side_effect=ValueError("corrupt")))
+    monkeypatch.setattr(ocr_module, "_local_tesseract", MagicMock(return_value="ocr text"))
+
+    text, engine = asyncio.run(extract_text("/lib/scan.pdf", engines=["tesseract"]))
+    assert (text, engine) == ("ocr text", "tesseract")
+
+
+def test_extract_text_non_pdf_skips_native_extraction(monkeypatch):
+    # Doc:  docs/code-map.md — services/ocr.py native PDF fast-path
+    # Rule: the native text-layer check only applies to .pdf files.
+    called = MagicMock(return_value="should not be used")
+    monkeypatch.setattr(ocr_module, "extract_pdf_text", called)
+    monkeypatch.setattr(ocr_module, "_local_tesseract", MagicMock(return_value="ocr text"))
+
+    text, engine = asyncio.run(extract_text("/lib/scan.png", engines=["tesseract"]))
+    assert (text, engine) == ("ocr text", "tesseract")
+    called.assert_not_called()
