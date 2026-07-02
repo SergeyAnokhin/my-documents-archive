@@ -18,6 +18,8 @@ from .task_runtime import (
     set_progress as _set_progress,
 )
 from .batch_ocr import _scope_filter
+from .docx_extract import extract_docx_text
+from .indexer import _is_docx
 
 
 async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
@@ -34,6 +36,11 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
 
     Flow (resume via config["resume_batch_job_id"]):
       Skips phases 1–4, jumps straight to polling an existing remote job.
+
+    `.docx` documents have no page image to send to Mistral OCR — they're
+    extracted natively instead (free, local, `ocr_model="native"`) and never
+    added to the JSONL batch. A follow-up batch-analysis run (which only
+    requires `ocr_text` to be set) picks them up like any other document.
     """
     from .ai_vision import load_first_page, parse_mistral_ocr, _get_max_image_size
 
@@ -71,6 +78,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         db.close()
 
     headers = {"Authorization": f"Bearer {api_key}"}
+    native_processed = 0  # .docx documents handled locally, never sent to Mistral
 
     if resume_job_id:
         # ── Resume path: skip submission, reconnect to existing job ──────────
@@ -110,6 +118,34 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
             if _is_stopped(task_id):
                 _log(task_id, f"Stopped during image loading after {i} document(s)")
                 return
+
+            if _is_docx(doc):
+                # .docx has no page image — Mistral OCR doesn't apply. Extract
+                # text natively (free, local) instead; the follow-up batch
+                # analysis step picks it up like any other document with
+                # ocr_text already set.
+                with SessionLocal() as docx_db:
+                    try:
+                        text = extract_docx_text(doc.filepath)
+                        live_doc = docx_db.query(Document).filter(Document.id == doc.id).first()
+                        if live_doc:
+                            live_doc.ocr_text = text
+                            live_doc.ocr_status = "done"
+                            live_doc.ocr_model = "native"
+                            live_doc.vision_status = "skipped"
+                            docx_db.commit()
+                        native_processed += 1
+                        _log(task_id, f"✓ {doc.filename}: native text extraction (.docx has no page image — Mistral OCR skipped)")
+                    except Exception as exc:
+                        live_doc = docx_db.query(Document).filter(Document.id == doc.id).first()
+                        if live_doc:
+                            live_doc.ocr_status = "error"
+                            live_doc.ocr_error = str(exc)
+                            docx_db.commit()
+                        _log(task_id, f"✗ {doc.filename}: native docx extraction failed — {exc}", "error")
+                _set_progress(task_id, i + 1, total)
+                continue
+
             try:
                 img_bytes = load_first_page(doc.filepath, max_size=max_size)
                 b64 = base64.b64encode(img_bytes).decode()
@@ -132,6 +168,10 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
             _set_progress(task_id, i + 1, total)
 
         if not jsonl_lines:
+            if native_processed:
+                _log(task_id, f"All {native_processed} document(s) handled natively (.docx) — nothing to send to Mistral")
+                _finish(task_id, "done", {"processed": native_processed, "native": native_processed})
+                return
             _log(task_id, "No document images could be loaded", "error")
             _finish(task_id, "error")
             return
@@ -292,11 +332,13 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         db.close()
 
     summary = {
-        "processed": processed,
+        "processed": processed + native_processed,
         "failed": failed_count,
         "cost_usd": round(total_cost, 5),
         "batch_job_id": batch_job_id,
     }
+    if native_processed:
+        summary["native"] = native_processed
     from .usage import record_usage
     record_usage(
         usage_type="batch_ocr", provider_type="mistral", model=model,

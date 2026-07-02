@@ -255,6 +255,27 @@
   color: var(--color-ink-faint);
 }
 
+/* .docx card thumb: AI title fills the placeholder area (no page image exists) */
+.doc-thumb-title {
+  padding: var(--sp-3);
+}
+.doc-thumb-title-text {
+  font-size: 1.75rem; /* 2x .doc-filename's text-sm (.875rem) */
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--color-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* The sm thumb (100px tall) is too short for the full-size title — scale it down */
+.doc-grid-sm .doc-thumb-title-text {
+  font-size: 1rem;
+  -webkit-line-clamp: 3;
+}
+
 /* MS Word brand blue — signals a .docx file where no visual thumbnail exists */
 .icon-word {
   color: #2b579a;

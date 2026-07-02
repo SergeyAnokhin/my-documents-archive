@@ -23,6 +23,8 @@ from .ai_vision import VISION_FULL_PROMPT
 from .ai_analysis import ANALYSIS_SYSTEM
 from .ai_common import parse_llm_json
 from .batch_ocr import GEMINI_BATCH_BASE, _needs_vision, _scope_filter
+from .docx_extract import extract_docx_text
+from .indexer import _is_docx
 
 
 async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
@@ -36,6 +38,11 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         tesseract/easyocr — it's reused as-is, not re-transcribed), only
         analysis is missing — sends just that text with ANALYSIS_SYSTEM (no
         image, cheaper). `ocr_text`/`ocr_model` are left untouched in this mode.
+
+    `.docx` documents have no page image to send, so before the vision/text
+    split above, any `.docx` still missing `ocr_text` is extracted natively
+    (free, local, `ocr_model="native"`) — this naturally routes it into the
+    text-only branch afterwards, so it still gets analysis via the batch job.
 
     Flow (REST, mirrors `run_batch_ocr_mistral`):
       1. For each pending document, build either a vision or text-only request.
@@ -129,6 +136,35 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             if _is_stopped(task_id):
                 _log(task_id, f"Stopped during request building after {i} document(s)")
                 return
+
+            if _is_docx(doc) and _needs_vision(doc):
+                # No page image exists for .docx — extract text natively (free,
+                # local) instead of trying to load a first-page image. Once
+                # ocr_text is populated, _needs_vision(doc) below is False, so
+                # the doc falls through to the text-only branch and still gets
+                # analysis via this same batch job.
+                with SessionLocal() as docx_db:
+                    try:
+                        text = extract_docx_text(doc.filepath)
+                        live_doc = docx_db.query(Document).filter(Document.id == doc.id).first()
+                        if live_doc:
+                            live_doc.ocr_text = text
+                            live_doc.ocr_status = "done"
+                            live_doc.ocr_model = "native"
+                            live_doc.vision_status = "skipped"
+                            docx_db.commit()
+                        doc.ocr_text = text
+                        _log(task_id, f"📄 {doc.filename}: native text extraction (.docx has no page image)")
+                    except Exception as exc:
+                        live_doc = docx_db.query(Document).filter(Document.id == doc.id).first()
+                        if live_doc:
+                            live_doc.ocr_status = "error"
+                            live_doc.ocr_error = str(exc)
+                            docx_db.commit()
+                        _log(task_id, f"❌ {doc.filename}: native docx extraction failed — {exc}", "error")
+                        _set_progress(task_id, i + 1, total)
+                        continue
+
             key = str(doc.id)
             try:
                 if _needs_vision(doc):

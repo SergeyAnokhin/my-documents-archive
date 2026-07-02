@@ -34,7 +34,7 @@ recording must not break the calling pipeline.
 | `ai_analysis.analyze_document` | `analysis` |
 | `ai_analysis.suggest_document_types` | `suggest_types` |
 | `ai_vision.describe_document` | `vision` |
-| `search.ask_documents` (Q&A) | `qa` |
+| `qa.answer_question` (Q&A, `/ask`) | `qa` |
 | `type_icon_suggestion._suggest_one` | `icon_suggest` |
 | `indexer._run_ocr` (local Tesseract / EasyOCR worker) | `ocr` (cost 0) |
 | `indexer._run_embedding` (sentence-transformers) | `embedding` (cost 0) |

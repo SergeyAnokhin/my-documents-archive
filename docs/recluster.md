@@ -6,8 +6,8 @@ each cluster once (paid — one call per cluster, not per document). It lives in
 [`backend/app/services/recluster.py`](../backend/app/services/recluster.py), with
 entry points in [`admin_library.py`](../backend/app/routers/admin_library.py)
 (simple button, `POST /api/admin/recluster`, fixed defaults) and
-[`routers/tasks.py`](../backend/app/routers/tasks.py) (`recluster` task type,
-configurable — see below).
+[`services/task_runners.py`](../backend/app/services/task_runners.py) (`recluster`
+task type, configurable — see below).
 
 ## Pipeline
 

@@ -1,5 +1,5 @@
 """Pins startup recovery of orphaned "running" tasks — see docs/batch-ocr.md
-§Resume support and docs/code-map.md (routers/tasks.py: recover_running_tasks).
+§Resume support and docs/code-map.md (services/task_runners.py: recover_running_tasks).
 
 A background runner is just an in-process asyncio coroutine (FastAPI
 BackgroundTasks, no separate worker) — a pod restart kills it mid-flight
@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import Task
-from app.routers import tasks as tasks_module
+from app.services import task_runners as tasks_module
 
 
 @pytest.fixture

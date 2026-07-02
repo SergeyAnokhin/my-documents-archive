@@ -7,7 +7,8 @@ from pathlib import Path
 from .config import settings
 from .database import init_db
 from .routers import documents, upload, search, admin, indexing, lab
-from .routers.tasks import recover_running_tasks, router as tasks_router
+from .routers.tasks import router as tasks_router
+from .services.task_runners import recover_running_tasks
 
 
 class _SuppressHealthCheck(logging.Filter):

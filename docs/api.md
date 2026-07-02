@@ -55,7 +55,9 @@ Base URL: `http://localhost:8000`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/search` | Search documents. Params: `query`, `mode`, `year`, `month`, `document_type`, `tag`, `language`, `ocr_status`, `page`, `page_size` |
+| GET | `/api/search` | Search documents. Params: `query`, `mode`, `year`, `month`, `document_type`, `tag`, `folder` (relative dir path), `language`, `ocr_status`, `quality` (advanced-mode gap filter: `no_ocr`/`no_embedding`/`no_analysis`/`no_summary`/`no_tags`/`no_category`/`complete`), `page`, `page_size` |
+| GET | `/api/search/embedded-ids` | Document ids that have a vector in ChromaDB: `{ids: number[]}` |
+| GET | `/api/search/quality-counts` | Document counts per quality gap (for the quality-filter dropdown) |
 | GET | `/api/search/ask` | AI Q&A over the archive. Params: `query`, `language`, `year`, `filter_language`, `depth` (1 fast / 2 normal / 3 deep — controls `n_retrieve`/`n_send`/`ocr_chars`), `debug` |
 
 `mode`: `fulltext` (SQLite LIKE over `ocr_text + filename + summary`) · `semantic` (ChromaDB, Phase 4) · `hybrid` (Phase 4)
@@ -113,7 +115,8 @@ Advanced-mode-only job queue. See [batch-ocr.md](batch-ocr.md) for batch task de
 | PATCH | `/api/tasks/{id}` | Update task (reorder, rename) |
 | DELETE | `/api/tasks/{id}` | Delete task |
 | GET | `/api/tasks/candidates` | Candidate document counts per task type |
-| GET | `/api/tasks/candidates/scope` | Candidate sets per task type (doc ids) |
+| GET | `/api/tasks/candidates/scope` | Candidate count for batch OCR tasks at a cumulative scope level. Params: `task_type`, `scope` |
+| GET | `/api/tasks/candidates/compress` | How many images exceed the compress threshold. Param: `threshold` (px, default 1024) |
 | POST | `/api/tasks/stop-all` | Stop all running tasks |
 | POST | `/api/tasks/{id}/run` | Start task in background |
 | POST | `/api/tasks/{id}/stop` | Stop running task |
@@ -121,7 +124,9 @@ Advanced-mode-only job queue. See [batch-ocr.md](batch-ocr.md) for batch task de
 | GET | `/api/tasks/{id}/batch-result` | Download raw JSONL results file saved during last batch run |
 | GET | `/api/tasks/{id}/logs` | Task log entries. Param: `limit` (default 200) |
 
-Task types: `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `embed_missing` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini` · `cleanup_missing` · `compress_images`
+Task types: `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `embed_missing` · `fix_quality` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini` · `cleanup_missing` · `compress_images`
+
+Runners and the type→runner dispatcher live in [`services/task_runners.py`](../backend/app/services/task_runners.py); `routers/tasks.py` only exposes the endpoints above.
 
 `embed_missing` scans the whole archive for analyzed docs (summary present) that lack a ChromaDB embedding and builds the vectors locally (free, no AI provider). Candidate count is logged at start. Embeddings are also generated automatically after every analysis completion (indexer pipeline, reclassify, Gemini batch analysis, Mistral/Gemini batch OCR+analysis, and Lab save).
 

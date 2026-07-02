@@ -16,6 +16,13 @@ request shapes (JSONL lines, upload/create payloads), the status-polling
 interpretation, and the result-line parsing (success/error branches,
 vision-vs-text-only field handling).
 
+`.docx` documents have no page image to send to either provider — both runners
+extract their text natively (`docx_extract.extract_docx_text`, no OCR/LLM call)
+before building any request. For Mistral (OCR-only) this means the `.docx` is
+excluded from the JSONL entirely; for Gemini (which also handles analysis) the
+extracted text routes the document into the existing text-only branch, so it
+still gets analysis via the batch job.
+
 Each test carries:
   Doc:  which documented area it protects
   Rule: the specific behavior it asserts
@@ -580,3 +587,125 @@ def test_gemini_resume_job_id_skips_submission(env):
     assert "jsonl_bytes" not in captured
     assert "batch_create_body" not in captured
     assert env.get_doc(doc_id).summary == "resumed"
+
+
+# ══════════════════════ .docx native-extraction routing ═════════════════════════
+
+def _forbid_httpx():
+    def _ctor(*a, **k):
+        raise AssertionError("httpx.AsyncClient should not be called")
+    return _ctor
+
+
+def test_mistral_docx_extracted_natively_not_sent_to_mistral(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — .docx has no page image, Mistral OCR doesn't apply
+    # Rule: a .docx document is extracted natively (ocr_model="native") and the
+    #       task finishes "done" without ever calling the Mistral API.
+    env.make_provider("mistral")
+    task_id = env.make_task("batch_ocr_mistral")
+    doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text", lambda path: "docx body text")
+
+    with patch("httpx.AsyncClient", _forbid_httpx()):
+        asyncio.run(run_batch_ocr_mistral(task_id, {}))
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_text == "docx body text"
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.vision_status == "skipped"
+
+    task = env.get_task(task_id)
+    assert task.status == "done"
+    assert task.result_summary["processed"] == 1
+    assert task.result_summary["native"] == 1
+
+
+def test_mistral_mixed_batch_docx_excluded_pdf_included(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — mixed-format batch scope
+    # Rule: in a batch with both .docx and .pdf, only the .pdf is sent to
+    #       Mistral; the .docx's native-extraction count folds into "processed".
+    env.make_provider("mistral", model="mistral-ocr-latest")
+    task_id = env.make_task("batch_ocr_mistral")
+    docx_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
+    pdf_id = env.add_doc(filename="b.pdf", filepath="/lib/b.pdf", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text", lambda path: "docx body text")
+
+    result_line = json.dumps({
+        "custom_id": str(pdf_id),
+        "response": {"body": {"pages": [{"markdown": "pdf text"}], "usage_info": {"pages_processed": 1}}},
+    })
+    captured = _run_mistral(env, task_id, {}, download_text=result_line)
+
+    filename, content, content_type = captured["upload_files"]["file"]
+    lines = _jsonl_lines(content)
+    assert len(lines) == 1
+    assert lines[0]["custom_id"] == str(pdf_id)
+
+    assert env.get_doc(docx_id).ocr_model == "native"
+
+    task = env.get_task(task_id)
+    assert task.result_summary["processed"] == 2  # 1 native + 1 via Mistral
+
+
+def test_mistral_docx_extraction_failure_marks_ocr_error(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — native docx extraction contract
+    # Rule: a corrupt/unreadable .docx sets ocr_status="error" with the
+    #       exception message, mirroring the OCR failure contract, and the
+    #       task ends "error" when no document could be processed at all.
+    env.make_provider("mistral")
+    task_id = env.make_task("batch_ocr_mistral")
+    doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_mistral, "extract_docx_text",
+                         lambda path: (_ for _ in ()).throw(ValueError("corrupt file")))
+
+    with patch("httpx.AsyncClient", _forbid_httpx()):
+        asyncio.run(run_batch_ocr_mistral(task_id, {}))
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_status == "error"
+    assert doc.ocr_error == "corrupt file"
+    assert env.get_task(task_id).status == "error"
+
+
+def test_gemini_docx_routed_to_text_only_after_native_extraction(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — .docx has no page image; native extraction
+    #       routes it into the existing text-only branch
+    # Rule: a .docx document with no ocr_text yet is extracted natively first,
+    #       then built as a text-only (not vision) request using that text.
+    env.make_provider("gemini")
+    task_id = env.make_task("batch_ocr_gemini")
+    doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_gemini, "extract_docx_text", lambda path: "docx body text")
+
+    captured = _run_gemini(env, task_id, {})
+
+    lines = _jsonl_lines(captured["jsonl_bytes"])
+    assert len(lines) == 1
+    req = lines[0]["request"]
+    assert req["system_instruction"] == {"parts": [{"text": batch_ocr_gemini.ANALYSIS_SYSTEM}]}
+    assert req["contents"][0]["parts"][0]["text"] == "OCR Text:\ndocx body text"
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_text == "docx body text"
+    assert doc.ocr_status == "done"
+    assert doc.ocr_model == "native"
+    assert doc.vision_status == "skipped"
+
+
+def test_gemini_docx_extraction_failure_marks_ocr_error_and_excluded(env, monkeypatch):
+    # Doc:  docs/batch-ocr.md — native docx extraction contract
+    # Rule: a failed native extraction sets ocr_status="error" and the document
+    #       is excluded from the batch request entirely (not sent to Gemini).
+    env.make_provider("gemini")
+    task_id = env.make_task("batch_ocr_gemini")
+    doc_id = env.add_doc(filename="a.docx", filepath="/lib/a.docx", ocr_text=None)
+    monkeypatch.setattr(batch_ocr_gemini, "extract_docx_text",
+                         lambda path: (_ for _ in ()).throw(ValueError("corrupt file")))
+
+    asyncio.run(run_batch_ocr_gemini(task_id, {}))
+
+    doc = env.get_doc(doc_id)
+    assert doc.ocr_status == "error"
+    assert doc.ocr_error == "corrupt file"
+    assert env.get_task(task_id).status == "error"

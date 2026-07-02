@@ -8,7 +8,7 @@ Each test below carries:
   Doc:  which documented area it protects (or "none" for code-only behavior)
   Rule: the specific behavior it asserts
 """
-from app.routers.search import (
+from app.services.search_query import (
     _expand_fulltext_query,
     _highlight,
     _merge_hybrid,

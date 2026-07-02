@@ -108,12 +108,20 @@ function TypeIcon({ type, size, className }: { type: string; size: number; class
   );
 }
 
-function Thumbnail({ doc, thumbVersion }: { doc: Document; thumbVersion?: number }) {
+function Thumbnail({ doc, thumbVersion, mode }: { doc: Document; thumbVersion?: number; mode?: "list" | "grid" }) {
   if (doc.thumbnail_path) {
     const v = thumbVersion ?? (doc.updated_at ? new Date(doc.updated_at).getTime() : undefined);
     const filename = doc.thumbnail_path.split(/[/\\]/).pop();
     const url = `/thumbnails/${filename}${v ? `?v=${v}` : ""}`;
     return <img src={url} alt="" className="doc-thumb-img" loading="lazy" />;
+  }
+  // .docx has no visual page to thumbnail — show the AI title large instead of a bare icon
+  if (mode === "grid" && isWordDoc(doc.mime_type) && doc.title) {
+    return (
+      <div className="doc-thumb-placeholder doc-thumb-title">
+        <span className="doc-thumb-title-text">{doc.title}</span>
+      </div>
+    );
   }
   return (
     <div className="doc-thumb-placeholder">
@@ -186,7 +194,7 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
       onKeyDown={(e) => e.key === "Enter" && onClick()}
     >
       <div className="doc-grid-thumb">
-        <Thumbnail doc={doc} thumbVersion={thumbVersion} />
+        <Thumbnail doc={doc} thumbVersion={thumbVersion} mode="grid" />
         {doc.document_type && <TypeIcon type={doc.document_type} size={24} className="doc-grid-type-icon" />}
         {showScore && <ScoreChip score={score} className="score-chip-thumb" />}
         <div className="doc-grid-badges">
@@ -195,7 +203,7 @@ export function DocumentCard({ doc, highlight, onClick, onTagClick, onCategoryCl
         </div>
       </div>
       <div className="doc-grid-footer">
-        <span className="doc-filename truncate text-sm">{doc.title || doc.filename}</span>
+        <span className="doc-filename truncate text-sm">{isWordDoc(doc.mime_type) ? doc.filename : (doc.title || doc.filename)}</span>
         {gridSize !== "sm" && date && (
           <span className="doc-date text-xs text-muted">{date}</span>
         )}

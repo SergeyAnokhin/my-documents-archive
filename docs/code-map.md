@@ -25,7 +25,9 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, delete, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents` |
 | `routers/upload.py` | File upload endpoint — prefix `/api/upload` |
-| `routers/search.py` | Full-text + semantic search — prefix `/api/search`. `GET /` fulltext/semantic/hybrid; `GET /ask` AI Q&A (semantic retrieval → AI provider → answer + sources). `GET /ask?debug=true` adds a full retrieval trace (`AskDebug`) to the response; an INFO `🔎 [ask] retrieval` table is also logged every request. Fulltext searches filename, ocr_text, summary, document_type, tags, person, organization. |
+| `routers/search.py` | Search endpoints only — prefix `/api/search`. `GET /` fulltext/semantic/hybrid, `GET /embedded-ids`, `GET /quality-counts`, `GET /ask` (thin wrapper over `services/qa.py`). Query-building helpers live in `services/search_query.py` |
+| `services/search_query.py` | Text-query helpers shared by search + `/ask`: `_parse_query` (quoted phrases), `_apply_text_filter` (LIKE over filename/ocr_text/summary/type/tags/person/org), `_highlight` snippets, `_merge_hybrid` (both→semantic→fulltext tier order), `_semantic_scored`, `_fulltext_ids`, Cyrillic↔Latin transliteration (`_expand_fulltext_query`) |
+| `services/qa.py` | `/ask` AI Q&A pipeline: depth config (`_DEPTH_CFG`), hybrid retrieval, `build_context()`/`build_prompts()` (what the paid LLM receives), `answer_question()` → `AIAnswerResponse`, retrieval INFO table + `AskDebug` trace (`?debug=true`), usage recording. Split out of `routers/search.py` |
 | `routers/admin.py` | **Aggregator** — mounts the five `admin_*` sub-routers under prefix `/api/admin`. Start here, then jump to the right sub-router below |
 | `routers/admin_library.py` | Stats, sync, batch-index, reclassify-all/unclassified, log (+ `_log` helper) |
 | `routers/admin_folders.py` | Watched-folder CRUD: list / add / remove / toggle |
@@ -55,11 +57,13 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
 | `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
-| `routers/tasks.py` | Task queue CRUD + run/stop/logs + the `_run_task_bg` dispatcher and the short in-process runners (index/sync/reclassify/recluster/`embed_missing`/cleanup) — prefix `/api/tasks`. `embed_missing` (`_embed_missing`) backfills ChromaDB vectors for analyzed docs that lack them. Used by the Tasks panel (advanced mode only). |
-| `services/task_runtime.py` | Shared helpers for background task runners (`log_task`, `is_stopped`, `set_progress`, `finish`) — each opens its own short-lived session. Imported by `tasks.py` and `batch_ocr.py`. |
+| `routers/tasks.py` | Task queue endpoints only: CRUD, candidates counts, run/stop/resume-batch/logs/batch-result — prefix `/api/tasks`. Runners live in `services/task_runners.py`. Used by the Tasks panel (advanced mode only). |
+| `services/task_runners.py` | The `_run_task_bg` type→runner dispatcher, `recover_running_tasks()` startup recovery (auto-resume batch jobs with a saved `batch_job_id`, reset the rest to "stopped"), and the short in-process runners (index/sync/reclassify/recluster/`embed_missing`/`fix_quality`/cleanup). `_embed_missing` backfills ChromaDB vectors for analyzed docs that lack them. Split out of `routers/tasks.py` |
+| `services/image_compress.py` | `compress_images` task runner: resize on-disk images (jpg/png/tiff/webp) whose long side exceeds a threshold; `count_compress_candidates()` powers the create-form counter |
+| `services/task_runtime.py` | Shared helpers for background task runners (`log_task`, `is_stopped`, `set_progress`, `finish`) — each opens its own short-lived session. Imported by `task_runners.py` and the batch runner modules. |
 | `services/batch_ocr.py` | Shared batch-OCR helpers: `_scope_filter()` (cumulative re-OCR scope 1-4) and `_needs_vision(doc)` (no OCR text yet → vision; existing text, any engine including local tesseract/easyocr — reused as-is → text-only, cheaper) and `GEMINI_BATCH_BASE`. No runner logic itself — see the two files below. Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
-| `services/batch_ocr_mistral.py` | `run_batch_ocr_mistral()`: submit remote Mistral Batch OCR job → poll → write OCR text back. Imports `_scope_filter` from `batch_ocr.py` |
-| `services/batch_ocr_gemini.py` | `run_batch_ocr_gemini()`: submit remote Gemini Batch job → poll → write OCR/analysis fields back, routing each document through `_needs_vision()` (vision vs text-only request). Imports `_needs_vision`/`_scope_filter`/`GEMINI_BATCH_BASE` from `batch_ocr.py` |
+| `services/batch_ocr_mistral.py` | `run_batch_ocr_mistral()`: submit remote Mistral Batch OCR job → poll → write OCR text back. Imports `_scope_filter` from `batch_ocr.py`. `.docx` documents have no page image — extracted natively (`docx_extract.extract_docx_text`, `ocr_model="native"`) and excluded from the Mistral JSONL entirely; count surfaced as `result_summary["native"]`. See [batch-ocr.md](batch-ocr.md) |
+| `services/batch_ocr_gemini.py` | `run_batch_ocr_gemini()`: submit remote Gemini Batch job → poll → write OCR/analysis fields back, routing each document through `_needs_vision()` (vision vs text-only request). Imports `_needs_vision`/`_scope_filter`/`GEMINI_BATCH_BASE` from `batch_ocr.py`. `.docx` documents are extracted natively first (no page image exists), which makes `_needs_vision()` false so they fall into the existing text-only branch and still get analysis via the same batch job. See [batch-ocr.md](batch-ocr.md) |
 | `services/batch_analysis.py` | `run_batch_analysis_gemini()` — text-only analysis via Gemini Batch API. `doc_scope` param selects: `needs_analysis` (default), `unclassified` (for `reclassify_unclassified` task), `pending` (for `reclassify_all` task). Not directly creatable from the Tasks UI — only runs as the engine behind those two reclassify tasks. Saves raw JSONL to `.docintell/batch_results/task_{id}.jsonl`. |
 | `services/usage.py` | `record_usage(...)` — appends one row to the `ai_usage` ledger. Called by every model call site (analysis, vision, qa, suggest_types, icon_suggest, batch_*, ocr, embedding). Opens its own session; never raises. See [ai-usage.md](ai-usage.md) |
 
@@ -117,6 +121,9 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `components/ui/IndexingBadge.tsx` | Header badge showing pending OCR count (live polls `/api/indexing/status`) |
 | `components/ui/KeyboardHelp.tsx` | Keyboard shortcuts modal (triggered by `?`) |
 | `hooks/useKeyboard.ts` | Keyboard shortcut binding hook (ignores input focus) |
+| `hooks/useImageEdit.ts` | Image transform state for DocumentViewer: fetch image info, preview/apply rotate-crop-deskew via the lab transform endpoints |
+| `hooks/useSearchHistory.ts` | Recent-queries history per mode (`search`/`ask`), persisted in localStorage (`docintell:search_history:*`, max configurable via `docintell:prefs:search_history_max`) |
+| `components/documents/imgSrc.ts` | `resolveImgSrc()`: prefer a transform-preview base64 image over the raw thumbnail/file URL |
 | `contexts/AdvancedModeContext.tsx` | Boolean context for "advanced user mode" — persisted in localStorage; enables OCR Tuning button and Tasks panel |
 | `components/tasks/TasksPanel.tsx` | Task management panel (advanced mode only) **orchestrator**: state, polling, drag-reorder; renders `TaskCard`/`CreateTaskModal`/`TaskLogsModal`/`BatchMonitorModal`/`TasksEmpty` |
 | `components/tasks/taskConfig.ts` | Task-type constants shared by the panel: labels, per-type config (limit/scope/provider/doc-URL), `formatDuration()` |
@@ -239,8 +246,13 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 | `reclassify_unclassified` | AI classification for unclassified docs |
 | `reclassify_all` | Type-only classification for docs that already have a summary (one LLM call per doc, no summary/tag regeneration) |
 | `recluster` | Cluster-based recategorization of all analyzed docs (silhouette k-selection + LLM naming) |
+| `embed_missing` | Backfill ChromaDB vectors for analyzed docs missing embeddings (`force=true` re-embeds all) |
+| `fix_quality` | Fix one quality gap (`no_ocr`/`no_embedding`/`no_analysis`/`no_summary`/`no_tags`/`no_category`); analysis gaps are delegated to Gemini Batch Analysis |
 | `batch_ocr_mistral` | Async batch OCR via Mistral Batch API (50% cheaper) — see [batch-ocr.md](batch-ocr.md) |
 | `batch_ocr_gemini` | Async batch OCR + analysis via Gemini Batch Mode (50% cheaper); per-document hybrid — sends the image only if no OCR text exists yet, otherwise text-only (existing text is reused as-is, even from local tesseract/easyocr) — see [batch-ocr.md](batch-ocr.md) |
+| `batch_analysis_gemini` | Text-only analysis via Gemini Batch API; also the engine behind the two reclassify tasks (see `services/batch_analysis.py`) |
+| `cleanup_missing` | Soft-delete DB rows whose file no longer exists on disk |
+| `compress_images` | Resize on-disk images whose long side exceeds a threshold (`services/image_compress.py`) |
 
 Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag. The two `batch_ocr_*` tasks are long-running pollers: they submit a remote batch job, then poll every `poll_interval` seconds until the provider finishes (up to 24–48 h).
 

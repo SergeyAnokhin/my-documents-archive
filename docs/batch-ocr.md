@@ -1,9 +1,10 @@
 # Batch Tasks (Mistral & Gemini)
 
 Five task types run AI processing **asynchronously** through a provider's batch
-API, billed at ~50 % of the interactive price. All live in
-[`backend/app/routers/tasks.py`](../backend/app/routers/tasks.py) and are driven
-from the **Tasks** panel (advanced mode only).
+API, billed at ~50 % of the interactive price. All are dispatched from
+[`backend/app/services/task_runners.py`](../backend/app/services/task_runners.py)
+(endpoints in `routers/tasks.py`) and are driven from the **Tasks** panel
+(advanced mode only).
 
 ## Task types
 
@@ -50,6 +51,35 @@ Task logs show which mode was used per document (🖼️ image sent / 📝 text-
 no image) and a `📊 N via image, M via text-only` summary before upload. The
 final `result_summary` includes `vision_count` / `text_count` alongside
 `processed`/`failed`.
+
+## `.docx` documents (no page image)
+
+Both batch runners select documents purely by `ocr_status`/`ocr_text` state —
+they don't filter by file format. A `.docx` has no rendered page, so neither
+provider can OCR it; each runner detects it (`indexer._is_docx`) and extracts
+its text natively via `docx_extract.extract_docx_text()` (free, local, no
+API call) **before** deciding what to send:
+
+- **`batch_ocr_mistral`**: the `.docx` is extracted and marked
+  `ocr_status="done"`, `ocr_model="native"`, `vision_status="skipped"` —  it is
+  **excluded from the Mistral JSONL entirely** (there's nothing to send to
+  `/v1/ocr`). Its count is folded into `result_summary["processed"]` and
+  surfaced separately as `result_summary["native"]`. If every document in the
+  scope turns out to be `.docx`, the task finishes `"done"` without ever
+  calling the Mistral API.
+- **`batch_ocr_gemini`**: since this runner also handles analysis, the
+  extracted text simply makes `_needs_vision(doc)` become `False`, so the
+  `.docx` falls through into the existing **text-only** branch (see Hybrid
+  routing above) and still gets analysis via the same batch job — no separate
+  handling needed downstream.
+
+A failed native extraction (corrupt/encrypted file) sets `ocr_status="error"`
+with the exception message, same contract as an OCR failure, and the document
+is excluded from that run's batch request.
+
+**Practical effect**: your normal two-step habit (batch OCR → batch analysis)
+works unchanged for a mixed batch of scans and Word documents — `.docx` files
+just skip the OCR/vision step for free instead of being silently dropped.
 
 ## Provider batch support
 
@@ -134,7 +164,7 @@ only local polling stops. The job id is logged so it can be inspected manually.
 
 Polling runs as an in-process `asyncio` coroutine (FastAPI `BackgroundTasks`) — there is no separate worker process. If the backend pod restarts mid-poll (e.g. a `kubectl rollout restart` during an overnight Mistral run), the coroutine simply dies; the remote batch job is **not** affected, since it keeps running on the provider's servers (up to 24 h Mistral / 48 h Gemini) and `batch_job_id` was already persisted to `Task.result_summary` before polling started.
 
-`recover_running_tasks()` ([`backend/app/routers/tasks.py`](../backend/app/routers/tasks.py)) runs once at app startup (wired in `main.py`) and sweeps every `Task` left at `status="running"`:
+`recover_running_tasks()` ([`backend/app/services/task_runners.py`](../backend/app/services/task_runners.py)) runs once at app startup (wired in `main.py`) and sweeps every `Task` left at `status="running"`:
 
 - Batch task with a saved `batch_job_id` → auto-resumed (same as `resume-batch`, status stays `"running"`).
 - Anything else (batch task with no job id yet, or a non-batch task type) → reset to `"stopped"` so the Run/Resume buttons work again; any per-document work already committed before the restart is preserved.
@@ -156,6 +186,7 @@ Useful for debugging parse errors or auditing what the provider returned.
 | `batch_job_id` | ✓ | Remote job id (hidden from the card's result chips) |
 | `cost_usd` | Mistral only | Per-page OCR cost with batch discount |
 | `tokens_in` / `tokens_out` | Gemini only | Summed from `usageMetadata` |
+| `native` | Mistral only, when present | Count of `.docx` documents handled via native text extraction (already folded into `processed`) |
 
 While a job polls, `Task.result_summary` is `{"phase": "polling", "batch_job_id", "doc_count"}`
 so the card shows the remote job id.
