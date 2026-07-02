@@ -6,13 +6,12 @@ import { useT } from "../../i18n";
 import {
   listTasks, deleteTask, runTask, stopTask, stopAllTasks, updateTask,
 } from "../../api/documents";
-import type { Task, TaskType } from "../../types";
+import type { Task } from "../../types";
 import { TaskCard } from "./TaskCard";
 import { CreateTaskModal, type TaskPreCreate } from "./CreateTaskModal";
 import { TaskLogsModal } from "./TaskLogsModal";
 import { BatchMonitorModal } from "./BatchMonitorModal";
 import { TasksEmpty } from "./TasksEmpty";
-import { BATCH_TASK_TYPES } from "./taskConfig";
 import "./TasksPanel.css";
 
 export type { TaskPreCreate };
@@ -146,7 +145,6 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
   const handleDragEnd = () => { setDraggedId(null); setDragOverId(null); };
 
   const anyRunning = tasks.some(tk => tk.status === "running");
-  const hasBatchTasks = tasks.some(tk => BATCH_TASK_TYPES.includes(tk.task_type as TaskType));
 
   return (
     <>
@@ -158,11 +156,9 @@ export function TasksPanel({ open, onClose, preCreate, onPreCreateConsumed }: Pr
                 {t.tasks.stopAll}
               </Button>
             )}
-            {hasBatchTasks && (
-              <Button variant="secondary" size="sm" icon={<Layers size={14} />} onClick={() => setShowBatchMonitor(true)}>
-                {t.tasks.batchMonitor}
-              </Button>
-            )}
+            <Button variant="secondary" size="sm" icon={<Layers size={14} />} onClick={() => setShowBatchMonitor(true)}>
+              {t.tasks.batchMonitor}
+            </Button>
           </div>
           <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setShowCreate(true)}>
             {t.tasks.addTask}

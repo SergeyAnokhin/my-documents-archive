@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Download, ChevronLeft, ChevronRight, FileText, FlaskConical,
+  Download, ChevronLeft, ChevronRight, FileText, FlaskConical, Trash2,
   ZoomIn, ZoomOut, Maximize, RotateCcw, RotateCw, Scissors, Check,
 } from "lucide-react";
 import type { Document } from "../../types";
@@ -9,7 +9,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import { useAdvancedMode } from "../../contexts/AdvancedModeContext";
-import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate } from "../../api/documents";
+import { reclassifyDocument, reindexDocument, updateTags, clearDocumentDate, deleteDocument } from "../../api/documents";
 import { useImageEdit } from "../../hooks/useImageEdit";
 import { resolveImgSrc } from "./imgSrc";
 import { isWordDoc } from "./typeIcons";
@@ -40,6 +40,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
   const [activeTab, setActiveTab] = useState<"preview" | "text" | "dev">("preview");
   const [devMsg, setDevMsg] = useState("");
   const [devLoading, setDevLoading] = useState<"reindex" | "reclassify" | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Local type state so badge updates immediately after save
   const [localType, setLocalType] = useState<string | undefined>(undefined);
@@ -160,6 +161,29 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
       const updated = await clearDocumentDate(doc.id);
       setLocalDate(updated.document_date ?? null);
     } catch { setLocalDate(displayDate); }
+  };
+
+  const handleAddTag = async (tag: string) => {
+    if (!doc) return;
+    if (displayTags.includes(tag)) return;
+    const next = [...displayTags, tag];
+    setLocalTags(next);
+    try { await updateTags(doc.id, next); } catch { setLocalTags(displayTags); }
+  };
+
+  const handleDelete = async () => {
+    if (!doc) return;
+    if (!window.confirm(t.deleteDocumentConfirm)) return;
+    setDeleting(true);
+    try {
+      await deleteDocument(doc.id);
+      window.dispatchEvent(new CustomEvent("docintell:library-changed"));
+      onClose();
+    } catch {
+      alert(t.deleteDocumentFailed);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const flashDev = (msg: string) => { setDevMsg(msg); setTimeout(() => setDevMsg(""), 4000); };
@@ -513,6 +537,7 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 onCategoryClick={onCategoryClick}
                 onDirectoryClick={onDirectoryClick}
                 onRemoveTag={handleRemoveTag}
+                onAddTag={handleAddTag}
                 onRemoveDate={handleRemoveDate}
                 onTypeSaved={(newType) => { setLocalType(newType); setLocalManual(true); }}
               />
@@ -550,6 +575,16 @@ export function DocumentViewer({ doc, onClose, onPrev, onNext, hasPrev, hasNext,
                 {t.download}
               </Button>
             </a>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<Trash2 size={14} />}
+              loading={deleting}
+              onClick={handleDelete}
+              style={{ marginLeft: "auto" }}
+            >
+              {t.delete}
+            </Button>
           </div>
         </div>
       </div>

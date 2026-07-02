@@ -6,6 +6,7 @@ Storage: ChromaDB PersistentClient at library/.docintell/chroma/
 
 Public API:
   embed_document(doc_id, text)       — upsert vector into collection
+  delete_document(doc_id)            — remove a document's vector, if present
   search_similar(query, n_results)   — return doc_ids ordered by similarity
   collection_count()                 — how many docs have embeddings
 """
@@ -72,6 +73,14 @@ def search_similar_scored(query: str, n_results: int = 50) -> list[tuple[int, fl
     except Exception as e:
         log.warning("Semantic search failed: %s", e)
         return []
+
+
+def delete_document(doc_id: int) -> None:
+    """Remove a document's vector from the collection, if present. Idempotent."""
+    try:
+        _get_collection().delete(ids=[str(doc_id)])
+    except Exception as e:
+        log.warning("Could not delete embedding for doc %d: %s", doc_id, e)
 
 
 def collection_count() -> int:

@@ -7,8 +7,9 @@ Base URL: `http://localhost:8000`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/documents` | List documents. Params: `page`, `page_size`, `year`, `month`, `document_type`, `language`, `ocr_status` |
+| GET | `/api/documents/tags` | Distinct tags across the whole library (sorted `string[]`) — powers the tag-input autocomplete |
 | GET | `/api/documents/{id}` | Get single document |
-| DELETE | `/api/documents/{id}` | Soft-delete document (sets `is_deleted=true`) |
+| DELETE | `/api/documents/{id}` | **Hard-deletes** the document: removes the source file from disk, its thumbnail, its ChromaDB embedding, and the DB row |
 | PATCH | `/api/documents/{id}/tags` | Replace tags (body: `string[]`) |
 | PATCH | `/api/documents/{id}/type` | Manually set document type (body: `{document_type: string}`). Sets `manually_classified=true` — batch jobs won't override it. |
 | GET | `/api/documents/{id}/download` | Download original file (FileResponse). `?inline=1` serves it inline (used by the OCR Lab to embed PDFs/images) |

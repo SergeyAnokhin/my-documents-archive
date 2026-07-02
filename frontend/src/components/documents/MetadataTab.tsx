@@ -2,6 +2,7 @@ import { Tag, X, Filter, FolderOpen } from "lucide-react";
 import type { Document } from "../../types";
 import { useT } from "../../i18n";
 import { TypePicker, formatTypeName } from "./TypePicker";
+import { TagInput } from "./TagInput";
 
 function formatDate(iso?: string) {
   if (!iso) return null;
@@ -22,13 +23,14 @@ interface Props {
   onCategoryClick?: (category: string) => void;
   onDirectoryClick?: (directory: string) => void;
   onRemoveTag: (tag: string) => void;
+  onAddTag: (tag: string) => void;
   onRemoveDate: () => void;
   onTypeSaved: (type: string) => void;
 }
 
 export function MetadataTab({
   doc, t, displayType, displayManual, displayTags, displayDate, directory,
-  onTagClick, onCategoryClick, onDirectoryClick, onRemoveTag, onRemoveDate, onTypeSaved,
+  onTagClick, onCategoryClick, onDirectoryClick, onRemoveTag, onAddTag, onRemoveDate, onTypeSaved,
 }: Props) {
   return (
     <div className="viewer-meta-list">
@@ -56,26 +58,25 @@ export function MetadataTab({
         </div>
       </div>
 
-      {displayTags.length > 0 && (
-        <div className="viewer-meta-row">
-          <span className="viewer-meta-label"><Tag size={13}/> Tags</span>
-          <div className="viewer-tags">
-            {displayTags.map((tag) => (
-              <span
-                key={tag}
-                className={`tag${onTagClick ? " tag-clickable" : ""}`}
-                onClick={onTagClick ? () => onTagClick(tag) : undefined}
-                title={onTagClick ? `Search: ${tag}` : undefined}
-              >
-                {tag}
-                <button className="tag-remove" onClick={(e) => { e.stopPropagation(); onRemoveTag(tag); }} title="Remove tag">
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-          </div>
+      <div className="viewer-meta-row">
+        <span className="viewer-meta-label"><Tag size={13}/> Tags</span>
+        <div className="viewer-tags">
+          {displayTags.map((tag) => (
+            <span
+              key={tag}
+              className={`tag${onTagClick ? " tag-clickable" : ""}`}
+              onClick={onTagClick ? () => onTagClick(tag) : undefined}
+              title={onTagClick ? `Search: ${tag}` : undefined}
+            >
+              {tag}
+              <button className="tag-remove" onClick={(e) => { e.stopPropagation(); onRemoveTag(tag); }} title="Remove tag">
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          <TagInput existingTags={displayTags} onAdd={onAddTag} />
         </div>
-      )}
+      </div>
       {doc.language && (
         <div className="viewer-meta-row">
           <span className="viewer-meta-label">Language</span>

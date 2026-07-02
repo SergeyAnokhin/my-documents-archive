@@ -49,6 +49,17 @@ def list_documents(
     return DocumentList(items=items, total=total, page=page, page_size=page_size)
 
 
+@router.get("/tags", response_model=list[str])
+def list_tags(db: Session = Depends(get_db)):
+    """Distinct tags across the whole library, for tag-input autocomplete."""
+    rows = db.query(Document.tags).filter(Document.is_deleted == False, Document.tags.isnot(None)).all()
+    tag_set: set[str] = set()
+    for (tags,) in rows:
+        if tags:
+            tag_set.update(tags)
+    return sorted(tag_set)
+
+
 @router.get("/{doc_id}", response_model=DocumentOut)
 def get_document(doc_id: int, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id, Document.is_deleted == False).first()
@@ -59,10 +70,25 @@ def get_document(doc_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/{doc_id}", status_code=204)
 def delete_document(doc_id: int, db: Session = Depends(get_db)):
+    """Hard-delete a document: removes the source file, thumbnail, embedding, and DB row."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    doc.is_deleted = True
+
+    try:
+        Path(doc.filepath).unlink(missing_ok=True)
+    except OSError:
+        pass
+    if doc.thumbnail_path:
+        try:
+            Path(doc.thumbnail_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    from ..services.embeddings import delete_document as delete_embedding
+    delete_embedding(doc_id)
+
+    db.delete(doc)
     db.commit()
 
 

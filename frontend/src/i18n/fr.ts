@@ -125,6 +125,16 @@ export const fr: Translations = {
     saved: "Type enregistré",
   },
 
+  // Tag picker
+  tagPicker: {
+    add: "Ajouter un tag",
+    title: "Ajouter un tag",
+    placeholder: "Saisir un tag…",
+    loading: "Chargement des tags…",
+    noTags: "Aucun tag existant",
+    cancel: "Annuler",
+  },
+
   noDocuments: "Aucun document",
   noDocumentsHint: "Téléversez un fichier ou synchronisez votre bibliothèque",
   noResults: "Aucun document trouvé",
@@ -516,6 +526,8 @@ export const fr: Translations = {
   save: "Enregistrer",
   cancel: "Annuler",
   delete: "Supprimer",
+  deleteDocumentConfirm: "Supprimer ce document ? Le fichier, la miniature et l'entrée d'index seront définitivement supprimés. Cette action est irréversible.",
+  deleteDocumentFailed: "Échec de la suppression du document",
   confirm: "Confirmer",
   add: "Ajouter",
   enabled: "Activé",

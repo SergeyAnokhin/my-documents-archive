@@ -232,6 +232,24 @@
 }
 .tag-remove:hover { opacity: 1; }
 
+.tag-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px dashed var(--color-border);
+  background: transparent;
+  color: var(--color-ink-faint);
+  font-size: .75rem;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+.tag-add-btn:hover {
+  color: var(--color-ink);
+  border-color: var(--color-ink-muted);
+}
+
 .viewer-ocr-text {
   white-space: pre-wrap;
   word-break: break-word;

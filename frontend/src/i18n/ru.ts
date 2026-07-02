@@ -125,6 +125,16 @@ export const ru: Translations = {
     saved: "Тип сохранён",
   },
 
+  // Tag picker
+  tagPicker: {
+    add: "Добавить тег",
+    title: "Добавить тег",
+    placeholder: "Введите тег…",
+    loading: "Загрузка тегов…",
+    noTags: "Тегов пока нет",
+    cancel: "Отмена",
+  },
+
   noDocuments: "Документов пока нет",
   noDocumentsHint: "Загрузите файл или синхронизируйте библиотеку",
   noResults: "Документы не найдены",
@@ -516,6 +526,8 @@ export const ru: Translations = {
   save: "Сохранить",
   cancel: "Отмена",
   delete: "Удалить",
+  deleteDocumentConfirm: "Удалить этот документ? Файл, превью и запись в поисковом индексе будут удалены безвозвратно. Это действие нельзя отменить.",
+  deleteDocumentFailed: "Не удалось удалить документ",
   confirm: "Подтвердить",
   add: "Добавить",
   enabled: "Включено",

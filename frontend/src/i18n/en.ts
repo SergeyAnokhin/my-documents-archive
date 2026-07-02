@@ -128,6 +128,16 @@ export const en = {
     saved: "Type saved",
   },
 
+  // Tag picker
+  tagPicker: {
+    add: "Add tag",
+    title: "Add tag",
+    placeholder: "Enter tag…",
+    loading: "Loading tags…",
+    noTags: "No existing tags yet",
+    cancel: "Cancel",
+  },
+
   // Empty states
   noDocuments: "No documents yet",
   noDocumentsHint: "Upload a file or sync your library to get started",
@@ -525,6 +535,8 @@ export const en = {
   save: "Save",
   cancel: "Cancel",
   delete: "Delete",
+  deleteDocumentConfirm: "Delete this document? The file, thumbnail and search index entry will be permanently removed. This cannot be undone.",
+  deleteDocumentFailed: "Failed to delete document",
   confirm: "Confirm",
   add: "Add",
   enabled: "Enabled",
