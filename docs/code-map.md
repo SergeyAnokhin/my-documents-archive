@@ -2,6 +2,57 @@
 
 Quick index for LLM navigation. Check this file before grepping.
 
+## Start Here For...
+
+Use this section to jump straight to the likely owner files for a task.
+
+| Task | Start here |
+|------|------------|
+| Upload flow | `backend/app/routers/upload.py`, `backend/app/services/storage.py`, `backend/app/services/indexer.py`, `frontend/src/components/documents/UploadZone.tsx` |
+| Search / Ask mode | `backend/app/routers/search.py`, `backend/app/services/search_query.py`, `backend/app/services/qa.py`, `frontend/src/components/search/`, `frontend/src/pages/home/HomePageAIMode.tsx` |
+| Document viewer / metadata editing | `frontend/src/components/documents/DocumentViewer.tsx`, `MetadataTab.tsx`, `TextTab.tsx`, `DevTab.tsx`, `backend/app/routers/documents.py` |
+| OCR / indexing pipeline | `backend/app/services/indexer.py`, `ocr.py`, `pdf_extract.py`, `docx_extract.py`, `text_extract.py`, `ai_vision.py`, `ai_analysis.py` |
+| Batch OCR / batch analysis | `backend/app/services/batch_ocr.py`, `batch_ocr_mistral.py`, `batch_ocr_gemini.py`, `batch_analysis.py`, `frontend/src/components/tasks/` |
+| Admin library actions | `backend/app/routers/admin.py`, `admin_library.py`, `frontend/src/components/admin/tabs/IndexingTab.tsx` |
+| AI provider setup / model picking | `backend/app/routers/admin_providers.py`, `backend/app/services/provider_models.py`, `backend/app/services/arena_ratings.py`, `frontend/src/components/admin/tabs/AITab.tsx`, `frontend/src/components/admin/tabs/ai/` |
+| Tasks panel / background jobs | `backend/app/routers/tasks.py`, `backend/app/services/task_runners.py`, `task_runtime.py`, `frontend/src/components/tasks/TasksPanel.tsx` |
+| Folder browser | `backend/app/routers/documents.py`, `backend/app/services/folder_tree.py`, `frontend/src/components/documents/FolderTreeView.tsx`, `frontend/src/pages/home/HomePageFolderResults.tsx` |
+| OCR Lab | `backend/app/routers/lab.py`, `backend/app/services/lab.py`, `frontend/src/pages/LabPage.tsx`, `frontend/src/pages/lab/` |
+| Backups / restore | `backend/app/routers/admin_backups.py`, `backend/app/services/db_backup.py`, `frontend/src/components/admin/tabs/BackupTab.tsx`, `backend/backup.py` |
+| Deployment / k8s | `deploy/`, `backend/Dockerfile`, `frontend/Dockerfile`, `.github/workflows/build.yml`, `docs/deployment.md` |
+
+## Key Entry Points
+
+These are the files most often worth opening first.
+
+| Area | Primary entry point | Usually inspect next |
+|------|---------------------|----------------------|
+| Backend app startup | `backend/app/main.py` | `config.py`, `database.py`, relevant router |
+| Document CRUD / tree | `backend/app/routers/documents.py` | `schemas.py`, `services/folder_tree.py` |
+| Search API | `backend/app/routers/search.py` | `services/search_query.py`, `services/qa.py` |
+| Admin API | `backend/app/routers/admin.py` | the relevant `admin_*.py` router |
+| Indexing pipeline | `backend/app/services/indexer.py` | OCR / Vision / Analysis services |
+| Task execution | `backend/app/routers/tasks.py` | `services/task_runners.py`, `task_runtime.py` |
+| Frontend app shell | `frontend/src/App.tsx` | `pages/HomePage.tsx`, `pages/LabPage.tsx` |
+| Home screen orchestration | `frontend/src/pages/HomePage.tsx` | `pages/home/`, `components/search/`, `components/documents/` |
+| Admin UI shell | `frontend/src/components/admin/AdminPanel.tsx` | the relevant tab in `components/admin/tabs/` |
+| Tasks UI | `frontend/src/components/tasks/TasksPanel.tsx` | `TaskCard.tsx`, `CreateTaskModal.tsx`, `taskConfig.ts` |
+
+## If You Change X, Also Check Y
+
+These are the common cross-file links that save unnecessary grep.
+
+- Upload or library ingestion: also check `backend/app/services/storage.py`, `backend/app/services/indexer.py`, and `frontend/src/components/documents/UploadZone.tsx`.
+- Search ranking or Ask retrieval: also check `backend/app/services/search_query.py`, `backend/app/services/qa.py`, and `frontend/src/components/search/AIAnswer.tsx`.
+- OCR behavior: also check `backend/app/services/indexer.py`, `backend/app/services/ocr.py`, and the relevant extraction helper (`pdf_extract.py`, `docx_extract.py`, or `text_extract.py`).
+- Vision or analysis fields: also check `backend/app/services/ai_common.py`, `backend/app/services/indexer.py`, and `backend/app/models.py`.
+- Document type labels or icons: also check `frontend/src/components/documents/typeIcons.ts`, `backend/app/services/type_icon_suggestion.py`, and `backend/app/services/recluster.py`.
+- Task types or task status handling: also check `backend/app/services/task_runners.py`, `backend/app/services/task_runtime.py`, `frontend/src/components/tasks/taskConfig.ts`, and `frontend/src/components/tasks/CreateTaskModal.tsx`.
+- Folder tree behavior: also check `backend/app/services/folder_tree.py`, `frontend/src/pages/home/HomePageFolderResults.tsx`, and `frontend/src/components/documents/FolderTreeView.tsx`.
+- Admin sync / cleanup semantics: also check `backend/app/services/storage.py`, `backend/app/services/embeddings.py`, and the hard-delete gotchas below.
+- AI provider settings: also check `backend/app/models.py`, `backend/app/services/provider_models.py`, `backend/app/services/arena_ratings.py`, and `frontend/src/components/admin/tabs/ai/`.
+- Deployment values or image tags: also check `deploy/helm/my-documents-archive/values.yaml`, `.github/workflows/build.yml`, and `docs/deployment.md`.
+
 ## Directory Tree
 
 ```

@@ -1,14 +1,15 @@
 # Agent Instructions
 
-The behavioral guidelines for this repository live in a single canonical file:
-**[`CLAUDE.md`](CLAUDE.md)**. Read it before doing any work — it covers how to think
-before coding, keep changes surgical, the documentation workflow, and the testing
-policy.
+Read these files before any non-trivial task, in this order:
 
-Project architecture and navigation:
+1. [`CLAUDE.md`](CLAUDE.md)
+2. [`docs/code-map.md`](docs/code-map.md)
+3. [`README.md`](README.md)
+4. The relevant `docs/*.md` file for the area you are changing
 
-- [`docs/code-map.md`](docs/code-map.md) — start here; maps every file to its responsibility.
-- [`README.md`](README.md) — how to run + index of all docs.
+Repository-specific hard rules:
 
-Do not duplicate the guidelines here — keeping one source of truth avoids the three
-assistant files drifting apart.
+- Keep `AGENTS.md` short. Do not duplicate the full behavioral rules here.
+- `CLAUDE.md` is the canonical source for agent behavior.
+- Update [`docs/code-map.md`](docs/code-map.md) whenever files are added, removed, renamed, or moved.
+- After any code change, run the relevant tests as required by [`CLAUDE.md`](CLAUDE.md).

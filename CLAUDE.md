@@ -1,147 +1,129 @@
 # CLAUDE.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Behavioral guidelines for working in this repository. Keep them strict, practical, and minimal.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## 1. Before Coding
 
-## 1. Think Before Coding
+- Do not assume unclear requirements.
+- State assumptions when they matter.
+- If multiple interpretations are plausible, surface them instead of picking silently.
+- If the simpler solution is sufficient, use it.
+- If something important is unclear or risky, stop and ask.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+For multi-step work, define a short verification-driven plan:
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+```text
+1. [Step] -> verify: [check]
+2. [Step] -> verify: [check]
+3. [Step] -> verify: [check]
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+## 2. During Changes
 
----
+- Make the smallest change that fully solves the task.
+- Do not add features, abstractions, or configurability that were not requested.
+- Match the local style of the file you are editing.
+- Do not refactor adjacent code unless the task requires it.
+- Remove only the unused code created by your own change.
+- If you notice unrelated problems, mention them instead of fixing them opportunistically.
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+Every changed line should trace directly to the request.
 
-## 5. Documentation workflow
+## 3. Documentation Workflow
 
-### Before starting any non-trivial task
+### Start here
 
-Check `README.md` → Documentation table for relevant docs, then read the doc before touching the area. Example: changing AI analysis → read [`docs/ai-analysis.md`](docs/ai-analysis.md) first.
+Before any non-trivial task:
 
-**To find which file owns something, open [`docs/code-map.md`](docs/code-map.md) first** — it maps every file to its responsibility. Grep only when the code-map doesn't answer.
+1. Read [`README.md`](README.md) and use its Documentation table to find the relevant doc.
+2. Read [`docs/code-map.md`](docs/code-map.md) before grepping.
+3. Read the relevant `docs/*.md` file for the subsystem you are changing.
 
-### When to create a doc
+### Create a new doc only when needed
 
-Create a new `docs/<topic>.md` when a feature area is large enough that future work requires understanding its architecture before editing it. Good candidates:
-- New subsystem with 3+ files (e.g., AI analysis, delete flow, thumbnail pipeline)
-- A non-obvious data flow (e.g., how objects flow from prompt → DB → icon)
-- Any area the user says "document this"
+Create `docs/<topic>.md` only for:
 
-Do **not** create docs for: single-function fixes, UI tweaks, settings additions.
+- a new subsystem spanning 3 or more files
+- a non-obvious data flow
+- an area the user explicitly asked to document
 
-### When to update a doc
+Do not create docs for:
 
-Update the relevant doc whenever you change the architecture of a documented area — new endpoints, DB schema changes, new display locations, new providers, changed localStorage keys. The user may also say **"обнови документацию"** — treat that as: update all docs affected by recent changes.
+- small bug fixes
+- UI tweaks
+- isolated settings changes
 
-**Whenever you add, delete, rename, or move a source file, update [`docs/code-map.md`](docs/code-map.md) in the same change.** A stale code-map sends every future search to a dead end — this rule is not optional.
+### Update docs when behavior or structure changes
 
-**Also fix gaps found during search.** When updating docs, look back at what was slow to locate at the start of the session (had to grep instead of reading a doc, found nothing in `ai.py` but the endpoint was in `thumbnails_api.py`, a file wasn't listed in code-map, etc.). Add exactly that missing fact to the relevant doc — even if it's unrelated to what was changed. One or two targeted additions per session, not a full rewrite.
+Update the relevant doc whenever you change documented architecture or behavior, including:
+
+- endpoints
+- DB schema
+- provider/model flow
+- localStorage keys
+- major UI flows
+
+Whenever you add, delete, rename, or move a source file, update [`docs/code-map.md`](docs/code-map.md) in the same change.
+
+When updating docs, also patch the exact navigation gaps that slowed work earlier in the session. Keep that addition small and factual.
+
+If docs and code disagree:
+
+- trust code for current behavior
+- update docs in the same change
+- mention the mismatch in the final note
 
 ### Doc format
 
-- Lead with a one-paragraph overview
-- Link to specific files with relative paths (`../frontend/src/...`)
-- Use tables for schema, config, and file maps
-- Use flow diagrams (ASCII) for request flows
-- Keep it factual — what exists now, not what was planned
+- Start with a one-paragraph overview.
+- Link to concrete files with relative paths.
+- Use tables for schema, config, or file maps.
+- Use ASCII flow diagrams for request/data flows when helpful.
+- Document what exists now, not what was once planned.
 
-### Where docs live
+### Where information belongs
 
-| Path | What goes there |
-|------|----------------|
-| `docs/` | Feature/subsystem architecture docs |
-| `README.md` | How to run + table of contents linking to `docs/` |
-| `CLAUDE.md` | AI assistant behavioral guidelines (this file) |
+| Path | Role |
+|------|------|
+| `docs/` | Feature and subsystem documentation |
+| `README.md` | Run instructions and docs index |
+| `CLAUDE.md` | Agent behavior and workflow rules |
 
-After creating or updating a doc, add/update its entry in the `README.md` Documentation table.
+After creating or updating a doc in `docs/`, update its entry in the `README.md` Documentation table.
 
----
+## 4. Testing
 
-## 6. Testing (mandatory after every change)
-
-**At the end of every refactoring or code change, run the tests. This is not optional.**
+After every code change, run tests. This is mandatory.
 
 ```powershell
-npm test              # all three suites (backend, compute, frontend), from repo root
-npm run test:backend  # or a targeted suite when the change is local to one service
+npm test
+npm run test:backend
 npm run test:compute
 npm run test:frontend
 ```
 
 Rules:
-- Run the full `npm test` after any refactoring; a targeted suite is enough for a small change confined to one service — but when in doubt, run everything.
-- Tests cover documented rules (see [`docs/testing.md`](docs/testing.md) — each test file references the doc that defines the behavior it pins). If you change such behavior intentionally, update the doc, the test, and the code together.
-- When adding or changing **complex calculations or non-trivial logic** that is described in `docs/`, add a test pinning the documented rule. Do not add tests for trivial code.
-- Keep test output minimal: pytest runs with `-q --tb=short`, vitest with `--reporter=dot`. On success only the totals are printed; on failure — the test name, location, and error. Don't override this with verbose flags.
-- A task is **not complete** while any test fails.
 
----
+- After refactoring, run the full `npm test` from repo root.
+- For a small isolated change, the relevant targeted suite is acceptable.
+- When in doubt, run everything.
+- If you intentionally change documented behavior, update the code, the docs, and the tests together.
+- Add tests for non-trivial logic and calculations that are documented or easy to regress.
+- Do not add tests for trivial code.
+- A task is not complete while required tests are failing.
 
-## 7. Project description
+Test files live in:
 
-**Current architecture is in `docs/` — that is the source of truth.** Use the
-Documentation table in [`README.md`](README.md) as the index; before touching any
-feature area, find the relevant doc there and read it first.
+- `backend/tests/`
+- `compute/tests/`
+- `frontend/src/**/*.test.ts`
 
-**[`docs/excluded-from-analysis/`](docs/excluded-from-analysis/README.md) is out of scope for normal work.**
-It holds meta/reference material — the full product spec, the generic k3s platform
-contract, and per-task document-processing pipeline diagrams — that costs tokens
-without helping day-to-day code tasks. Never read, list, or update files in that
-folder as part of routine exploration, doc updates, or the "обнови документацию"
-pass. Open something in it only when the user explicitly asks for that specific
-file or topic (e.g. "update the spec", "explain the Mistral OCR batch pipeline").
-The [`docs/excluded-from-analysis/First_Specification.md`](docs/excluded-from-analysis/First_Specification.md)
-file is a high-level functional spec written for external handoff / rebuilding
-from scratch — for all code tasks, the other `docs/` files are the source of truth.
+See [`docs/testing.md`](docs/testing.md) for suite details.
+
+## 5. Project-Specific Guidance
+
+Current architecture lives in `docs/`. Treat it as the source of truth for understanding the system.
+
+Use [`docs/excluded-from-analysis/`](docs/excluded-from-analysis/README.md) only when the user explicitly asks for that material. It is out of scope for routine coding, exploration, and doc updates.
+
+In particular, do not read or update `docs/excluded-from-analysis/` during normal work unless the request is specifically about those files or topics.
