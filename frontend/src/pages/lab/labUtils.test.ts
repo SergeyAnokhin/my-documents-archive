@@ -1,6 +1,6 @@
 // Pins the OCR Lab duration/size formatters at their unit boundaries.
 // See docs/code-map.md line: "pages/lab/labUtils.ts | formatMs, formatFileSize,
-// uid, VISION_CAPABLE".
+// uid".
 //
 // Doc:  code-map.md lists these as labUtils.ts responsibilities, but the exact unit
 //       thresholds are not specified in any prose doc — these are general tests that

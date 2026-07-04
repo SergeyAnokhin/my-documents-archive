@@ -181,6 +181,7 @@ poetry.lock
 .uv/
 
 # Testing
+.tmp/
 .tox/
 .nox/
 .coverage

@@ -35,12 +35,13 @@ cost) with the recognized text. Re-running a method replaces its previous card
 
 | Method | Where it runs | Notes |
 |--------|--------------|-------|
-| `tesseract` | In-process (backend, pytesseract) | Always available |
-| `easyocr` | External compute worker `/ocr?engine=easyocr` | Only if the worker is reachable (`GET /lab/methods` probes `/health`) |
-| AI Vision | Any enabled vision-capable provider (`task_type` = vision/both, type in openai/gemini/openrouter/mistral) | Uses the combined `VISION_ANALYSIS_PROMPT` — returns JSON with `text` (transcription) + `fields` (summary, title, document_type(+confidence), date, names, org, amount, language, tags). Mistral OCR ignores the prompt and returns plain text; `_parse_vision_analysis()` falls back gracefully. |
+| `tesseract` | Backend | OCR text only; always available |
+| `easyocr` | External worker | OCR text only; shown when `/health` reports EasyOCR |
+| Vision OCR/analysis | Selected model with `vision` capability | OCR-only models return text; analysis-capable models use `VISION_METADATA_PROMPT` and return text + metadata, excluding classification |
+| Text analysis | Selected model with `text` + `analysis` capabilities | Immediate metadata-only analysis of newest OCR result or saved text; no image |
 
-All methods operate on the same first-page JPEG produced by
-`ai_vision.load_first_page()`, so comparisons are fair.
+Image-based methods use the same rendered input: one image or a vertical JPEG of
+the first three PDF pages from `ai_vision.load_document_pages()`.
 
 ## The judge (premium tier)
 
@@ -65,14 +66,15 @@ transcriptions and returns JSON `{ rankings:[{label,score,comment}], best, summa
 | GET | `/lab/methods` | — | `{ ocr_methods[], worker_available }` |
 | POST | `/lab/ocr` | `{ doc_id, method }` | `{ method, text, ms }` |
 | POST | `/lab/vision` | `{ doc_id, provider_id }` | `{ provider_id, name, model_name, text, fields, cost, ms }` |
+| POST | `/lab/analyze-text` | `{ doc_id, provider_id, text }` | Immediate metadata-only result; requires model text+analysis capabilities |
 | POST | `/lab/judge` | `{ doc_id, provider_id, use_image, candidates[] }` | `{ rankings[], best, summary, corrected, fields, cost, ms }` |
-| POST | `/lab/save` | `{ doc_id, text, fields?, model_name }` | `{ ok, doc_id }` — writes OCR text + extracted fields (`summary`, `title`, `document_type`(+confidence), `tags`, etc. — each field is replaced outright, not merged, when present in the result) + attribution to the document |
+| POST | `/lab/save` | `{ doc_id, text, fields?, model_name, save_classification? }` | Writes OCR text and fields present in the result; classification is preserved unless `save_classification=true` |
 
 ## Code map
 
 | File | Responsibility |
 |------|---------------|
-| [`backend/app/services/lab.py`](../backend/app/services/lab.py) | OCR/vision/judge logic; prompts `OCR_VISION_PROMPT`, `JUDGE_SYSTEM`; `_parse_json` |
+| [`backend/app/services/lab.py`](../backend/app/services/lab.py) | Immediate OCR/vision/text-analysis/judge logic and result parsing |
 | [`backend/app/routers/lab.py`](../backend/app/routers/lab.py) | `/api/lab/*` endpoints |
 | [`frontend/src/pages/LabPage.tsx`](../frontend/src/pages/LabPage.tsx) | The screen orchestrator; route `/lab/:id` (zoom/pan/crop/transform + OCR/vision/judge handlers) |
 | [`frontend/src/pages/lab/`](../frontend/src/pages/lab/) | Extracted pieces: `labUtils.ts`, `useLogs.ts`, `usePanelResize.ts`, `FieldChips.tsx`, `ResultsList.tsx`, `JudgePanel.tsx`, `FloatingTextModal.tsx` |

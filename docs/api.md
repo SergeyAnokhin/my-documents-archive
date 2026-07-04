@@ -34,6 +34,7 @@ Base URL: `http://localhost:8000`
   "ocr_status": "done",
   "vision_status": "skipped",
   "analysis_status": "done",
+  "analysis_model": "gemini-2.5-flash (batch, metadata-only)",
   "api_cost_analysis": 0.00004,
   "...": "other fields omitted for brevity"
 }
@@ -75,7 +76,7 @@ Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchR
 | GET | `/api/admin/stats` | `{total, indexed, analyzed, embedded, pending, errors, unclassified, api_cost_total, library_path}` — `unclassified` counts analysis-done docs with type `unclassified`/`other`/null; `library_path` is the resolved library folder (shown in the Admin panel) |
 | POST | `/api/admin/sync` | Scan library for new files, queue OCR+analysis for each. **Hard-deletes** docs whose file is missing or sits inside `.docintell`. Returns `{found, new_files, removed, message}`. **Returns 503** (aborts before any delete) when the library disk is unreachable — guarded by `storage.check_library_accessible()` (`.docintell` sentinel), so an offline NAS never wipes the DB |
 | POST | `/api/admin/batch-index` | Queue OCR+analysis for all pending docs. Param: `limit` (default 50) |
-| POST | `/api/admin/reclassify-all` | Synchronous: re-run AI Analysis on OCR-done docs with incomplete analysis. Param: `limit` (default 200). For large backlogs prefer the `reclassify_all` task (Gemini Batch). |
+| POST | `/api/admin/reclassify-all` | Synchronous type-only classification from existing summaries. Param: `limit` (default 200). For large backlogs prefer the Gemini Batch task. |
 | POST | `/api/admin/reclassify-unclassified` | Synchronous: re-run AI Analysis on `unclassified`/`other` docs where `manually_classified=false`. Param: `limit` (default 200). For large backlogs prefer the `reclassify_unclassified` task. |
 | POST | `/api/admin/recluster` | Cluster-based recategorization: embed all analyzed docs → auto-select k → k-means → LLM names each cluster → apply new types. Background; no params. See [code-map.md](code-map.md) `recluster.py` entry. |
 | GET | `/api/admin/folders` | List watched folders |
@@ -107,6 +108,10 @@ Default models per provider: OpenAI → `gpt-4o-mini`, Gemini → `gemini-2.5-fl
 
 `supports_batch` is `true` for `gemini` and `mistral` — they offer a batch API at ~50% discount. Provider objects include this field so the UI can filter to batch-capable providers when creating batch tasks.
 
+Provider responses also include `capabilities = {text, vision, ocr, analysis, batch}`.
+Values are inferred per model and can be overridden through provider settings
+under `extra_params.capabilities`.
+
 `mistral` is vision-only (dedicated OCR endpoint, per-page billing); use it in the Vision section. It transcribes the page verbatim into `vision_description`.
 
 ## Tasks
@@ -130,9 +135,14 @@ Advanced-mode-only job queue. See [batch-ocr.md](batch-ocr.md) for batch task de
 | GET | `/api/tasks/{id}/batch-result` | Download raw JSONL results file saved during last batch run |
 | GET | `/api/tasks/{id}/logs` | Task log entries. Param: `limit` (default 200) |
 
-Task types: `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `embed_missing` · `fix_quality` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini` · `cleanup_missing` · `compress_images`
+Task types: `index_documents` · `index_unindexed` · `sync_library` · `reclassify_unclassified` · `reclassify_all` · `recluster` · `embed_missing` · `fix_quality` · `batch_ocr_mistral` · `batch_ocr_gemini` · `batch_analysis_gemini` · `cleanup_missing` · `compress_images`
 
 Runners and the type→runner dispatcher live in [`services/task_runners.py`](../backend/app/services/task_runners.py); `routers/tasks.py` only exposes the endpoints above.
+
+`index_documents` is the primary lazy task. Its `strategy` is
+`mistral_gemini`, `local_gemini`, or `gemini_complete`; it reuses stored text,
+skips completed analysis, generates embeddings, and preserves classification.
+Direct OCR/index and embedding-repair types remain legacy-compatible.
 
 `embed_missing` scans the whole archive for analyzed docs (summary present) that lack a ChromaDB embedding and builds the vectors locally (free, no AI provider). Candidate count is logged at start. Embeddings are also generated automatically after every analysis completion (indexer pipeline, reclassify, Gemini batch analysis, Mistral/Gemini batch OCR+analysis, and Lab save).
 
@@ -153,6 +163,7 @@ Runners and the type→runner dispatcher live in [`services/task_runners.py`](..
 | GET | `/api/lab/methods` | `{ocr_methods[], worker_available}` — local engines + easyocr-worker reachability |
 | POST | `/api/lab/ocr` | `{doc_id, method}` (`tesseract`\|`easyocr`) → `{method, text, ms}` |
 | POST | `/api/lab/vision` | `{doc_id, provider_id}` → `{provider_id, name, text, cost, ms}` (vision model as verbatim transcriber) |
+| POST | `/api/lab/analyze-text` | `{doc_id, provider_id, text}` → immediate metadata-only analysis with a text-capable model |
 | POST | `/api/lab/judge` | `{doc_id, provider_id, use_image, candidates[]}` → `{rankings[], best, summary, cost, ms}` (premium provider ranks transcriptions) |
 
 ## Health

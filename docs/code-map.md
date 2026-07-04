@@ -1,6 +1,8 @@
 # Code Map — DocIntel
 
-Quick index for LLM navigation. Check this file before grepping.
+Quick index for LLM navigation. Start with **Start Here For** and **If You
+Change X**; do not read the full file unless the owner is still unclear. Open
+the linked subsystem doc next, then inspect only the listed source files.
 
 ## Start Here For...
 
@@ -14,8 +16,10 @@ Use this section to jump straight to the likely owner files for a task.
 | OCR / indexing pipeline | `backend/app/services/indexer.py`, `ocr.py`, `pdf_extract.py`, `docx_extract.py`, `text_extract.py`, `ai_vision.py`, `ai_analysis.py` |
 | Batch OCR / batch analysis | `backend/app/services/batch_ocr.py`, `batch_ocr_mistral.py`, `batch_ocr_gemini.py`, `batch_analysis.py`, `frontend/src/components/tasks/` |
 | Lazy indexing plan | `backend/app/services/indexing_plan.py`, `task_runners.py`, `frontend/src/components/tasks/CreateTaskModal.tsx` |
+| Classification / reclassification | `backend/app/services/batch_analysis.py`, `task_runners.py`, `services/ai_analysis.py` (`CLASSIFICATION_SYSTEM`) |
 | Admin library actions | `backend/app/routers/admin.py`, `admin_library.py`, `frontend/src/components/admin/tabs/IndexingTab.tsx` |
 | AI provider setup / model picking | `backend/app/routers/admin_providers.py`, `backend/app/services/provider_models.py`, `backend/app/services/arena_ratings.py`, `frontend/src/components/admin/tabs/AITab.tsx`, `frontend/src/components/admin/tabs/ai/` |
+| Model capability flags | `backend/app/services/provider_capabilities.py`, `backend/app/models.py` (`AIProvider.capabilities`), `frontend/src/components/admin/tabs/ai/ProviderSettingsPanel.tsx` |
 | Tasks panel / background jobs | `backend/app/routers/tasks.py`, `backend/app/services/task_runners.py`, `task_runtime.py`, `frontend/src/components/tasks/TasksPanel.tsx` |
 | Folder browser | `backend/app/routers/documents.py`, `backend/app/services/folder_tree.py`, `frontend/src/components/documents/FolderTreeView.tsx`, `frontend/src/pages/home/HomePageFolderResults.tsx` |
 | OCR Lab | `backend/app/routers/lab.py`, `backend/app/services/lab.py`, `frontend/src/pages/LabPage.tsx`, `frontend/src/pages/lab/` |
@@ -49,9 +53,11 @@ These are the common cross-file links that save unnecessary grep.
 - Vision or analysis fields: also check `backend/app/services/ai_common.py`, `backend/app/services/indexer.py`, and `backend/app/models.py`.
 - Document type labels or icons: also check `frontend/src/components/documents/typeIcons.ts`, `backend/app/services/type_icon_suggestion.py`, and `backend/app/services/recluster.py`.
 - Task types or task status handling: also check `backend/app/services/task_runners.py`, `backend/app/services/task_runtime.py`, `frontend/src/components/tasks/taskConfig.ts`, and `frontend/src/components/tasks/CreateTaskModal.tsx`.
+- Lazy routing or cost estimates: also check `backend/app/services/indexing_plan.py`, `backend/app/routers/tasks.py` (`/index-plan`), and `docs/processing-map.md`.
 - Folder tree behavior: also check `backend/app/services/folder_tree.py`, `frontend/src/pages/home/HomePageFolderResults.tsx`, and `frontend/src/components/documents/FolderTreeView.tsx`.
 - Admin sync / cleanup semantics: also check `backend/app/services/storage.py`, `backend/app/services/embeddings.py`, and the hard-delete gotchas below.
 - AI provider settings: also check `backend/app/models.py`, `backend/app/services/provider_models.py`, `backend/app/services/arena_ratings.py`, and `frontend/src/components/admin/tabs/ai/`.
+- Vision eligibility: use `provider_capabilities.py`; do not add provider-type allowlists in UI or routers.
 - Deployment values or image tags: also check `deploy/helm/my-documents-archive/values.yaml`, `.github/workflows/build.yml`, and `docs/deployment.md`.
 
 ## Directory Tree
@@ -73,7 +79,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `main.py` | FastAPI app factory, CORS, startup hooks (incl. `recover_running_tasks()` — auto-resumes/stops orphaned `Task` rows left "running" by an unclean restart), thumbnail static mount |
 | `config.py` | All settings (pydantic-settings); `settings` singleton |
 | `database.py` | SQLAlchemy engine, `SessionLocal`, `get_db()`, `init_db()` |
-| `models.py` | ORM models: `Document` (incl. `source` = `"upload"`/`"sync"`, `title` = short AI-generated display headline distinct from `summary`), `WatchedFolder`, `IndexingLog` (incl. `level` = `trace`/`debug`/`info`/`warning`/`error`), `AIProvider`, `AppSettings`, `Task`/`TaskLog`, `AIUsage` (per-call AI/OCR usage ledger — powers the super-user usage screen) |
+| `models.py` | ORM models. Relevant processing provenance: `Document.ocr_model`, `analysis_model`, classification fields/statuses; `AIProvider.capabilities` resolves model flags; `Task.config/result_summary` persist pipeline state. |
 | `schemas.py` | Pydantic request/response schemas for all endpoints |
 | `routers/documents.py` | CRUD: list, get, patch tags, patch type (`PATCH /{id}/type` sets type + `manually_classified=true`) — prefix `/api/documents`. `DELETE /{id}` hard-deletes (file + thumbnail + embedding + row, see gotchas). `GET /tags` returns distinct tags across the library (must stay registered before `/{id}`). `GET /tree` returns the full folder tree (via `services/folder_tree.py`) for the Explorer-style folder-browse view (also registered before `/{id}`) |
 | `services/folder_tree.py` | `build_folder_tree(db)` — groups all non-deleted documents by the directory components of `filepath` (relative to `library_path`) into a nested `FolderTreeNode` tree (folders + `FolderTreeDoc` leaves, sorted alphabetically, with per-folder and recursive doc counts). Powers `GET /api/documents/tree` |
@@ -98,8 +104,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/text_extract.py` | Native `.txt` text extraction (no OCR involved — the file already IS the text): `extract_text_file(filepath)` reads the file, decoding UTF-8 (BOM-tolerant) with a latin-1 fallback for legacy-encoded files, and strips surrounding whitespace. `.txt`'s equivalent of `docx_extract.py`; indexer stores the result with `ocr_model="native"` |
 | `services/ai_analysis.py` | AI Analysis: produces summary, **title** (short human-readable headline, ≤10 words — distinct from `short_title`'s filename-slug format), document_type (+confidence), tags, language, org, amount via LLM. Type taxonomy comes from `ai_common.DOCUMENT_TYPES_BLOCK` (shared with vision). `coerce_analysis_fields(dict)→AnalysisResult` is the shared field-coercion used by both this module and `ai_vision`. Also exposes `suggest_document_types(...)` → top-3 suggestions for the UI picker. |
 | `services/ai_common.py` | Shared AI-provider helpers, de-duplicated from analysis+vision: `strip_code_fences()`, `parse_llm_json()` (tolerates trailing commas + markdown fences — used by batch analysis), `update_provider_stats()`, `SyntheticProvider` (env-var provider stand-in), `DOCUMENT_TYPES_BLOCK` (canonical type taxonomy). |
-| `services/ai_vision.py` | AI Vision: sends first document page to vision model. For capable models (OpenAI/Gemini/OpenRouter) uses `VISION_FULL_PROMPT` — returns structured JSON (text + all analysis fields) in one call, so the indexer skips Step 4 entirely. For **Mistral OCR** (`mistral-ocr-latest`, dedicated `/v1/ocr` endpoint, per-page billing) returns plain transcription — Analysis still runs. Public `run_vision(provider, img_bytes, prompt)` + `load_first_page()` reused by the lab. |
-| `services/lab.py` | OCR Lab logic: run local/worker OCR, vision-as-transcriber, and premium "judge" comparison on one document's first page. Ephemeral — no document writes. See [lab-mode.md](lab-mode.md) |
+| `services/ai_vision.py` | Vision calls and prompts. `load_document_pages()` renders up to three PDF pages as one image; `load_first_page()` remains a compatibility name used by legacy batch runners but now follows the same three-page PDF behavior. `VISION_FULL_PROMPT` is the legacy combined contract; `VISION_METADATA_PROMPT` excludes classification. |
+| `services/lab.py` | Immediate (non-Batch) local OCR, vision metadata extraction, text-only metadata analysis, and premium judge logic. Uses up to three PDF pages. See [lab-mode.md](lab-mode.md). |
 | `log_filters.py` | `SuppressNoisyPaths` logging filter (drops `/api/tasks` + `/api/health` from access log); referenced by `log_config.json` |
 | `services/embeddings.py` | Embeddings: sentence-transformers (multilingual MiniLM) + ChromaDB; `embed_document()`, `search_similar()`, `search_similar_scored()` (ids + cosine distance, for `/ask` debug), `collection_count()`, `embedded_ids()` (set of embedded doc ids, used by the `embed_missing` task to find gaps) |
 | `services/pricing.py` | `estimate_cost(model, tokens_in, tokens_out)` — static per-token price table for all known providers (OpenAI, Gemini, DeepSeek, Mistral, OpenRouter). Returns 0.0 for unknown models. |
@@ -108,11 +114,11 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/indexing_plan.py` | Read-only lazy indexing preview: skips completed analysis, counts routing buckets, freezes candidate ids, and estimates Batch cost |
 | `services/arena_ratings.py` | LM Arena leaderboard star ratings: `get_cached(db)` / `refresh_ratings(db)`; cached in DB, surfaced in the AI tab model picker |
 | `services/type_icon_suggestion.py` | Suggests Lucide icon names for custom document types via LLM. `suggest_icons_for_types(slugs, db)` → calls AI provider once per type, resolves conflicts (max 5 retries), saves results under AppSettings key `custom_type_icons`. `get_pending_custom_types(db)` returns types in the library that lack a custom icon. Exposed via `GET /api/admin/type-icons` and `POST /api/admin/update-type-icons`. |
-| `services/indexer.py` | Pipeline coordinator: OCR → Thumbnail → Vision → Analysis → Embedding. `_is_docx(doc)`/`_run_docx_extract(doc, db)` and `_is_txt(doc)`/`_run_txt_extract(doc, db)` — `.docx`/`.txt` files skip Thumbnail/OCR/Vision entirely and go straight from native text extraction (`docx_extract.py`/`text_extract.py`) to Analysis, setting `ocr_model="native"` + `vision_status="skipped"` (no page image exists to send to Vision). `_is_native_text(doc)` = either of the two; `_extract_native_text(filepath)` dispatches to the right extractor by extension — shared by the batch OCR runners. `_apply_analysis_result(doc, AnalysisResult, db)` is the single helper that writes metadata (incl. `title`) onto a Document, shared by Step 3 (vision-as-analysis) and Step 4. Preserves old `document_type` in tags when type changes during reclassification. `_run_vision()` only lets a capable provider's combined vision+analysis JSON (derived from page 1 only, see `ai_vision.py`) drive Document metadata and skip Step 4 when `doc.ocr_text` is still under `VISION_ANALYSIS_OVERRIDE_MAX_OCR_LEN` (200 chars) — once OCR/native extraction already produced a fuller multi-page text, Step 4 analyzes that instead, so a cover/title page can't overwrite a longer document's summary/tags. Batch ops: `reclassify_pending_batch()` (docs with summary → one LLM call per doc, type-only, no summary/tag regeneration; skips docs without summary); `reclassify_unclassified_batch()` (unclassified/other, skips `manually_classified=True`); `reclassify_document()` (resets manual flag, full re-analysis) |
+| `services/indexer.py` | Legacy/per-document pipeline: native text or OCR → thumbnail/vision → analysis → embedding. Owns `_run_*` step helpers and `_apply_analysis_result`. New bulk lazy routing belongs in `indexing_plan.py` + `task_runners.py`, not here. |
 | `services/recluster.py` | Cluster-based recategorization: clean summaries (strip tags/names/dates) → embed (sentence-transformers) → auto-select k via silhouette score (bounded by `min_clusters`/`max_clusters`) → k-means → LLM names each cluster (type slug + icon + multilingual names, conflict-aware retry) → apply (old type preserved in tags). Entry point: `run_recluster(task_id=None, max_clusters=40, min_clusters=2, provider_id=None)`. Persists `custom_type_icons` + `custom_type_names` (en/fr/ru) to AppSettings. Endpoint: `POST /api/admin/recluster` (fixed defaults). Task type: `recluster` (configurable `min_clusters`/`max_clusters`/`provider_id` via Tasks panel). See [recluster.md](recluster.md). |
 | `services/watcher.py` | Folder watcher: watchdog Observer that picks up new files from enabled WatchedFolders and queues indexing |
 | `routers/indexing.py` | Indexing control: single doc, batch, reclassify, status, suggest-type (`POST /suggest-type/{id}` → LLM top-3 type suggestions) — prefix `/api/indexing` |
-| `routers/lab.py` | OCR Lab endpoints: methods, ocr, vision, judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md) |
+| `routers/lab.py` | OCR Lab endpoints: methods, OCR, vision, immediate text analysis, save, and judge — prefix `/api/lab`. See [lab-mode.md](lab-mode.md). |
 | `services/ai_analysis.py` (helper) | Public `run_text(provider, system, user)` added for the lab judge (text-only mode) |
 | `routers/tasks.py` | Task queue endpoints only: CRUD, candidates counts, run/stop/resume-batch/logs/batch-result — prefix `/api/tasks`. Runners live in `services/task_runners.py`. Used by the Tasks panel (advanced mode only). |
 | `services/task_runners.py` | Task dispatcher and startup recovery. `index_documents` orchestrates lazy Mistral/local/Gemini routes, reuses existing text, runs metadata-only analysis, and preserves classification. Also owns short maintenance runners. |
@@ -121,7 +127,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `services/batch_ocr.py` | Shared batch-OCR helpers: `_scope_filter()` (cumulative re-OCR scope 1-4) and `_needs_vision(doc)` (no OCR text yet → vision; existing text, any engine including local tesseract/easyocr — reused as-is → text-only, cheaper) and `GEMINI_BATCH_BASE`. No runner logic itself — see the two files below. Split out of `tasks.py`. See [batch-ocr.md](batch-ocr.md) |
 | `services/batch_ocr_mistral.py` | `run_batch_ocr_mistral()`: submit remote Mistral Batch OCR job → poll → write OCR text back. Imports `_scope_filter` from `batch_ocr.py`. `.docx`/`.txt` documents have no page image — extracted natively (`indexer._extract_native_text()`, `ocr_model="native"`) and excluded from the Mistral JSONL entirely; count surfaced as `result_summary["native"]`. See [batch-ocr.md](batch-ocr.md) |
 | `services/batch_ocr_gemini.py` | `run_batch_ocr_gemini()`: submit remote Gemini Batch job → poll → write OCR/analysis fields back, routing each document through `_needs_vision()` (vision vs text-only request). Imports `_needs_vision`/`_scope_filter`/`GEMINI_BATCH_BASE` from `batch_ocr.py`. `.docx`/`.txt` documents are extracted natively first (no page image exists), which makes `_needs_vision()` false so they fall into the existing text-only branch and still get analysis via the same batch job. See [batch-ocr.md](batch-ocr.md) |
-| `services/batch_analysis.py` | `run_batch_analysis_gemini()` — text-only analysis via Gemini Batch API. `doc_scope` param selects: `needs_analysis` (default), `unclassified` (for `reclassify_unclassified` task), `pending` (for `reclassify_all` task). Not directly creatable from the Tasks UI — only runs as the engine behind those two reclassify tasks. Saves raw JSONL to `.docintell/batch_results/task_{id}.jsonl`. |
+| `services/batch_analysis.py` | Gemini text Batch engine. Supports full analysis, `metadata_only`, and `classification_only`; the two reclassification tasks use classification-only scopes and preserve all metadata/manual types. Saves raw JSONL results under `.docintell/batch_results/`. |
 | `services/usage.py` | `record_usage(...)` — appends one row to the `ai_usage` ledger. Called by every model call site (analysis, vision, qa, suggest_types, icon_suggest, batch_*, ocr, embedding). Opens its own session; never raises. See [ai-usage.md](ai-usage.md) |
 
 ## Compute (`compute/app/`)
@@ -198,7 +204,7 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 | `pages/home/HomePageResults.tsx` | Regular (flat) search results: loading skeleton, empty state, or the list/grid of `DocumentCard`s. Shown when `layoutMode === "flat"` |
 | `pages/home/HomePageFolderResults.tsx` | Folder-browse results: loading skeleton / empty state / `FolderTreeView`. Shown when `layoutMode === "folders"`; tree comes from `GET /api/documents/tree`, fetched once and refetched on `docintell:library-changed` |
 | `pages/LabPage.tsx` | OCR Lab screen (`/lab/:id`) **orchestrator**: document viewer (zoom/pan/crop/transform) + OCR/vision/judge handlers. Presentational pieces live in `pages/lab/`. See [lab-mode.md](lab-mode.md) |
-| `pages/lab/labUtils.ts` | `formatMs`, `formatFileSize`, `uid`, `VISION_CAPABLE` |
+| `pages/lab/labUtils.ts` | `formatMs`, `formatFileSize`, `uid` |
 | `pages/lab/useImageTransform.ts` | Zoom + pan for the lab image canvas: wheel-zoom at cursor, button zoom, fit-on-load, drag-to-pan. Owns its wheel/pan listeners; exposes `zoomRef` for the page's crop overlay. Extracted from `LabPage.tsx`. |
 | `pages/lab/useLogs.ts` | Activity-log hook (append + auto-scroll) for the panel |
 | `pages/lab/usePanelResize.ts` | Draggable right-panel width hook (persists to localStorage) |
@@ -304,10 +310,11 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 `TasksPanel` shows processing jobs as draggable cards (3-column grid). Task types:
 | Type | Description |
 |------|-------------|
+| `index_documents` | Primary lazy pipeline: reuse text, skip completed analysis, choose Mistral/local/Gemini route, estimate cost, preserve classification |
 | `index_unindexed` | OCR + AI analysis for pending documents |
 | `sync_library` | Scan library + index new files |
-| `reclassify_unclassified` | AI classification for unclassified docs |
-| `reclassify_all` | Type-only classification for docs that already have a summary (one LLM call per doc, no summary/tag regeneration) |
+| `reclassify_unclassified` | Gemini Batch classification-only for unclassified docs; manual types and metadata are preserved |
+| `reclassify_all` | Gemini Batch classification-only for all eligible non-manual docs |
 | `recluster` | Cluster-based recategorization of all analyzed docs (silhouette k-selection + LLM naming) |
 | `embed_missing` | Backfill ChromaDB vectors for analyzed docs missing embeddings (`force=true` re-embeds all) |
 | `fix_quality` | Fix one quality gap (`no_ocr`/`no_embedding`/`no_analysis`/`no_summary`/`no_tags`/`no_category`); analysis gaps are delegated to Gemini Batch Analysis |
@@ -319,6 +326,10 @@ The super-user screen is gated by Advanced Mode (no separate auth) — same trus
 
 Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and support soft-stop via a `status="stopped"` flag. The two `batch_ocr_*` tasks are long-running pollers: they submit a remote batch job, then poll every `poll_interval` seconds until the provider finishes (up to 24–48 h).
 
+The create modal presents `index_documents` and classification/maintenance tasks
+as primary. Direct OCR/index and embedding-repair cards remain under **Legacy**;
+their stored task rows and behavior are intentionally not migrated.
+
 ## Planned (not yet implemented)
 
 - Celery/Redis task queue — replaced by FastAPI BackgroundTasks (sufficient for personal app). `config.redis_url` is dead legacy config; nothing reads it.
@@ -329,11 +340,11 @@ Tasks run as FastAPI `BackgroundTasks`, write logs to `task_logs` table, and sup
 - **AI providers live in the DB** (`AIProvider` rows, added via Admin UI), not in env. The `*_api_key` fields in `config.py` are only fallback overrides.
 - **Tests**: `npm test` from repo root runs all three suites (backend/compute pytest, frontend vitest). See [testing.md](testing.md). Test files live in `backend/tests/`, `compute/tests/`, and `frontend/src/**/*.test.ts`.
 - **Compute worker native crash (Windows+conda)**: On miniforge/miniconda, `import easyocr` → `from skimage import io` triggers an OpenBLAS vs MKL DLL conflict when torch (MKL-linked) is already loaded. Exit code `3228369023` (STATUS_ACCESS_VIOLATION), NOT catchable by `except Exception`. Fix: `pip install numpy scipy scikit-image --force-reinstall`. The worker uses `_probe()` (subprocess) at startup to survive this crash in the probe itself. See [compute-worker.md](compute-worker.md).
-- **Classification fields**: `Document` has three classification-tracking columns: `classification_confidence` (float, LLM self-reported), `classification_source` (`"auto"`/`"manual"`), `manually_classified` (bool). `reclassify_unclassified_batch()` skips `manually_classified=True` docs. `reclassify_pending_batch()` (Re-classify All) and `reclassify_document()` do not — they always override. Old type is preserved in tags when type changes.
-- **Three reclassification modes differ in scope and cost**: `reclassify_pending_batch` (Re-classify All) = one cheap type-only LLM call per doc with summary; `reclassify_unclassified_batch` = full analysis only for unclassified docs; `run_recluster` = local clustering + one LLM call per cluster to name it.
+- **Classification is separate in Tasks**: `reclassify_unclassified` and `reclassify_all` call Gemini Batch with `classification_only=True`; they change only type/confidence/source, exclude `manually_classified=True`, and do not regenerate metadata. Admin and per-document legacy endpoints still have their separately documented synchronous behavior.
+- **Recluster differs from reclassification**: it embeds summaries locally, clusters all eligible documents, then uses one LLM naming call per cluster before applying a new taxonomy.
 - **`unclassified` vs `other`**: the LLM prompt no longer outputs `"other"` — it outputs `"unclassified"`. Old documents may still have `"other"`; all batch jobs and stats queries treat them identically.
-- **Vision can replace Analysis**: for capable providers (OpenAI/Gemini/OpenRouter) Step 3 uses `VISION_FULL_PROMPT` and returns the transcription **plus** every analysis field as one JSON. `indexer._apply_vision_fields()` writes them and sets `analysis_status="done"`, so Step 4 never runs — one API call instead of two. Only **Mistral OCR** (plain transcription) still triggers a separate Analysis step. This short-circuit only fires when `doc.ocr_text` is still short (see the `VISION_ANALYSIS_OVERRIDE_MAX_OCR_LEN` gotcha below).
-- **Vision — and both async batch-OCR paths — only ever see page 1**: `ai_vision.py::load_first_page()`/`_pdf_first_page()` hardcode `first_page=1, last_page=1`, and `batch_ocr_mistral.py`/`batch_ocr_gemini.py` reuse the same `load_first_page()`. If a multi-page PDF's first page is a cover/title, any vision-derived transcription or analysis reflects only that page — the local OCR/native-extraction path (`ocr.py`) is the one that covers the full document. `indexer._run_vision()` accounts for this (see `VISION_ANALYSIS_OVERRIDE_MAX_OCR_LEN`), but the two batch-OCR runners do not.
+- **Legacy vision can replace legacy analysis**: the automatic per-document pipeline still uses `VISION_FULL_PROMPT` and `_apply_analysis_result`; the new `index_documents` task and OCR Lab use metadata-only prompts and preserve classification.
+- **AI image requests use up to three PDF pages**: `load_document_pages()` stacks pages 1–3 into one JPEG. Local/native PDF extraction still covers all pages. The plan/cost preview exposes the three-page cap.
 - **Sync is now hard-delete**: `/api/admin/sync` `db.delete()`s missing/phantom docs (the old `is_deleted` soft-delete is migrated away — sync also purges any leftover `is_deleted=True` rows). It refuses to run (HTTP 503) if `check_library_accessible()` fails, so an unmounted NAS can't empty the library.
 - **User-initiated document delete is also hard-delete**: `DELETE /api/documents/{id}` removes the file on disk, `thumbnail_path`, the ChromaDB vector (`services/embeddings.py::delete_document`), and the row — not just `is_deleted=true`. Sync's own hard-delete path (missing/phantom files) does **not** clean up the embedding, so a doc removed by deleting its file outside the app (then swept by sync) can leave an orphan vector in Chroma; not an issue for the in-app Delete button.
 - **Log levels**: every `IndexingLog` row has `level` (`trace|debug|info|warning|error`). The `_log()` helpers default to `info`; pass `level=` to override. The Admin Log tab filters by minimum severity client-side.

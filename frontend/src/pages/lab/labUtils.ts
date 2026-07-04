@@ -15,7 +15,6 @@ export function formatFileSize(bytes: number): string {
 }
 
 /** Provider types that can run as vision/image judges. */
-export const VISION_CAPABLE = ["anthropic", "openai", "gemini", "openrouter", "mistral"];
 
 export function uid() {
   return Math.random().toString(36).slice(2);

@@ -1,7 +1,7 @@
 # Batch Tasks (Mistral & Gemini)
 
-Five task types run AI processing **asynchronously** through a provider's batch
-API, billed at ~50 % of the interactive price. All are dispatched from
+The primary `index_documents` task orchestrates the provider Batch engines below.
+Legacy direct Batch cards remain available for repair/debugging. All are dispatched from
 [`backend/app/services/task_runners.py`](../backend/app/services/task_runners.py)
 (endpoints in `routers/tasks.py`) and are driven from the **Tasks** panel
 (advanced mode only).
@@ -10,11 +10,12 @@ API, billed at ~50 % of the interactive price. All are dispatched from
 
 | Task type | Service | Provider API | Document scope |
 |-----------|---------|--------------|----------------|
+| `index_documents` | `task_runners.py` + `indexing_plan.py` | selected route | lazy: analysis incomplete; existing text is reused |
 | `batch_ocr_mistral` | `batch_ocr.py` | Mistral Batch `/v1/ocr` | `ocr_status="pending"` |
 | `batch_ocr_gemini`  | `batch_ocr.py` | Gemini `:batchGenerateContent` | scope-selected (see below); **per-document hybrid** vision/text routing |
-| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | has `ocr_text`, no analysis yet — **internal only**, not directly creatable from the Tasks UI; used by `reclassify_unclassified`/`reclassify_all` below |
+| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | internal engine for metadata, quality repair, and classification-only work |
 | `reclassify_unclassified` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, type = unclassified/other, not manually set |
-| `reclassify_all` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, `analysis_status != "done"` |
+| `reclassify_all` | `batch_analysis.py` | Gemini `:batchGenerateContent` | all non-manual docs with summary or OCR text |
 
 > Mistral has a dedicated OCR endpoint for true OCR — it always sends the image,
 > since `/v1/ocr` has no text-only mode. Gemini has **no** OCR endpoint, so the
@@ -23,13 +24,9 @@ API, billed at ~50 % of the interactive price. All are dispatched from
 > so `batch_ocr_gemini` skips the image entirely for any document that already
 > has OCR text (see **Hybrid vision/text routing** below).
 >
-> `reclassify_unclassified` and `reclassify_all` are thin wrappers that call
-> `run_batch_analysis_gemini()` (in `batch_analysis.py`) with a `doc_scope`
-> parameter selecting the appropriate document set — always text-only, since by
-> definition these documents already have OCR text. This makes them 2× cheaper
-> at the cost of async turnaround (up to 24 h). `batch_analysis_gemini` is not
-> offered as its own card in the Tasks "create" modal — it only runs as the
-> engine behind those two reclassify tasks (or via a direct API call / resume).
+> `reclassify_unclassified` and `reclassify_all` call the same Gemini text Batch
+> engine with `classification_only=True`. They send summary when available,
+> change only classification fields, and exclude manual classifications.
 
 ## Hybrid vision/text routing (`batch_ocr_gemini`)
 
@@ -39,8 +36,11 @@ Sending images to Gemini costs image tokens; sending text-only is much cheaper.
 
 | Document state | Mode | Request sent |
 |-----------------|------|---------------|
-| No `ocr_text` yet | **vision** | first-page image + `VISION_FULL_PROMPT` → transcription + all analysis fields in one call |
-| `ocr_text` already exists, from *any* engine — including local `tesseract`/`easyocr` | **text-only** | existing `ocr_text` (first 4000 chars) + `ANALYSIS_SYSTEM` → analysis fields only, no image, `ocr_text`/`ocr_model` left untouched |
+| No `ocr_text` yet | **vision** | up to 3 PDF pages (or one image) → transcription + fields in one call |
+| `ocr_text` already exists, from *any* engine — including local `tesseract`/`easyocr` | **text-only** | existing `ocr_text` (first 4000 chars) → fields only, no image, `ocr_text`/`ocr_model` left untouched |
+
+The primary indexing task passes `metadata_only=True`, so neither branch changes
+classification. The direct legacy Gemini Batch card retains its combined behavior.
 
 Local-engine text is **not** re-transcribed via vision: if it was kept rather
 than re-OCR'd, its quality is assumed acceptable, so only the cheaper
@@ -85,9 +85,9 @@ silently dropped.
 
 ## Provider batch support
 
-`AIProvider.supports_batch` is a computed property (`True` for `gemini` and
-`mistral`). It is exposed in `AIProviderOut` so the Tasks UI can filter the
-provider picker to only batch-capable providers for batch tasks.
+`AIProvider.capabilities.batch` is inferred per model and can be overridden in
+provider settings (`extra_params.capabilities`). The Tasks UI filters using this
+model-level capability rather than a provider-type allowlist.
 
 ## Config (task `config` JSON)
 
@@ -97,6 +97,8 @@ provider picker to only batch-capable providers for batch tasks.
 | `provider_id` | (first enabled) | Which `AIProvider` row to use; must match the provider type |
 | `poll_interval` | 30 | Seconds between status checks while the job runs |
 | `doc_scope` | `needs_analysis` | Which documents to include (analysis tasks only): `needs_analysis` — has `ocr_text`, no analysis or unclassified; `unclassified` — `ocr_done`, type is `unclassified`/`other`, not manually set; `pending` — `ocr_done`, `analysis_status != "done"` |
+| `metadata_only` | false | Internal: create metadata without touching classification |
+| `classification_only` | false | Internal: update only classification fields |
 
 The Tasks panel loads only enabled providers whose `provider_type` matches the
 task (`mistral` for `batch_ocr_mistral`, `gemini` for `batch_ocr_gemini`). If no
@@ -111,7 +113,7 @@ id so results can be mapped back.
 ```
 1. Resolve provider (by provider_id, else first enabled of the right type)
 2. Collect up to `limit` pending documents
-3. Load first page of each as a resized JPEG (ai_vision.load_first_page) —
+3. Render up to three PDF pages as one JPEG (`ai_vision.load_document_pages`) —
    for `batch_ocr_gemini`, only documents in **vision** mode (see hybrid
    routing above); text-mode documents reuse the existing `ocr_text` instead
 4. Build a JSONL file, one inline-base64 (vision) or plain-text (Gemini
@@ -160,7 +162,7 @@ only local polling stops. The job id is logged so it can be inspected manually.
 
 ## Resume support
 
-`POST /api/tasks/{task_id}/resume-batch` restarts polling for a stopped or interrupted job without re-submitting it. Supported task types: `batch_ocr_mistral`, `batch_ocr_gemini`, `batch_analysis_gemini`, `reclassify_unclassified`, `reclassify_all`. The original `batch_job_id` is read from `Task.result_summary`.
+`POST /api/tasks/{task_id}/resume-batch` restarts polling without re-submitting. Supported types include `index_documents`, the three Batch engines, and both classification tasks. `index_documents` also persists `pipeline_stage` so recovery reconnects to the correct provider stage.
 
 ### Automatic recovery on backend restart
 

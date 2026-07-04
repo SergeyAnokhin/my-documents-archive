@@ -2,7 +2,7 @@ import { Scale, Trophy, Save } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { useT } from "../../i18n";
 import type { AIProvider, LabJudgeResult } from "../../types";
-import { VISION_CAPABLE, formatMs } from "./labUtils";
+import { formatMs } from "./labUtils";
 import { FieldChips } from "./FieldChips";
 
 /** Premium "judge" section: pick providers, compare candidates, show verdicts. */
@@ -43,7 +43,7 @@ export function JudgePanel({
       <p className="text-xs text-muted" style={{ marginBottom: 8 }}>{lab.judgeHint}</p>
       <div className="lab-judge-list">
         {premiumProviders.map(p => {
-          const hasVision = VISION_CAPABLE.includes(p.provider_type);
+          const hasVision = p.capabilities?.vision ?? false;
           const isChecked = judgeProviders.includes(p.id);
           const isRunning = judgingIds.includes(p.id);
           return (
@@ -82,7 +82,7 @@ export function JudgePanel({
         .map(p => {
           const result = judgeResults[p.id];
           const error = judgeErrors[p.id];
-          const hasVision = VISION_CAPABLE.includes(p.provider_type);
+          const hasVision = p.capabilities?.vision ?? false;
           return (
             <div key={p.id}>
               <div className="lab-verdict-judge-header">

@@ -38,7 +38,7 @@ Both run on the local home network; all access is via browser.
 ```
 Step 1 — OCR         extract text (local Tesseract or external compute worker)
 Step 2 — Thumbnail   generate JPEG preview (Pillow / pdf2image)
-Step 3 — AI Vision   send first page to vision model (optional, toggle in Admin)
+Step 3 — AI Vision   send one image or first 3 PDF pages (optional, toggle in Admin)
            └─ picks first vision-capable provider; skips if disabled or none
            └─ capable models (OpenAI/Gemini/OpenRouter) use VISION_FULL_PROMPT
               and return text + ALL analysis fields as one JSON → Step 4 is skipped
@@ -58,6 +58,11 @@ Each log row carries a `level` (`trace|debug|info|warning|error`); the Admin Log
 filters by minimum severity. Step boundaries are `trace`, skips are `debug`, the
 combined vision-analysis result is `info`, failures are `error`.
 Embeddings model: `paraphrase-multilingual-MiniLM-L12-v2` (local, ~420 MB).
+
+Bulk work should normally use the lazy `index_documents` task documented in
+[processing-map.md](processing-map.md). It reuses existing text, skips completed
+analysis, uses metadata-only prompts, and leaves classification to separate
+Gemini Batch tasks. The pipeline above remains the per-document/upload path.
 
 ## Storage Layout
 

@@ -264,16 +264,17 @@ def _pdf_first_page(path: Path) -> Image.Image:
 
 def _get_providers(db: Session) -> list:
     """Return enabled vision-capable providers ordered by sort_order, with env-var fallback."""
-    db_providers = (
+    candidates = (
         db.query(AIProvider)
         .filter(
             AIProvider.enabled == True,
             AIProvider.task_type.in_(["vision", "both"]),
-            AIProvider.provider_type.in_(VISION_CAPABLE),
         )
         .order_by(AIProvider.sort_order)
         .all()
     )
+    from .provider_capabilities import supports
+    db_providers = [provider for provider in candidates if supports(provider, "vision")]
     if db_providers:
         return db_providers
 
