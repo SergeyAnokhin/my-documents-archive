@@ -1,10 +1,11 @@
-"""Pins quality-filter behavior for single-character tags.
+"""Pins quality-filter behavior for quality-gap filters.
 
 Doc: docs/api.md (Search quality filters) and docs/code-map.md
 (services/task_runners.py: fix_quality delegates analysis gaps to Gemini Batch).
 Rule: documents with any one-character tag must be exposed as a dedicated
 quality gap, excluded from the "complete" filter, and re-dispatched through
-Gemini Batch Analysis via explicit doc_ids.
+Gemini Batch Analysis via explicit doc_ids. Separately, `unclassified` is a
+terminal auto-classification result, not a "missing category" gap.
 """
 import asyncio
 from unittest.mock import AsyncMock
@@ -104,3 +105,53 @@ def test_fix_quality_single_char_tag_delegates_matching_doc_ids_to_batch_analysi
     assert task_id == 123
     assert config["quality_filter"] == "single_char_tag"
     assert config["doc_ids"] == [flagged_id]
+
+
+def test_no_category_quality_filter_excludes_terminal_unclassified(db_session):
+    # Doc: docs/api.md §Search quality filter values.
+    # Rule: `no_category` means category missing/legacy-unknown (`null`/`other`);
+    #       documents already auto-classified as `unclassified` are terminal and
+    #       must not keep reappearing as a repair gap.
+    missing_id = _add_doc(db_session, filename="missing.pdf", document_type=None)
+    legacy_id = _add_doc(db_session, filename="legacy.pdf", document_type="other")
+    _add_doc(db_session, filename="terminal.pdf", document_type="unclassified")
+    _add_doc(db_session, filename="typed.pdf", document_type="invoice")
+
+    db = db_session()
+    flagged = search_router.search_documents(
+        query="",
+        mode="fulltext",
+        quality="no_category",
+        page=1,
+        page_size=24,
+        db=db,
+    )
+    counts = search_router.get_quality_counts(db)
+    db.close()
+
+    assert {item.document.id for item in flagged.items} == {missing_id, legacy_id}
+    assert counts["no_category"] == 2
+
+
+def test_fix_quality_no_category_skips_terminal_unclassified(db_session, monkeypatch):
+    # Doc: docs/code-map.md — fix_quality routes analysis-related gaps through
+    #       Gemini Batch Analysis using explicit doc_ids.
+    # Rule: only truly missing categories are delegated; already-terminal
+    #       `unclassified` documents are excluded to avoid repeated paid retries.
+    missing_id = _add_doc(db_session, filename="missing.pdf", document_type=None)
+    legacy_id = _add_doc(db_session, filename="legacy.pdf", document_type="other")
+    _add_doc(db_session, filename="terminal.pdf", document_type="unclassified")
+
+    run_batch = AsyncMock()
+    monkeypatch.setattr(tasks_module, "run_batch_analysis_gemini", run_batch)
+    monkeypatch.setattr(tasks_module, "_log", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "_set_progress", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "_finish", lambda *a, **k: None)
+
+    asyncio.run(tasks_module._fix_quality(123, {"quality_filter": "no_category"}))
+
+    run_batch.assert_awaited_once()
+    task_id, config = run_batch.await_args.args
+    assert task_id == 123
+    assert config["quality_filter"] == "no_category"
+    assert config["doc_ids"] == [missing_id, legacy_id]

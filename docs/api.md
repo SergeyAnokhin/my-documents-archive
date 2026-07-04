@@ -67,6 +67,8 @@ Base URL: `http://localhost:8000`
 
 Response: `{items: SearchResult[], total, page, page_size, mode}` where `SearchResult = {document, score, highlight?}`
 
+`quality=no_category` now means the category is truly missing (`document_type = null`) or still on the legacy `"other"` value. Documents already classified as `unclassified` are not included in this repair gap; `unclassified` is treated as a terminal auto-classification result. For the broader backlog count, use Admin stats `unclassified`.
+
 **`/ask`** retrieves with hybrid (semantic top-K merged with fulltext keyword hits), sends the top `n_send` docs to the AI provider, and returns `AIAnswerResponse = {answer, sources, cost, model_name, docs_sent, depth, debug?}`. With `debug=true` the `debug` field (`AskDebug`) carries the full retrieval trace — `embedded_count` vs `total_docs`, the whole semantic ranking with cosine similarity and `sent`/`retrieved`/`dropped` flags, fulltext ids, the prompt sent to the LLM, and per-stage timings. Every request also logs an INFO `🔎 [ask] retrieval` table. `fallback_newest=true` means the candidate pool was empty (no embeddings / no keyword hits) and the answer was built from the newest documents.
 
 ## Admin

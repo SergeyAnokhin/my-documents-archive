@@ -482,7 +482,6 @@ async def _fix_quality(task_id: int, config: dict) -> None:
             docs = base.filter(
                 or_(
                     Document.document_type == None,
-                    Document.document_type == "unclassified",
                     Document.document_type == "other",
                 )
             ).all()

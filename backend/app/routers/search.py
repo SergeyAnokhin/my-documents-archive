@@ -109,7 +109,6 @@ def search_documents(
         base = base.filter(
             or_(
                 Document.document_type == None,
-                Document.document_type == "unclassified",
                 Document.document_type == "other",
             )
         )
@@ -239,7 +238,6 @@ def get_quality_counts(db: Session = Depends(get_db)):
     no_category = base.filter(
         or_(
             Document.document_type == None,
-            Document.document_type == "unclassified",
             Document.document_type == "other",
         )
     ).count()
