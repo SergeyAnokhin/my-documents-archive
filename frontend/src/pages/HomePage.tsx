@@ -239,6 +239,7 @@ export function HomePage() {
       no_analysis: t.filters.qualityNoAnalysis,
       no_summary: t.filters.qualityNoSummary,
       no_tags: t.filters.qualityNoTags,
+      single_char_tag: t.filters.qualitySingleCharTag,
       no_category: t.filters.qualityNoCategory,
     };
     window.dispatchEvent(

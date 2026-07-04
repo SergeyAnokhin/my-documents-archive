@@ -57,7 +57,7 @@ Base URL: `http://localhost:8000`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/search` | Search documents. Params: `query`, `mode`, `year`, `month`, `document_type`, `tag`, `folder` (relative dir path), `language`, `ocr_status`, `quality` (advanced-mode gap filter: `no_ocr`/`no_embedding`/`no_analysis`/`no_summary`/`no_tags`/`no_category`/`complete`), `page`, `page_size` |
+| GET | `/api/search` | Search documents. Params: `query`, `mode`, `year`, `month`, `document_type`, `tag`, `folder` (relative dir path), `language`, `ocr_status`, `quality` (advanced-mode gap filter: `no_ocr`/`no_embedding`/`no_analysis`/`no_summary`/`no_tags`/`single_char_tag`/`no_category`/`complete`), `page`, `page_size` |
 | GET | `/api/search/embedded-ids` | Document ids that have a vector in ChromaDB: `{ids: number[]}` |
 | GET | `/api/search/quality-counts` | Document counts per quality gap (for the quality-filter dropdown) |
 | GET | `/api/search/ask` | AI Q&A over the archive. Params: `query`, `language`, `year`, `filter_language`, `depth` (1 fast / 2 normal / 3 deep — controls `n_retrieve`/`n_send`/`ocr_chars`), `debug` |

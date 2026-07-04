@@ -67,6 +67,7 @@ export function HomePageToolbar({
                 { value: "no_analysis",  label: t.filters.qualityNoAnalysis,  count: qualityCounts["no_analysis"] },
                 { value: "no_summary",   label: t.filters.qualityNoSummary,   count: qualityCounts["no_summary"] },
                 { value: "no_tags",      label: t.filters.qualityNoTags,      count: qualityCounts["no_tags"] },
+                { value: "single_char_tag", label: t.filters.qualitySingleCharTag, count: qualityCounts["single_char_tag"] },
                 { value: "no_category",  label: t.filters.qualityNoCategory,  count: qualityCounts["no_category"] },
                 { value: "complete",     label: t.filters.qualityComplete },
               ]}

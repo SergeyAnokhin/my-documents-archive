@@ -5,7 +5,7 @@ lives in services/qa.py — this router only parses params and shapes responses.
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, extract, func, String
+from sqlalchemy import or_, extract, func, String, exists, select
 from typing import Optional
 import logging
 import os
@@ -27,6 +27,15 @@ from ..services.search_query import (
 from ..services import qa
 
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+
+def _has_single_char_tag():
+    tag_items = func.json_each(Document.tags).table_valued("value").alias("tag_items")
+    return exists(
+        select(1)
+        .select_from(tag_items)
+        .where(func.length(tag_items.c.value) == 1)
+    )
 
 
 @router.get("", response_model=SearchResponse)
@@ -94,6 +103,8 @@ def search_documents(
         base = base.filter(
             or_(Document.tags == None, Document.tags.cast(String) == "[]")
         )
+    elif quality == "single_char_tag":
+        base = base.filter(_has_single_char_tag())
     elif quality == "no_category":
         base = base.filter(
             or_(
@@ -108,6 +119,7 @@ def search_documents(
             Document.summary != None,
             Document.summary != "",
             ~or_(Document.tags == None, Document.tags.cast(String) == "[]"),
+            ~_has_single_char_tag(),
             Document.document_type != None,
             Document.document_type != "unclassified",
         )
@@ -222,6 +234,8 @@ def get_quality_counts(db: Session = Depends(get_db)):
         or_(Document.tags == None, Document.tags.cast(String) == "[]")
     ).count()
 
+    single_char_tag = base.filter(_has_single_char_tag()).count()
+
     no_category = base.filter(
         or_(
             Document.document_type == None,
@@ -243,6 +257,7 @@ def get_quality_counts(db: Session = Depends(get_db)):
         "no_analysis": no_analysis,
         "no_summary": no_summary,
         "no_tags": no_tags,
+        "single_char_tag": single_char_tag,
         "no_category": no_category,
     }
 

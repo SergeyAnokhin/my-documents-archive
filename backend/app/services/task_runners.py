@@ -9,6 +9,8 @@ the short in-process runners. Long batch runners live in their own modules
 import asyncio
 from datetime import datetime
 
+from sqlalchemy import exists, func, select
+
 from ..database import SessionLocal
 from ..models import Document, Task
 
@@ -29,6 +31,15 @@ BATCH_RESUMABLE_TYPES = (
     "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
     "reclassify_unclassified", "reclassify_all",
 )
+
+
+def _has_single_char_tag():
+    tag_items = func.json_each(Document.tags).table_valued("value").alias("tag_items")
+    return exists(
+        select(1)
+        .select_from(tag_items)
+        .where(func.length(tag_items.c.value) == 1)
+    )
 
 
 async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
@@ -324,6 +335,9 @@ async def _fix_quality(task_id: int, config: dict) -> None:
             operation = "batch_analysis"
         elif quality == "no_tags":
             docs = base.filter(or_(Document.tags == None, Document.tags.cast(String) == "[]")).all()
+            operation = "batch_analysis"
+        elif quality == "single_char_tag":
+            docs = base.filter(_has_single_char_tag()).all()
             operation = "batch_analysis"
         elif quality == "no_category":
             docs = base.filter(
