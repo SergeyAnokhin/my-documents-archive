@@ -5,10 +5,12 @@ import { Button } from "../ui/Button";
 import { useT } from "../../i18n";
 import {
   createTask, runTask, listProviders, getTaskCandidates, getScopeCount, getCompressCandidates,
+  getIndexPlan,
 } from "../../api/documents";
+import type { IndexPlan } from "../../api/documents";
 import type { AIProvider, Task, TaskType } from "../../types";
 import {
-  ALL_TYPES, TYPES_WITH_LIMIT, BATCH_PROVIDER_TYPE, BATCH_POLL_DEFAULTS,
+  PRIMARY_TYPES, LEGACY_TYPES, TYPES_WITH_LIMIT, BATCH_PROVIDER_TYPE, BATCH_POLL_DEFAULTS,
   TYPES_WITH_SCOPE, TYPES_WITH_FORCE, TASK_DOC_URLS, TASK_LABELS,
 } from "./taskConfig";
 
@@ -47,6 +49,11 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
   const [maxLongSide, setMaxLongSide] = useState("1024");
   const [compressCount, setCompressCount] = useState<{ count: number; total_images: number } | null>(null);
   const [compressLoading, setCompressLoading] = useState(false);
+  const [strategy, setStrategy] = useState("mistral_gemini");
+  const [geminiProviderId, setGeminiProviderId] = useState("");
+  const [mistralProviderId, setMistralProviderId] = useState("");
+  const [indexPlan, setIndexPlan] = useState<IndexPlan | null>(null);
+  const [indexPlanLoading, setIndexPlanLoading] = useState(false);
   const compressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const batchProviderType = selectedType ? BATCH_PROVIDER_TYPE[selectedType] : undefined;
@@ -56,6 +63,8 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
   const providerLabel = batchProviderType
     ? batchProviderType[0].toUpperCase() + batchProviderType.slice(1)
     : "";
+  const geminiProviders = providers.filter(p => p.provider_type === "gemini" && p.capabilities?.batch && p.capabilities?.analysis);
+  const mistralProviders = providers.filter(p => p.provider_type === "mistral" && p.capabilities?.batch && p.capabilities?.ocr);
 
   // Fetch candidate counts once on mount
   useEffect(() => {
@@ -66,7 +75,16 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
   useEffect(() => {
     if (!selectedType) return;
     const wanted = BATCH_PROVIDER_TYPE[selectedType];
-    if (wanted) {
+    if (selectedType === "index_documents") {
+      listProviders().then(all => {
+        const enabled = all.filter(p => p.enabled);
+        setProviders(enabled);
+        const gemini = enabled.find(p => p.provider_type === "gemini" && p.capabilities?.batch && p.capabilities?.analysis);
+        const mistral = enabled.find(p => p.provider_type === "mistral" && p.capabilities?.batch && p.capabilities?.ocr);
+        setGeminiProviderId(gemini ? String(gemini.id) : "");
+        setMistralProviderId(mistral ? String(mistral.id) : "");
+      }).catch(() => {});
+    } else if (wanted) {
       listProviders()
         .then(all => {
           const matching = all.filter(p => p.provider_type === wanted && p.enabled);
@@ -86,6 +104,16 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
         .catch(() => {});
     }
   }, [selectedType]);
+
+  useEffect(() => {
+    if (selectedType !== "index_documents") return;
+    const parsedLimit = parseInt(limit, 10) || 500;
+    setIndexPlanLoading(true);
+    getIndexPlan(strategy, parsedLimit, geminiProviderId ? Number(geminiProviderId) : undefined)
+      .then(setIndexPlan)
+      .catch(() => setIndexPlan(null))
+      .finally(() => setIndexPlanLoading(false));
+  }, [selectedType, strategy, limit, geminiProviderId]);
 
   // Fetch scope count when scope or task type changes (only for scope-aware tasks)
   useEffect(() => {
@@ -130,6 +158,7 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
       setPollInterval(String(BATCH_POLL_DEFAULTS[providerType] ?? 30));
     }
     if (type === "recluster") { setMaxClusters("40"); setMinClusters("2"); }
+    if (type === "index_documents") { setLimit("500"); setStrategy("mistral_gemini"); }
   };
 
   const handleCreate = async () => {
@@ -139,6 +168,13 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
       const config: Record<string, unknown> = { ...(initialConfig ?? {}) };
       if (TYPES_WITH_LIMIT.includes(selectedType)) {
         config.limit = parseInt(limit, 10) || 100;
+      }
+      if (selectedType === "index_documents") {
+        config.strategy = strategy;
+        config.gemini_provider_id = geminiProviderId ? Number(geminiProviderId) : undefined;
+        config.mistral_provider_id = mistralProviderId ? Number(mistralProviderId) : undefined;
+        config.poll_interval = parseInt(pollInterval, 10) || 30;
+        if (indexPlan) config.document_ids = indexPlan.document_ids;
       }
       if (selectedType === "recluster") {
         config.max_clusters = parseInt(maxClusters, 10) || 40;
@@ -169,20 +205,27 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
   return (
     <Modal open onClose={onClose} title={t.tasks.selectType} size="md">
       {!selectedType ? (
-        <div className="create-type-grid">
-          {ALL_TYPES.map(type => (
-            <button key={type} className="create-type-card" onClick={() => handleSelectType(type)}>
-              <span className="task-type-label task-type-label--lg">
-                {TASK_LABELS[type]}
-              </span>
-              <span className="create-type-name">
-                {t.tasks.types[type as keyof typeof t.tasks.types]}
-              </span>
-              <span className="create-type-desc text-xs text-muted">
-                {t.tasks.descriptions[type as keyof typeof t.tasks.descriptions]}
-              </span>
-            </button>
-          ))}
+        <div>
+          <p className="create-form-label">{t.tasks.primaryTasks}</p>
+          <div className="create-type-grid">
+            {PRIMARY_TYPES.map(type => (
+              <button key={type} className="create-type-card" onClick={() => handleSelectType(type)}>
+                <span className="task-type-label task-type-label--lg">{TASK_LABELS[type]}</span>
+                <span className="create-type-name">{t.tasks.types[type as keyof typeof t.tasks.types]}</span>
+                <span className="create-type-desc text-xs text-muted">{t.tasks.descriptions[type as keyof typeof t.tasks.descriptions]}</span>
+              </button>
+            ))}
+          </div>
+          <p className="create-form-label" style={{ marginTop: 16 }}>{t.tasks.legacyTasks}</p>
+          <div className="create-type-grid">
+            {LEGACY_TYPES.map(type => (
+              <button key={type} className="create-type-card" onClick={() => handleSelectType(type)}>
+                <span className="task-type-label task-type-label--lg">{TASK_LABELS[type]}</span>
+                <span className="create-type-name">{t.tasks.types[type as keyof typeof t.tasks.types]}</span>
+                <span className="create-type-desc text-xs text-muted">{t.tasks.descriptions[type as keyof typeof t.tasks.descriptions]}</span>
+              </button>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="create-form">
@@ -217,6 +260,46 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
               </span>
             )}
           </div>
+
+          {selectedType === "index_documents" && (
+            <>
+              <div className="create-form-field">
+                <label className="create-form-label">{t.tasks.indexStrategyLabel}</label>
+                <select className="create-form-input" value={strategy} onChange={e => setStrategy(e.target.value)}>
+                  <option value="mistral_gemini">{t.tasks.indexStrategyMistral}</option>
+                  <option value="local_gemini">{t.tasks.indexStrategyLocal}</option>
+                  <option value="gemini_complete">{t.tasks.indexStrategyGemini}</option>
+                </select>
+              </div>
+              <div className="create-form-field">
+                <label className="create-form-label">Gemini</label>
+                <select className="create-form-input" value={geminiProviderId} onChange={e => setGeminiProviderId(e.target.value)}>
+                  {geminiProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              {strategy === "mistral_gemini" && (
+                <div className="create-form-field">
+                  <label className="create-form-label">Mistral OCR</label>
+                  <select className="create-form-input" value={mistralProviderId} onChange={e => setMistralProviderId(e.target.value)}>
+                    {mistralProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="create-form-desc">
+                {indexPlanLoading || !indexPlan ? t.tasks.indexPlanLoading : (
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <span>{t.tasks.indexPlanCandidates.replace("{{count}}", String(indexPlan.total_candidates))}</span>
+                    <span>{t.tasks.indexPlanExistingText.replace("{{count}}", String(indexPlan.already_has_text))}</span>
+                    <span>{t.tasks.indexPlanNative.replace("{{count}}", String(indexPlan.native_text))}</span>
+                    <span>{t.tasks.indexPlanOcr.replace("{{count}}", String(indexPlan.needs_visual_ocr))}</span>
+                    <span>{t.tasks.indexPlanGeminiText.replace("{{count}}", String(indexPlan.gemini_text))}</span>
+                    <span>{t.tasks.indexPlanGeminiVision.replace("{{count}}", String(indexPlan.gemini_vision))}</span>
+                    <strong>{t.tasks.indexPlanCost.replace("{{cost}}", indexPlan.estimated_cost_usd.toFixed(4))}</strong>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {selectedType === "compress_images" && (
             <div className="create-form-field">
@@ -397,7 +480,7 @@ export function CreateTaskModal({ t, onCreated, onClose, initialType, initialTit
               size="sm"
               loading={saving}
               onClick={handleCreate}
-              disabled={!title.trim() || (isBatch && providers.length === 0) || (isRecluster && providers.length === 0)}
+              disabled={!title.trim() || (isBatch && providers.length === 0) || (isRecluster && providers.length === 0) || (selectedType === "index_documents" && (!geminiProviderId || (strategy === "mistral_gemini" && !mistralProviderId)))}
             >
               {t.tasks.createTask}
             </Button>

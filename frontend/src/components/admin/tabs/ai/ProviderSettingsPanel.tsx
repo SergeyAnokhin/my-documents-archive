@@ -4,15 +4,38 @@ import { useT } from "../../../../i18n";
 
 export function ProviderSettingsPanel({
   providerType,
+  inferredCapabilities,
   settings,
   onChange,
 }: {
   providerType: string;
+  inferredCapabilities: Record<string, boolean>;
   settings: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }) {
   const { t } = useT();
   const ai = t.admin.ai;
+
+  const overrides = (settings.capabilities ?? {}) as Record<string, boolean>;
+  const capabilityEditor = (
+    <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 10 }}>
+      <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{ai.capabilitiesLabel}</p>
+      <p className="text-xs text-muted" style={{ marginBottom: 8 }}>{ai.capabilitiesHint}</p>
+      {(["text", "vision", "ocr", "analysis", "batch"] as const).map(key => {
+        const checked = overrides[key] ?? inferredCapabilities[key] ?? false;
+        return (
+          <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={e => onChange("capabilities", { ...overrides, [key]: e.target.checked })}
+            />
+            {ai.capabilityNames[key]}
+          </label>
+        );
+      })}
+    </div>
+  );
 
   if (providerType === "mistral") {
     const policy = (settings.image_policy ?? "placeholder") as string;
@@ -36,6 +59,7 @@ export function ProviderSettingsPanel({
             </label>
           ))}
         </div>
+        {capabilityEditor}
       </div>
     );
   }
@@ -71,6 +95,7 @@ export function ProviderSettingsPanel({
           onChange={e => onChange("max_tokens", e.target.value === "" ? undefined : parseInt(e.target.value))}
         />
       </div>
+      {capabilityEditor}
     </div>
   );
 }

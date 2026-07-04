@@ -237,6 +237,13 @@ export const runLabVision = (doc_id: number, provider_id: number) =>
     fields: import("../types").ExtractedFields | null;
   }>("/lab/vision", { doc_id, provider_id });
 
+export const runLabTextAnalysis = (doc_id: number, provider_id: number, text: string) =>
+  api.post<{
+    provider_id: number; name: string; model_name: string | null;
+    text: string; cost: number; ms: number; tokens_in: number; tokens_out: number;
+    fields: import("../types").ExtractedFields | null;
+  }>("/lab/analyze-text", { doc_id, provider_id, text });
+
 export const runLabJudge = (body: {
   doc_id: number;
   provider_id: number;
@@ -250,6 +257,7 @@ export const saveLabResult = (body: {
   text: string;
   fields?: ExtractedFields;
   model_name: string;
+  save_classification?: boolean;
 }) => api.post<{ ok: boolean; doc_id: number }>("/lab/save", body);
 
 export const getLabImageInfo = (docId: number) =>
@@ -290,6 +298,31 @@ export const getTaskLogs = (id: number) => api.get<TaskLog[]>(`/tasks/${id}/logs
 
 export const getTaskCandidates = () =>
   api.get<Record<string, number | null>>("/tasks/candidates");
+
+export interface IndexPlan {
+  strategy: string;
+  document_ids: number[];
+  total_candidates: number;
+  already_has_text: number;
+  native_text: number;
+  needs_visual_ocr: number;
+  mistral_ocr: number;
+  local_ocr: number;
+  gemini_vision: number;
+  gemini_text: number;
+  estimated_pages: number;
+  already_complete: number;
+  estimated_cost_usd: number;
+  estimated_mistral_cost_usd: number;
+  estimated_gemini_cost_usd: number;
+  page_limit: number;
+}
+
+export const getIndexPlan = (strategy: string, limit: number, geminiProviderId?: number) => {
+  const qs = new URLSearchParams({ strategy, limit: String(limit) });
+  if (geminiProviderId) qs.set("gemini_provider_id", String(geminiProviderId));
+  return api.get<IndexPlan>(`/tasks/index-plan?${qs}`);
+};
 
 export const getScopeCount = (taskType: string, scope: number) =>
   api.get<{ count: number }>(`/tasks/candidates/scope?task_type=${taskType}&scope=${scope}`);

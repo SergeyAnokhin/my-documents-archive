@@ -129,7 +129,7 @@ Your ENTIRE response must be the JSON object above and nothing else."""
 
 def load_image(filepath: str, max_size: int = 1024) -> bytes:
     """First page as resized JPEG bytes — the single image every method works on."""
-    return ai_vision.load_first_page(filepath, max_size=max_size)
+    return ai_vision.load_document_pages(filepath, max_size=max_size, max_pages=3)
 
 
 # ── Image info & manipulation ──────────────────────────────────────────────────
@@ -346,11 +346,25 @@ async def run_vision_ocr(img_bytes: bytes, provider, db: Session) -> tuple[str, 
     Returns (text, fields, cost, elapsed_ms, tokens_in, tokens_out).
     """
     start = time.perf_counter()
-    raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, ai_vision.VISION_FULL_PROMPT, response_schema=ai_vision.VisionFullResponse)
+    prompt = ai_vision.VISION_METADATA_PROMPT if getattr(provider, "capabilities", {}).get("analysis") else "Transcribe all visible text verbatim."
+    raw, tin, tout, cost = await ai_vision.run_vision(provider, img_bytes, prompt, json_mode=bool(getattr(provider, "capabilities", {}).get("analysis")))
     ms = int((time.perf_counter() - start) * 1000)
     _update_stats(db, provider, tin, tout, cost)
     text, fields = _parse_vision_analysis(raw)
     return text, fields, cost, ms, tin, tout
+
+
+async def run_text_analysis(text: str, provider, db: Session) -> tuple[dict, float, int, int, int]:
+    """Immediate metadata-only analysis for a selected text-capable model."""
+    from .ai_analysis import METADATA_SYSTEM, run_text
+    from .ai_common import parse_llm_json
+    start = time.perf_counter()
+    raw, tin, tout, cost = await run_text(
+        provider, METADATA_SYSTEM, f"Document text:\n{text[:12000]}", json_mode=True
+    )
+    ms = int((time.perf_counter() - start) * 1000)
+    _update_stats(db, provider, tin, tout, cost)
+    return parse_llm_json(raw), cost, ms, tin, tout
 
 
 # ── Judge ───────────────────────────────────────────────────────────────────────

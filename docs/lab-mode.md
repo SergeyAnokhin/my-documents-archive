@@ -1,7 +1,7 @@
 # OCR Lab (calibration screen)
 
 A per-document experimentation screen for comparing how different text-recognition
-methods perform on the **same first-page image**, and having a "premium" AI model
+methods perform on the **same image or first three PDF pages**, and having a "premium" AI model
 judge which transcription is best. Opened from the document viewer
 ("OCR Lab" button) at the route **`/lab/:id`**.
 
@@ -9,6 +9,12 @@ Lab results are **ephemeral by default** — recognition runs do not write to th
 `documents` table. However, the user can click the **save (floppy disk) button** on
 any result card or the float modal, which calls `POST /api/lab/save` and writes the
 chosen OCR text, extracted fields, and model attribution (`ocr_model`) to the document.
+
+All Lab calls are immediate, never Batch. Local OCR and OCR-only models return
+text only. Vision analysis models return text plus metadata in one call; text-only
+models can analyze the newest OCR result through `POST /api/lab/analyze-text`.
+Eligibility is based on per-model capabilities with manual overrides. Normal Save
+does not overwrite classification.
 
 ## Layout
 

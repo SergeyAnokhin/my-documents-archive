@@ -8,10 +8,10 @@ import { Button } from "../components/ui/Button";
 import { useT } from "../i18n";
 import {
   getDocument, getLabMethods, listProviders,
-  runLabOcr, runLabVision, runLabJudge, saveLabResult,
+  runLabOcr, runLabVision, runLabTextAnalysis, runLabJudge, saveLabResult,
 } from "../api/documents";
 import type { Document, AIProvider, LabMethods, LabResult, LabJudgeResult } from "../types";
-import { formatMs, formatFileSize, VISION_CAPABLE, uid } from "./lab/labUtils";
+import { formatMs, formatFileSize, uid } from "./lab/labUtils";
 import { useLogs } from "./lab/useLogs";
 import { usePanelResize } from "./lab/usePanelResize";
 import { useImageTransform } from "./lab/useImageTransform";
@@ -120,8 +120,13 @@ export function LabPage() {
     () => providers.filter(
       p => p.enabled
         && (p.task_type === "vision" || p.task_type === "both")
-        && VISION_CAPABLE.includes(p.provider_type),
+        && p.capabilities?.vision,
     ),
+    [providers],
+  );
+
+  const textAnalysisProviders = useMemo(
+    () => providers.filter(p => p.enabled && p.capabilities?.text && p.capabilities?.analysis),
     [providers],
   );
 
@@ -201,6 +206,28 @@ export function LabPage() {
     }
   };
 
+  const handleTextAnalysis = async (p: AIProvider) => {
+    const sourceText = results[results.length - 1]?.text || doc?.ocr_text || "";
+    if (!sourceText.trim()) return;
+    setRunningVision(prev => new Set(prev).add(p.id));
+    addLog(`→ Text analysis [${p.name}]`);
+    try {
+      const res = await runLabTextAnalysis(docId, p.id, sourceText);
+      upsert({
+        id: uid(), kind: "vision", label: `${p.name} · text`, providerId: p.id,
+        providerModel: res.model_name || p.model || undefined,
+        text: sourceText, ms: res.ms, cost: res.cost,
+        tokens_in: res.tokens_in, tokens_out: res.tokens_out,
+        fields: res.fields || undefined,
+      });
+      addLog(`← Text analysis [${p.name}]: ${formatMs(res.ms)}`, "ok");
+    } catch (e) {
+      addLog(`✕ Text analysis [${p.name}]: ${(e as Error).message}`, "err");
+    } finally {
+      setRunningVision(prev => { const next = new Set(prev); next.delete(p.id); return next; });
+    }
+  };
+
   const handleSave = async (r: LabResult) => {
     setSavingId(r.id);
     setSavedId(null);
@@ -247,7 +274,7 @@ export function LabPage() {
 
     await Promise.all(toRun.map(async (providerId) => {
       const provider = premiumProviders.find(p => p.id === providerId)!;
-      const hasVision = VISION_CAPABLE.includes(provider.provider_type);
+      const hasVision = provider.capabilities?.vision ?? false;
       addLog(`→ Judge [${provider.name}]${hasVision ? " +image" : ""} on ${results.length} candidates`);
       try {
         const res = await runLabJudge({
@@ -583,6 +610,26 @@ export function LabPage() {
                 ))}
               </div>
             )}
+          </section>
+
+          <section className="lab-section">
+            <h3 className="lab-section-title">{lab.textAnalysis}</h3>
+            <p className="text-xs text-muted" style={{ marginBottom: 6 }}>{lab.textAnalysisHint}</p>
+            <div className="lab-provider-list">
+              {textAnalysisProviders.map(p => (
+                <div key={p.id} className="lab-provider-row">
+                  <span className="lab-provider-name">{p.name}</span>
+                  <Button
+                    variant="secondary" size="sm" icon={<Play size={13} />}
+                    loading={runningVision.has(p.id)}
+                    disabled={!((results[results.length - 1]?.text || doc?.ocr_text || "").trim())}
+                    onClick={() => handleTextAnalysis(p)}
+                  >
+                    {lab.run}
+                  </Button>
+                </div>
+              ))}
+            </div>
           </section>
 
           {/* Results */}

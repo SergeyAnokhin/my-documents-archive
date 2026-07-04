@@ -47,6 +47,7 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
     resume_job_id = config.get("resume_batch_job_id")
+    doc_ids_filter = config.get("doc_ids")
 
     # ── 1. Resolve Mistral provider ──────────────────────────────────────────
     db = SessionLocal()
@@ -94,7 +95,12 @@ async def run_batch_ocr_mistral(task_id: int, config: dict) -> None:
         db = SessionLocal()
         try:
             scope = int(config.get("scope", 1))
-            docs = _scope_filter(db.query(Document), scope).limit(limit).all()
+            query = db.query(Document)
+            if doc_ids_filter is not None:
+                query = query.filter(Document.id.in_(doc_ids_filter))
+            else:
+                query = _scope_filter(query, scope)
+            docs = query.limit(limit).all()
             total = len(docs)
             max_size = _get_max_image_size(db)
         finally:

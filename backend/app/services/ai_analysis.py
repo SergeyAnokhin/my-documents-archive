@@ -69,6 +69,21 @@ If the input contains only "(no text available)", the document is likely a photo
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
+METADATA_SYSTEM = """\
+You are a document metadata extraction assistant. Analyze the document text and return JSON with:
+- "summary": 2-3 factual sentences in the document's original language
+- "title": a short human-readable title, max 10 words
+- "tags": 3-7 useful keyword strings
+- "language": ISO 639-1 code
+- "organization": company or institution, or null
+- "amount": numeric monetary value, or null
+- "amount_currency": ISO 4217 code, or null
+- "person_first_name": main person's first name, or null
+- "person_last_name": main person's last name, or null
+- "document_date": most significant date in YYYY-MM-DD format, or null
+Do not classify the document and do not return document_type fields.
+Return ONLY the raw JSON object."""
+
 SUGGEST_TYPES_SYSTEM = """\
 You are a document classification assistant.
 Given a document description and a list of existing document types, suggest the 3 most appropriate types.
@@ -86,6 +101,13 @@ Rules:
 - confidence: 0.0-1.0
 - reason: one concise sentence in the document's own language
 - Return only raw JSON, no markdown fences"""
+
+CLASSIFICATION_SYSTEM = f"""\
+You are a document classifier. Choose exactly one type from this fixed taxonomy:
+{DOCUMENT_TYPES_BLOCK}
+Use "unclassified" when no listed type fits. Return only JSON:
+{{"document_type": "type_slug", "document_type_confidence": 0.0}}
+Do not return or rewrite any other metadata."""
 
 
 @dataclass

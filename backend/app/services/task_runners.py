@@ -15,6 +15,7 @@ from ..database import SessionLocal
 from ..models import Document, Task
 
 from .task_runtime import (
+    capture_finishes,
     finish as _finish,
     is_stopped as _is_stopped,
     log_task as _log,
@@ -29,7 +30,7 @@ from .image_compress import run_compress_images
 # batch_job_id (saved in Task.result_summary) instead of resubmitting.
 BATCH_RESUMABLE_TYPES = (
     "batch_ocr_mistral", "batch_ocr_gemini", "batch_analysis_gemini",
-    "reclassify_unclassified", "reclassify_all",
+    "reclassify_unclassified", "reclassify_all", "index_documents",
 )
 
 
@@ -46,7 +47,9 @@ async def _run_task_bg(task_id: int, task_type: str, config: dict) -> None:
     import logging
     logger = logging.getLogger(__name__)
     try:
-        if task_type == "index_unindexed":
+        if task_type == "index_documents":
+            await _index_documents(task_id, config)
+        elif task_type == "index_unindexed":
             await _index_unindexed(task_id, config)
         elif task_type == "sync_library":
             await _sync_library(task_id, config)
@@ -163,6 +166,138 @@ async def _index_unindexed(task_id: int, config: dict) -> None:
     _log(task_id, f"Done — {total} document(s) processed")
 
 
+def _persist_pipeline_config(task_id: int, config: dict, stage: str) -> dict:
+    updated = {**config, "pipeline_stage": stage}
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            previous_stage = (task.config or {}).get("pipeline_stage")
+            task.config = updated
+            if previous_stage != stage:
+                task.result_summary = {"phase": "preparing", "pipeline_stage": stage}
+            db.commit()
+    finally:
+        db.close()
+    return updated
+
+
+async def _captured_stage(task_id: int, runner, config: dict) -> bool:
+    with capture_finishes() as outcomes:
+        await runner(task_id, config)
+    if _is_stopped(task_id):
+        return False
+    if not outcomes:
+        _log(task_id, "Pipeline stage ended without a completion result", "error")
+        _finish(task_id, "error")
+        return False
+    status, result = outcomes[-1]
+    if status != "done":
+        _finish(task_id, status, result)
+        return False
+    return True
+
+
+async def _extract_local_text(task_id: int, doc_ids: list[int]) -> bool:
+    from .indexer import _is_docx, _is_txt, _run_docx_extract, _run_txt_extract, _run_ocr
+    db = SessionLocal()
+    try:
+        docs = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+        _log(task_id, f"Local text extraction: {len(docs)} document(s)")
+        for index, doc in enumerate(docs):
+            if _is_stopped(task_id):
+                return False
+            if (doc.ocr_text or "").strip():
+                continue
+            if _is_docx(doc):
+                await _run_docx_extract(doc, db)
+            elif _is_txt(doc):
+                await _run_txt_extract(doc, db)
+            else:
+                await _run_ocr(doc, db)
+            _set_progress(task_id, index + 1, len(docs))
+        return True
+    finally:
+        db.close()
+
+
+async def _index_documents(task_id: int, config: dict) -> None:
+    """Lazy pipeline: reuse text, fill metadata, and leave classification unchanged."""
+    from .indexing_plan import build_index_plan
+
+    strategy = config.get("strategy", "mistral_gemini")
+    limit = int(config.get("limit", 500))
+    gemini_provider_id = config.get("gemini_provider_id")
+    mistral_provider_id = config.get("mistral_provider_id")
+    resume_job_id = config.get("resume_batch_job_id")
+    db = SessionLocal()
+    try:
+        plan = build_index_plan(
+            db, strategy, limit,
+            int(gemini_provider_id) if gemini_provider_id else None,
+        )
+    finally:
+        db.close()
+    doc_ids = list(config.get("document_ids") or plan["document_ids"])
+    if not doc_ids:
+        _log(task_id, "All documents already have analysis; nothing to do")
+        _finish(task_id, "done", {"processed": 0, "plan": plan})
+        return
+
+    config = {**config, "document_ids": doc_ids}
+    _log(task_id, (
+        f"Lazy plan: {plan['total_candidates']} candidate(s), "
+        f"{plan['already_has_text']} already have text, {plan['native_text']} native-text, "
+        f"{plan['needs_visual_ocr']} need OCR; estimated cost ${plan['estimated_cost_usd']:.4f}"
+    ))
+    stage = config.get("pipeline_stage")
+    common = {"limit": limit, "poll_interval": int(config.get("poll_interval", 30))}
+
+    if strategy == "gemini_complete":
+        config = _persist_pipeline_config(task_id, config, "gemini_complete")
+        runner_config = {
+            **common, "provider_id": gemini_provider_id, "doc_ids": doc_ids,
+            "metadata_only": True,
+        }
+        if stage == "gemini_complete" and resume_job_id:
+            runner_config["resume_batch_job_id"] = resume_job_id
+        if not await _captured_stage(task_id, run_batch_ocr_gemini, runner_config):
+            return
+    else:
+        if strategy == "mistral_gemini" and stage != "gemini_analysis":
+            native_ids = list(plan["native_text_ids"])
+            visual_ids = list(plan["visual_ocr_ids"])
+            if native_ids and not await _extract_local_text(task_id, native_ids):
+                return
+            if visual_ids:
+                config = _persist_pipeline_config(task_id, config, "mistral_ocr")
+                runner_config = {
+                    **common, "provider_id": mistral_provider_id, "doc_ids": visual_ids,
+                }
+                if stage == "mistral_ocr" and resume_job_id:
+                    runner_config["resume_batch_job_id"] = resume_job_id
+                if not await _captured_stage(task_id, run_batch_ocr_mistral, runner_config):
+                    return
+        elif strategy == "local_gemini" and stage != "gemini_analysis":
+            if not await _extract_local_text(
+                task_id, list(plan["native_text_ids"] + plan["visual_ocr_ids"])
+            ):
+                return
+
+        config = _persist_pipeline_config(task_id, config, "gemini_analysis")
+        analysis_config = {
+            **common, "provider_id": gemini_provider_id, "doc_ids": doc_ids,
+            "metadata_only": True,
+        }
+        if stage == "gemini_analysis" and resume_job_id:
+            analysis_config["resume_batch_job_id"] = resume_job_id
+        if not await _captured_stage(task_id, run_batch_analysis_gemini, analysis_config):
+            return
+
+    _finish(task_id, "done", {"processed": len(doc_ids), "plan": plan})
+    _log(task_id, f"Indexing complete: {len(doc_ids)} document(s); classification unchanged")
+
+
 async def _sync_library(task_id: int, config: dict) -> None:
     from .indexer import index_document
     from .storage import compute_file_hash, guess_mime, scan_library_for_new_files
@@ -214,11 +349,15 @@ async def _sync_library(task_id: int, config: dict) -> None:
 
 
 async def _reclassify_unclassified(task_id: int, config: dict) -> None:
-    await run_batch_analysis_gemini(task_id, {**config, "doc_scope": "unclassified"})
+    await run_batch_analysis_gemini(task_id, {
+        **config, "doc_scope": "classification_unclassified", "classification_only": True,
+    })
 
 
 async def _reclassify_all(task_id: int, config: dict) -> None:
-    await run_batch_analysis_gemini(task_id, {**config, "doc_scope": "pending"})
+    await run_batch_analysis_gemini(task_id, {
+        **config, "doc_scope": "classification_all", "classification_only": True,
+    })
 
 
 async def _recluster(task_id: int, config: dict) -> None:

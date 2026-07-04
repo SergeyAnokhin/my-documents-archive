@@ -5,9 +5,26 @@ FastAPI BackgroundTasks, detached from any request-scoped session. Used by the
 tasks router and the batch-OCR runners.
 """
 from datetime import datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from ..database import SessionLocal
 from ..models import Task, TaskLog
+
+_captured_finishes: ContextVar[list[tuple[str, dict | None]] | None] = ContextVar(
+    "captured_task_finishes", default=None
+)
+
+
+@contextmanager
+def capture_finishes():
+    """Capture nested runner completion so a parent pipeline remains running."""
+    outcomes: list[tuple[str, dict | None]] = []
+    token = _captured_finishes.set(outcomes)
+    try:
+        yield outcomes
+    finally:
+        _captured_finishes.reset(token)
 
 
 def log_task(task_id: int, message: str, level: str = "info") -> None:
@@ -40,6 +57,10 @@ def set_progress(task_id: int, current: int, total: int) -> None:
 
 
 def finish(task_id: int, status: str, result: dict | None = None) -> None:
+    captured = _captured_finishes.get()
+    if captured is not None:
+        captured.append((status, result))
+        return
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()

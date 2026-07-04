@@ -55,12 +55,15 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
     Flow (resume via config["resume_batch_job_id"]):
       Skips phases 1–4, jumps straight to polling an existing remote job.
     """
-    from .ai_vision import load_first_page, _get_max_image_size
+    from .ai_vision import VISION_METADATA_PROMPT, load_first_page, _get_max_image_size
+    from .ai_analysis import METADATA_SYSTEM
 
     limit = int(config.get("limit", 50))
     provider_id = config.get("provider_id")
     poll_interval = int(config.get("poll_interval", 30))
     resume_job_id = config.get("resume_batch_job_id")
+    metadata_only = bool(config.get("metadata_only", False))
+    doc_ids_filter = config.get("doc_ids")
 
     # ── 1. Resolve Gemini provider ───────────────────────────────────────────
     db = SessionLocal()
@@ -111,7 +114,12 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
         db = SessionLocal()
         try:
             scope = int(config.get("scope", 1))
-            docs = _scope_filter(db.query(Document), scope).limit(limit).all()
+            query = db.query(Document)
+            if doc_ids_filter is not None:
+                query = query.filter(Document.id.in_(doc_ids_filter))
+            else:
+                query = _scope_filter(query, scope)
+            docs = query.limit(limit).all()
             total = len(docs)
             max_size = _get_max_image_size(db)
         finally:
@@ -178,7 +186,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                             "contents": [{
                                 "parts": [
                                     {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-                                    {"text": VISION_FULL_PROMPT},
+                                    {"text": VISION_METADATA_PROMPT if metadata_only else VISION_FULL_PROMPT},
                                 ],
                             }],
                             "generation_config": {"max_output_tokens": 16384},
@@ -193,7 +201,7 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     jsonl_lines.append(json.dumps({
                         "key": key,
                         "request": {
-                            "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
+                            "system_instruction": {"parts": [{"text": METADATA_SYSTEM if metadata_only else ANALYSIS_SYSTEM}]},
                             "contents": [{
                                 "parts": [{"text": f"OCR Text:\n{text_snippet}"}],
                             }],
@@ -413,8 +421,10 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                         doc.summary = parsed.get("summary", "")
                         title = parsed.get("title", "")
                         doc.title = " ".join(title.split()[:10])[:150] if title else None
-                        doc.document_type = parsed.get("document_type", "unclassified")
-                        doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                        if not metadata_only:
+                            doc.document_type = parsed.get("document_type", "unclassified")
+                            doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                            doc.classification_source = "auto"
                         doc.tags = parsed.get("tags") or []
                         doc.language = parsed.get("language", "")
                         doc.organization = parsed.get("organization")
@@ -431,11 +441,8 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                                 doc.document_date = None
                         else:
                             doc.document_date = None
-                        short_title = parsed.get("short_title", "")
-                        if short_title:
-                            doc.short_title = short_title
                         doc.analysis_status = "done"
-                        doc.analysis_model = f"{model} (batch, text-only)"
+                        doc.analysis_model = f"{model} (batch, text-only, metadata-only)" if metadata_only else f"{model} (batch, text-only)"
                         db.commit()
                         from .indexer import _run_embedding
                         await _run_embedding(doc, db)
@@ -456,8 +463,10 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                     doc.summary = parsed.get("summary", "")
                     title = parsed.get("title", "")
                     doc.title = " ".join(title.split()[:10])[:150] if title else None
-                    doc.document_type = parsed.get("document_type", "unclassified")
-                    doc.document_type_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                    if not metadata_only:
+                        doc.document_type = parsed.get("document_type", "unclassified")
+                        doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                        doc.classification_source = "auto"
                     doc.tags = parsed.get("tags") or []
                     doc.language = parsed.get("language", "")
                     doc.organization = parsed.get("organization")
@@ -474,11 +483,8 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
                             doc.document_date = None
                     else:
                         doc.document_date = None
-                    short_title = parsed.get("short_title", "")
-                    if short_title:
-                        doc.short_title = short_title
                     doc.analysis_status = "done"
-                    doc.analysis_model = f"{model} (batch)"
+                    doc.analysis_model = f"{model} (batch, metadata-only)" if metadata_only else f"{model} (batch)"
                     db.commit()
                     # Re-embed now that summary + OCR text exist.
                     from .indexer import _run_embedding

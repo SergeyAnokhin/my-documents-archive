@@ -53,6 +53,7 @@ class DocumentOut(BaseModel):
     api_cost_vision: float = 0.0
     api_cost_analysis: float = 0.0
     ocr_model: Optional[str] = None
+    analysis_model: Optional[str] = None
     updated_at: Optional[datetime] = None
     relative_path: Optional[str] = None
 
@@ -157,6 +158,7 @@ class FolderTreeDoc(BaseModel):
     vision_status: str = "pending"
     analysis_status: str = "pending"
     ocr_model: Optional[str] = None
+    analysis_model: Optional[str] = None
     relative_path: Optional[str] = None
 
     @field_validator("tags", mode="before")
@@ -210,6 +212,7 @@ class AIProviderOut(BaseModel):
     total_cost_usd: float = 0.0
     extra_params: Optional[Any] = None
     supports_batch: bool = False
+    capabilities: dict[str, bool] = {}
 
     model_config = {"from_attributes": True}
 
@@ -346,6 +349,12 @@ class LabVisionRequest(BaseModel):
     provider_id: int
 
 
+class LabTextAnalysisRequest(BaseModel):
+    doc_id: int
+    provider_id: int
+    text: str
+
+
 class LabVisionResult(BaseModel):
     provider_id: int
     name: str
@@ -394,6 +403,7 @@ class LabSaveRequest(BaseModel):
     text: str
     fields: Optional[Any] = None  # ExtractedFields dict
     model_name: str               # human-readable "Provider (model)" for attribution
+    save_classification: bool = False
 
 
 class LabSaveResult(BaseModel):

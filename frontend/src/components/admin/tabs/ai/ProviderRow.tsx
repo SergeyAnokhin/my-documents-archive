@@ -171,6 +171,7 @@ export function ProviderRow({
       <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title={ai.providerSettings} size="sm">
         <ProviderSettingsPanel
           providerType={provider.provider_type}
+          inferredCapabilities={provider.capabilities ?? {}}
           settings={pendingSettings}
           onChange={(key, value) => setPendingSettings(prev => ({ ...prev, [key]: value }))}
         />

@@ -59,6 +59,7 @@ npm test
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
 | [docs/lab-mode.md](docs/lab-mode.md) | OCR Lab (`/lab/:id`): compare OCR engines & vision models, premium "judge" |
 | [docs/batch-ocr.md](docs/batch-ocr.md) | Async batch OCR tasks via Mistral Batch API & Gemini Batch Mode (50% cheaper) |
+| [docs/processing-map.md](docs/processing-map.md) | Lazy indexing routes, file handling, classification separation, and cost preview |
 | [docs/recluster.md](docs/recluster.md) | Cluster-based recategorization: silhouette k-selection, icon-conflict retry, multilingual custom type names, provider selection |
 | [docs/ai-usage.md](docs/ai-usage.md) | AI usage ledger, super-user usage screen (stats/charts/pivot), provider config export/import, classification outcome reporting |
 | [docs/compute-worker.md](docs/compute-worker.md) | External OCR worker: install (incl. Windows+conda MKL fix), endpoints, engine detection |

@@ -15,6 +15,7 @@ export function formatDuration(ms: number, h: string, m: string, s: string): str
 // ── Task type short labels ────────────────────────────────────────────────────
 
 export const TASK_LABELS: Record<TaskType, string> = {
+  index_documents:         "INDEX",
   index_unindexed:         "OCR",
   sync_library:            "SYNC",
   reclassify_unclassified: "CLASSIFY",
@@ -28,20 +29,27 @@ export const TASK_LABELS: Record<TaskType, string> = {
   compress_images:         "COMPRESS",
 };
 
-export const ALL_TYPES: TaskType[] = [
-  "index_unindexed",
+export const PRIMARY_TYPES: TaskType[] = [
+  "index_documents",
   "sync_library",
   "reclassify_unclassified",
   "reclassify_all",
   "recluster",
-  "batch_ocr_mistral",
-  "batch_ocr_gemini",
-  "embed_missing",
   "cleanup_missing",
   "compress_images",
 ];
 
+export const LEGACY_TYPES: TaskType[] = [
+  "index_unindexed",
+  "batch_ocr_mistral",
+  "batch_ocr_gemini",
+  "embed_missing",
+];
+
+export const ALL_TYPES: TaskType[] = [...PRIMARY_TYPES, ...LEGACY_TYPES];
+
 export const TYPES_WITH_LIMIT: TaskType[] = [
+  "index_documents",
   "index_unindexed",
   "reclassify_unclassified",
   "reclassify_all",
@@ -86,6 +94,7 @@ export const BATCH_CONSOLE_URLS: Partial<Record<TaskType, string>> = {
 
 // Batch task types that have a remote job and can be monitored / resumed
 export const BATCH_TASK_TYPES: TaskType[] = [
+  "index_documents",
   "reclassify_unclassified", "reclassify_all",
   "batch_ocr_mistral", "batch_ocr_gemini",
 ];

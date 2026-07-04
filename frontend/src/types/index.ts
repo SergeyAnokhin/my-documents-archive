@@ -99,6 +99,13 @@ export interface AIProvider {
   total_cost_usd: number;
   extra_params?: Record<string, unknown>;
   supports_batch: boolean;
+  capabilities: {
+    text: boolean;
+    vision: boolean;
+    ocr: boolean;
+    analysis: boolean;
+    batch: boolean;
+  };
 }
 
 export interface ProviderModel {
@@ -243,6 +250,7 @@ export type SearchMode = "search" | "ask";
 
 export type TaskStatus = "idle" | "running" | "done" | "error" | "stopped";
 export type TaskType =
+  | "index_documents"
   | "index_unindexed"
   | "sync_library"
   | "reclassify_unclassified"

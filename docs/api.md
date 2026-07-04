@@ -120,6 +120,7 @@ Advanced-mode-only job queue. See [batch-ocr.md](batch-ocr.md) for batch task de
 | PATCH | `/api/tasks/{id}` | Update task (reorder, rename) |
 | DELETE | `/api/tasks/{id}` | Delete task |
 | GET | `/api/tasks/candidates` | Candidate document counts per task type |
+| GET | `/api/tasks/index-plan` | Lazy indexing route and cost preview. Params: `strategy`, `limit`, `gemini_provider_id` |
 | GET | `/api/tasks/candidates/scope` | Candidate count for batch OCR tasks at a cumulative scope level. Params: `task_type`, `scope` |
 | GET | `/api/tasks/candidates/compress` | How many images exceed the compress threshold. Param: `threshold` (px, default 1024) |
 | POST | `/api/tasks/stop-all` | Stop all running tasks |

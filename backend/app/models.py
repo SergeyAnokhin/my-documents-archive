@@ -57,6 +57,7 @@ class Document(Base):
 
     # Which model produced the stored ocr_text (set from the OCR Lab "save" action)
     ocr_model = Column(String(256), nullable=True)
+    analysis_model = Column(String(256), nullable=True)
 
     # How the document entered the library: "upload" (via UI) | "sync" (folder scan)
     source = Column(String(16), default="sync")
@@ -112,7 +113,13 @@ class AIProvider(Base):
     @property
     def supports_batch(self) -> bool:
         """True when this provider has a batch API (50% discount, async processing)."""
-        return self.provider_type in {"gemini", "mistral"}
+        from .services.provider_capabilities import supports
+        return supports(self, "batch")
+
+    @property
+    def capabilities(self) -> dict[str, bool]:
+        from .services.provider_capabilities import provider_capabilities
+        return provider_capabilities(self)
 
 
 class AppSettings(Base):

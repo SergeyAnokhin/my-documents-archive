@@ -26,6 +26,11 @@ def list_tasks(db: Session = Depends(get_db)):
 
 @router.post("", response_model=TaskOut)
 def create_task(body: TaskCreate, db: Session = Depends(get_db)):
+    if body.task_type == "index_documents":
+        strategy = (body.config or {}).get("strategy", "mistral_gemini")
+        from ..services.indexing_plan import STRATEGIES
+        if strategy not in STRATEGIES:
+            raise HTTPException(400, "Unknown indexing strategy")
     sort_order = body.sort_order if body.sort_order else db.query(Task).count()
     task = Task(
         task_type=body.task_type,
@@ -79,7 +84,8 @@ def get_candidate_counts(db: Session = Depends(get_db)):
     pending = base.filter(Document.ocr_status == "pending").count()
 
     reclassify_all_count = base.filter(
-        Document.ocr_status == "done",
+        Document.manually_classified != True,
+        or_(Document.summary.isnot(None), Document.ocr_text.isnot(None)),
     ).count()
 
     reclassify_unclassified_count = base.filter(
@@ -125,6 +131,7 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         embed_missing_count = None
 
     return {
+        "index_documents": base.filter(Document.analysis_status != "done").count(),
         "index_unindexed": pending,
         "sync_library": None,
         "reclassify_unclassified": reclassify_unclassified_count,
@@ -138,6 +145,21 @@ def get_candidate_counts(db: Session = Depends(get_db)):
         "cleanup_missing": None,
         "compress_images": None,
     }
+
+
+@router.get("/index-plan")
+def get_index_plan(
+    strategy: str = "mistral_gemini",
+    limit: int = 500,
+    gemini_provider_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Preview lazy routing and approximate provider cost without changing documents."""
+    from ..services.indexing_plan import build_index_plan
+    try:
+        return build_index_plan(db, strategy, limit, gemini_provider_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @router.get("/candidates/compress")

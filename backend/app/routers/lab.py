@@ -20,10 +20,11 @@ from ..database import get_db
 from ..models import Document, AIProvider
 from ..services import lab
 from ..services.ai_analysis import analyze_document
-from ..services.ai_vision import VISION_CAPABLE
+from ..services.provider_capabilities import supports
 from ..schemas import (
     LabMethods, LabWorkerStatus, LabOcrRequest, LabOcrResult,
     LabVisionRequest, LabVisionResult,
+    LabTextAnalysisRequest,
     LabJudgeRequest, LabJudgeResult,
     LabSaveRequest, LabSaveResult,
     LabImageInfo, LabTransformRequest, LabPreviewResult, LabApplyResult,
@@ -108,28 +109,41 @@ async def run_ocr(body: LabOcrRequest, db: Session = Depends(get_db)):
         text, ms = await lab.run_local_ocr(img, body.method, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"OCR failed: {e}")
-    fields = await _auto_analyze(text, db)
-    return LabOcrResult(method=body.method, text=text, ms=ms, fields=fields)
+    return LabOcrResult(method=body.method, text=text, ms=ms, fields=None)
 
 
 @router.post("/vision", response_model=LabVisionResult)
 async def run_vision(body: LabVisionRequest, db: Session = Depends(get_db)):
     provider = _provider(body.provider_id, db)
-    if provider.provider_type not in VISION_CAPABLE:
+    if not supports(provider, "vision"):
         raise HTTPException(status_code=400, detail="Provider is not vision-capable")
     img = _doc_image(body.doc_id, db)
     try:
         text, fields, cost, ms, tin, tout = await lab.run_vision_ocr(img, provider, db)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Vision failed: {e}")
-    # If vision returned no fields (e.g. Mistral OCR plain-text mode), fall back to text analysis
-    if not fields:
-        fields = await _auto_analyze(text, db)
     return LabVisionResult(
         provider_id=provider.id, name=provider.name,
         model_name=provider.model or None,
         text=text, fields=fields or None,
         cost=cost, ms=ms, tokens_in=tin, tokens_out=tout,
+    )
+
+
+@router.post("/analyze-text", response_model=LabVisionResult)
+async def analyze_text(body: LabTextAnalysisRequest, db: Session = Depends(get_db)):
+    provider = _provider(body.provider_id, db)
+    if not supports(provider, "text") or not supports(provider, "analysis"):
+        raise HTTPException(status_code=400, detail="Model cannot analyze text")
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+    try:
+        fields, cost, ms, tin, tout = await lab.run_text_analysis(body.text, provider, db)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Text analysis failed: {exc}")
+    return LabVisionResult(
+        provider_id=provider.id, name=provider.name, model_name=provider.model,
+        text=body.text, fields=fields, cost=cost, ms=ms, tokens_in=tin, tokens_out=tout,
     )
 
 
@@ -155,11 +169,11 @@ async def save_lab_result(body: LabSaveRequest, db: Session = Depends(get_db)):
             doc.summary = f["summary"]
         if f.get("title"):
             doc.title = f["title"]
-        if f.get("document_type"):
+        if body.save_classification and f.get("document_type"):
             doc.document_type = f["document_type"]
             doc.classification_source = "auto"
             doc.manually_classified = False
-        if f.get("document_type_confidence") is not None:
+        if body.save_classification and f.get("document_type_confidence") is not None:
             doc.classification_confidence = f["document_type_confidence"]
         if f.get("document_date"):
             try:
@@ -249,7 +263,7 @@ async def run_judge(body: LabJudgeRequest, db: Session = Depends(get_db)):
     provider = _provider(body.provider_id, db)
     img = None
     if body.use_image:
-        if provider.provider_type not in VISION_CAPABLE:
+        if not supports(provider, "vision"):
             raise HTTPException(status_code=400, detail="Provider cannot judge with an image")
         img = _doc_image(body.doc_id, db)
     candidates = [{"label": c.label, "text": c.text} for c in body.candidates]

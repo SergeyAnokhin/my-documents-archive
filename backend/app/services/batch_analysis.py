@@ -22,7 +22,7 @@ from .task_runtime import (
     log_task as _log,
     set_progress as _set_progress,
 )
-from .ai_analysis import ANALYSIS_SYSTEM
+from .ai_analysis import ANALYSIS_SYSTEM, CLASSIFICATION_SYSTEM, METADATA_SYSTEM
 from .ai_common import parse_llm_json
 from .batch_ocr import GEMINI_BATCH_BASE
 
@@ -49,6 +49,8 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
     resume_job_id = config.get("resume_batch_job_id")
     doc_scope = config.get("doc_scope", "needs_analysis")
     doc_ids_filter = config.get("doc_ids")  # list[int] | None
+    metadata_only = bool(config.get("metadata_only", False))
+    classification_only = bool(config.get("classification_only", False))
 
     # ── 1. Resolve provider ───────────────────────────────────────────────────
     db = SessionLocal()
@@ -99,7 +101,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             if doc_ids_filter is not None:
                 # Explicit ID list — no extra filters applied; caller is responsible for selection.
                 docs = base_q.filter(Document.id.in_(doc_ids_filter)).all()
-            elif doc_scope == "unclassified":
+            elif doc_scope in ("unclassified", "classification_unclassified"):
                 # reclassify_unclassified: has ocr done, type is unclassified/other, not manually set
                 docs = (
                     base_q
@@ -116,6 +118,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     )
                     .limit(limit)
                     .all()
+                )
+            elif doc_scope == "classification_all":
+                docs = (
+                    base_q.filter(
+                        Document.manually_classified != True,
+                        or_(Document.summary.isnot(None), Document.ocr_text.isnot(None)),
+                    ).limit(limit).all()
                 )
             elif doc_scope == "pending":
                 # reclassify_all: ocr done but analysis not yet complete
@@ -167,7 +176,8 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
         doc_id_map = {}
 
         for doc in docs:
-            text_snippet = ((doc.ocr_text or "").strip() or (doc.vision_description or "").strip())[:4000]
+            source_text = doc.summary if classification_only and doc.summary else (doc.ocr_text or doc.vision_description)
+            text_snippet = (source_text or "").strip()[:4000]
             if not text_snippet:
                 _log(task_id, f"⚠️ {doc.filename}: no text to analyze, skipping")
                 continue
@@ -178,7 +188,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             jsonl_lines.append(json.dumps({
                 "key": key,
                 "request": {
-                    "system_instruction": {"parts": [{"text": ANALYSIS_SYSTEM}]},
+                    "system_instruction": {"parts": [{"text": CLASSIFICATION_SYSTEM if classification_only else (METADATA_SYSTEM if metadata_only else ANALYSIS_SYSTEM)}]},
                     "contents": [{
                         "parts": [{"text": user_msg}],
                     }],
@@ -361,12 +371,23 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 if not doc:
                     continue
 
+                if classification_only:
+                    doc.document_type = parsed.get("document_type") or "unclassified"
+                    doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                    doc.classification_source = "auto"
+                    doc.manually_classified = False
+                    db.commit()
+                    processed += 1
+                    _log(task_id, f"Classified {doc.filename} as {doc.document_type}")
+                    continue
+
                 doc.summary = parsed.get("summary", "")
                 title = parsed.get("title", "")
                 doc.title = " ".join(title.split()[:10])[:150] if title else None
-                doc.document_type = parsed.get("document_type") or "unclassified"
-                doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
-                doc.classification_source = "auto"
+                if not metadata_only:
+                    doc.document_type = parsed.get("document_type") or "unclassified"
+                    doc.classification_confidence = float(parsed.get("document_type_confidence") or 0.0)
+                    doc.classification_source = "auto"
                 doc.tags = parsed.get("tags") or []
                 doc.language = parsed.get("language", "")
                 doc.organization = parsed.get("organization")
@@ -384,6 +405,7 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 else:
                     doc.document_date = None
                 doc.analysis_status = "done"
+                doc.analysis_model = f"{model} (batch, metadata-only)" if metadata_only else f"{model} (batch)"
                 db.commit()
                 # Re-embed now that the summary exists so semantic search/ask sees it.
                 from .indexer import _run_embedding

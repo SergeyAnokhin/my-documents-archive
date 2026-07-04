@@ -70,6 +70,22 @@ If the document contains no readable text (it is a photograph, illustration, or 
 
 Return ONLY the raw JSON object. No markdown fences, no explanation."""
 
+VISION_METADATA_PROMPT = """\
+Analyze these document pages and return one JSON object with:
+"text": verbatim transcription of all visible text in page and reading order
+"summary": 2-3 factual sentences in the original language
+"title": short human-readable title, max 10 words
+"tags": array of 3-7 keywords
+"language": ISO 639-1 code
+"organization": company or institution, or null
+"amount": numeric monetary value, or null
+"amount_currency": ISO 4217 code, or null
+"person_first_name": main person's first name, or null
+"person_last_name": main person's last name, or null
+"document_date": most significant date in YYYY-MM-DD format, or null
+Do not classify the document and do not return document_type fields.
+Return ONLY raw JSON."""
+
 class VisionFullResponse(BaseModel):
     text: str
     summary: str
@@ -120,7 +136,7 @@ async def describe_document(
         return None
 
     try:
-        img_bytes = load_first_page(filepath, max_size=_get_max_image_size(db))
+        img_bytes = load_document_pages(filepath, max_size=_get_max_image_size(db), max_pages=3)
     except Exception as e:
         log.warning("Vision: cannot load image from %s: %s", filepath, e)
         return None
@@ -192,13 +208,44 @@ def load_first_page(filepath: str, max_size: int = 1024) -> bytes:
     """Return first document page as resized JPEG bytes (max_size on long side)."""
     path = Path(filepath)
     if path.suffix.lower() == ".pdf":
-        img = _pdf_first_page(path)
+        return load_document_pages(filepath, max_size=max_size, max_pages=3)
     else:
         img = Image.open(filepath).convert("RGB")
 
     img.thumbnail((max_size, max_size), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
+def load_document_pages(filepath: str, max_size: int = 1024, max_pages: int = 3) -> bytes:
+    """Render up to ``max_pages`` PDF pages as one vertical JPEG."""
+    path = Path(filepath)
+    if path.suffix.lower() != ".pdf":
+        img = Image.open(filepath).convert("RGB")
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    from pdf2image import convert_from_path
+    pages = convert_from_path(
+        str(path), dpi=150, first_page=1, last_page=max(1, max_pages)
+    )
+    if not pages:
+        raise ValueError("PDF has no pages")
+    images: list[Image.Image] = []
+    for page in pages:
+        image = page.convert("RGB")
+        image.thumbnail((max_size, max_size), Image.LANCZOS)
+        images.append(image)
+    width = max(image.width for image in images)
+    sheet = Image.new("RGB", (width, sum(image.height for image in images)), "white")
+    y = 0
+    for image in images:
+        sheet.paste(image, ((width - image.width) // 2, y))
+        y += image.height
+    buf = io.BytesIO()
+    sheet.save(buf, format="JPEG", quality=85)
     return buf.getvalue()
 
 
