@@ -58,6 +58,7 @@ npm test
 | [docs/architecture.md](docs/architecture.md) | System overview, components, data flow, phases |
 | [docs/api.md](docs/api.md) | All REST endpoints with params/responses |
 | [docs/lab-mode.md](docs/lab-mode.md) | OCR Lab (`/lab/:id`): compare OCR engines & vision models, premium "judge" |
+| [docs/pwa.md](docs/pwa.md) | Installable PWA: manifest, service worker caching policy, icons, local verification |
 | [docs/batch-ocr.md](docs/batch-ocr.md) | Async batch OCR tasks via Mistral Batch API & Gemini Batch Mode (50% cheaper) |
 | [docs/processing-map.md](docs/processing-map.md) | Lazy indexing routes, file handling, classification separation, and cost preview |
 | [docs/recluster.md](docs/recluster.md) | Cluster-based recategorization: silhouette k-selection, icon-conflict retry, multilingual custom type names, provider selection |

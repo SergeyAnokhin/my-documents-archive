@@ -15,6 +15,13 @@
       "port": 3001
     },
     {
+      "name": "frontend-pwa-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--", "--port", "3002"],
+      "cwd": "frontend",
+      "port": 3002
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "python",
       "runtimeArgs": ["run.py"],

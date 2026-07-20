@@ -142,6 +142,8 @@ deploy/           Helm chart + ArgoCD Application for k3s deployment
 |------|---------------|
 | `main.tsx` | React root mount |
 | `App.tsx` | Root component: language context + `BrowserRouter` routes (`/` home, `/lab/:id` OCR Lab) |
+| `vite.config.ts` | Vite config incl. `VitePWA()` — manifest + service worker for installable PWA. See [pwa.md](pwa.md) |
+| `public/pwa-192.png`, `public/pwa-512.png` | PWA manifest icons, rasterized from `public/icon.svg`. See [pwa.md](pwa.md) |
 | `index.css` | Global CSS variables (design tokens), resets, utilities |
 | `i18n/en.ts` | English strings (source of `Translations` type) |
 | `i18n/ru.ts` | Russian strings |
