@@ -14,7 +14,7 @@
 | Файл | Что это |
 |------|---------|
 | [First_Specification.md](First_Specification.md) | Полная продуктовая спецификация (для внешней передачи / rebuild с нуля) |
-| [k3s-platform-deployment.md](k3s-platform-deployment.md) | Общий контракт платформы k3s+ArgoCD+GHCR (read-only spec) |
+| [k3s-platform-deployment.md](k3s-platform-deployment.md) | Общий контракт платформы k3s+ArgoCD+GHCR. **Портируемый onboarding-файл**: копируется в репозиторий нового проекта, чтобы посадить его на тот же кластер (nip.io DNS, cert-manager TLS, SMB-модули, dual-mode local+cluster) |
 | [pipeline-indexing.md](pipeline-indexing.md) | Обычная индексация одного документа (upload / sync / `index_unindexed`): OCR → Thumbnail → Vision → Analysis → Embedding, ветвление по типу файла |
 | [pipeline-batch-ocr.md](pipeline-batch-ocr.md) | Батч-задачи `batch_ocr_mistral` и `batch_ocr_gemini` |
 | [pipeline-batch-analysis.md](pipeline-batch-analysis.md) | Батч-задача `batch_analysis_gemini` и обёртки `reclassify_unclassified` / `reclassify_all` |

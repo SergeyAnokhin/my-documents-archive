@@ -15,9 +15,9 @@ push to main ─► GitHub Actions (.github/workflows/build.yml)
                 ArgoCD watches `deploy` ──┘ → syncs Helm chart → k3s rolls pods
 ```
 
-ArgoCD tracks the **`deploy`** branch, never `main`. App slug / namespace /
-ingress host = **`my-documents-archive`** / `my-documents-archive.lan`.
-GHCR packages are **public** (no pull secret).
+ArgoCD tracks the **`deploy`** branch, never `main`. App slug / namespace =
+**`my-documents-archive`**; ingress host = `my-documents-archive.192.168.1.97.nip.io`
+(HTTPS via cert-manager `home-ca`). GHCR packages are **public** (no pull secret).
 
 ## Files
 

@@ -11,8 +11,9 @@
 > cluster itself changed: new node, new registry, ArgoCD reinstalled, etc.).
 >
 > This spec is **app-agnostic**. It was distilled from the `camera-cleaner` deployment
-> but contains nothing camera-specific in its core path. Camera/SMB details appear only
-> as an *optional module* example.
+> and later verified/extended by the **`my-documents-archive` (DocIntel)** deployment,
+> which lives in this repo and serves as the canonical runnable example (§8). App-specific
+> details (SMB/NAS, backup sidecar) appear only as *optional modules*.
 
 ---
 
@@ -43,7 +44,7 @@ properties of the platform; treat them as given.
 | Property | Value | Notes |
 |---|---|---|
 | Distribution | **k3s** (lightweight upstream k8s) | ships Traefik + local-path + klipper-lb |
-| Nodes | **2** | `k3s` (general-purpose) and `ubuntu-server` (powerful) |
+| Nodes | **2** | `k3s` (general-purpose, **192.168.1.97**) and `ubuntu-server` (powerful, may be powered off) |
 | Powerful node label | `role=compute` | set by the human once: `kubectl label node ubuntu-server role=compute` |
 | Powerful node taint | `role=compute:NoSchedule` | keeps general workloads off it; pods must tolerate it to land there |
 | Ingress controller | **Traefik** (k3s built-in) | `ingressClassName: traefik`; listens on every node (klipper-lb DaemonSet `svclb-traefik`) |
@@ -51,9 +52,10 @@ properties of the platform; treat them as given.
 | ArgoCD source of truth | the **`deploy` git branch** (see §2) | ArgoCD tracks `targetRevision: deploy`, **not** `main` |
 | Container registry | **GHCR** — `ghcr.io/<owner>/<repo>/<component>` | one repo → many component images |
 | Default StorageClass | k3s **local-path** (RWO, node-local) | good for single-replica stateful pods; data is pinned to one node |
-| Shared/RWX storage | **SMB CSI driver** (`smb.csi.k8s.io`) | optional; only if an app needs a NAS share mounted RWX into several pods |
-| DNS / hostnames | `*.local` (or any host) resolved to a node IP | no public DNS; users add a `hosts` entry or LAN DNS record → any node IP |
-| Example NAS | SMB at `//192.168.1.91/<share>` | app-specific; not part of the core path |
+| Shared/RWX storage | **SMB CSI driver** (`smb.csi.k8s.io`) | **already installed** (used by my-documents-archive); verify: `kubectl -n kube-system get pods \| grep csi-smb` |
+| DNS / hostnames | **nip.io**: `<app>.192.168.1.97.nip.io` | public DNS resolves `*.<IP>.nip.io → <IP>`; zero router/hosts config, works on phones (mobile DoH bypasses router DNS, so LAN DNS records are ignored by Android 9+/iOS 14+). Fallback: hosts-file entry (PC only) |
+| TLS / HTTPS | **cert-manager** + ClusterIssuer **`home-ca`** (local CA, 10-year root) | **already installed** (source: `deploy/k8s/cert-manager/home-ca.yaml` in the my-documents-archive repo); verify: `kubectl get clusterissuer home-ca`. Ingress annotation `cert-manager.io/cluster-issuer: home-ca` → auto-issued & auto-renewed cert. The CA cert must be installed **once per device** (§6.7) |
+| NAS | Synology, SMB at `//192.168.1.91/<share>` | app-specific; not part of the core path |
 
 **Implications for a new app:**
 - Stateless services (frontends, APIs that own no disk state) can run on **either** node.
@@ -227,39 +229,56 @@ worker:
 ingress:
   enabled: true
   className: traefik
-  host: <app>.local
+  host: <app>.192.168.1.97.nip.io      # nip.io → no DNS/router config needed (§1)
+  tls: true                            # HTTPS via cert-manager (set false for HTTP only)
+  certIssuer: home-ca                  # ClusterIssuer already on the cluster
   stripApiPrefix: true                 # strip /api before forwarding to backend (see 5.3)
 ```
 
 `templates/_helpers.tpl` — name + label + image helpers (copy the pattern from
-`deploy/helm/camera-cleaner/templates/_helpers.tpl`; rename `camera-cleaner` → `<app>`).
+`deploy/helm/my-documents-archive/templates/_helpers.tpl`; rename the app slug).
 
 **Deployment template essentials (per component):**
 - `image:` built from `registry/repository:tag` via the image helper.
 - `imagePullPolicy: {{ .Values.image.pullPolicy }}` and `imagePullSecrets` passthrough.
 - A `readinessProbe` hitting a real health path (don't skip — ArgoCD health depends on it).
+- A `startupProbe` too if first start is slow (model download, cache warm-up) — see
+  the my-documents-archive backend (`failureThreshold: 30`, `periodSeconds: 2`).
 - For a **stateful backend**: `strategy: { type: Recreate }`, single replica, mount the
-  local-path PVC. If the app writes state *next to its code*, mount via **`subPath`** so the
-  PVC doesn't shadow the image's files (see the camera-cleaner backend deployment for the
-  pattern).
+  local-path PVC. If the app writes state *next to its code*, mount via **`subPath`** so
+  the PVC doesn't shadow the image's files; if it writes under its *data root*, use the
+  nested-mount overlay instead (§5.7).
 - For the **worker on the powerful node**: include `nodeSelector` + `tolerations` from values.
 
 **Service template** (one per component): `ClusterIP`, `port` from values → `targetPort`
 the container port. The backend reaches the worker over cluster DNS at
 `http://<app>-worker:<port>` (no localhost — they are separate pods).
 
-### 5.3 Ingress (Traefik)
+### 5.3 Ingress (Traefik) + TLS
 
-One Ingress, host = `ingress.host`, two paths:
-- `/api` → backend Service (with a Traefik **StripPrefix** middleware removing `/api`,
-  because the backend serves routes at root and the frontend calls relative `/api/...`),
+One Ingress, host = `ingress.host`, minimally two paths:
+- `/api` → backend Service,
 - `/` → frontend Service.
 
-Copy `deploy/helm/camera-cleaner/templates/ingress.yaml` verbatim and rename; it already
-renders the `traefik.io/v1alpha1` Middleware + the annotation
-`<namespace>-<fullname>-strip-api@kubernetescrd`. If your frontend calls the backend on a
-different prefix, adjust accordingly; if it calls the same origin without a prefix, set
-`stripApiPrefix: false` and route by host/path as needed.
+Add more backend paths if the backend also serves static mounts (my-documents-archive
+routes `/api` **and** `/thumbnails` to the backend).
+
+**StripPrefix decision rule:** if the backend serves its routes at root (`/health`,
+`/items`) and the frontend calls `/api/...`, set `stripApiPrefix: true` (Traefik
+Middleware removes `/api`). If the backend *already* serves routes at `/api/...`
+(FastAPI routers with an `/api` prefix, like my-documents-archive), set
+`stripApiPrefix: false` — stripping would 404 everything.
+
+**TLS:** with `tls: true` the template adds the annotation
+`cert-manager.io/cluster-issuer: home-ca` plus a `tls:` block with
+`secretName: <fullname>-tls` — cert-manager issues and renews the certificate
+automatically (~30 s after first sync). No per-app cert work; only the one-time
+per-device CA install (§6.7).
+
+Copy `deploy/helm/my-documents-archive/templates/ingress.yaml` verbatim and rename; it
+renders the optional `traefik.io/v1alpha1` StripPrefix Middleware (annotation
+`<namespace>-<fullname>-strip-api@kubernetescrd`), the cert-manager annotation, and the
+TLS block.
 
 ### 5.4 ArgoCD Application
 
@@ -346,6 +365,70 @@ jobs:
           git push origin HEAD:refs/heads/deploy --force
 ```
 
+### 5.6 Keep local dev working (dual-mode: local AND cluster)
+
+Deployment must be **additive**: it only adds files (`Dockerfile`s, `deploy/`,
+`.github/workflows/build.yml`, `.dockerignore`) and never changes how the app runs
+locally. The pattern that makes this work:
+
+- **All environment-specific config is env vars with local-friendly defaults.**
+  Locally the app reads defaults (e.g. `LIBRARY_PATH` defaults to a repo-relative
+  folder); on the cluster the Deployment injects the real values
+  (`LIBRARY_PATH=/data/library`, `HF_HOME=...`). Nothing is baked into the image.
+- **Local run stays the plain dev loop** (in my-documents-archive:
+  `npm run dev` at repo root starts backend + frontend + compute via `concurrently`;
+  Vite dev server proxies `/api` to the local backend). Docker/k8s never enters the
+  local workflow.
+- **In production the frontend is a static nginx build** (multi-stage Dockerfile:
+  `npm run build` → nginx with SPA `try_files` fallback); `/api` routing is done by
+  the Traefik Ingress, *not* by nginx. Locally the same routing is done by the Vite
+  proxy. Keep frontend API calls **relative** (`/api/...`) so both modes work
+  unchanged.
+- **Secrets/keys**: if the app stores provider keys in its own DB (as
+  my-documents-archive does), they live on the PVC and no k8s Secret is needed for
+  them; only infra secrets (NAS creds) go to `kubectl create secret`.
+
+### 5.7 Optional module — NAS (SMB) share + safe local state: the nested-mount layout
+
+Proven in my-documents-archive. Use when the app's *source data* lives on the NAS but
+its *derived state* (SQLite, vector DB, caches) must NOT sit on CIFS (file-locking
+breaks SQLite):
+
+```
+LIBRARY_PATH = /data/library
+  ├─ SMB CSI PV/PVC (//192.168.1.91/<share>/<subdir>, RW)  → mounted at /data/library
+  └─ local-path PVC (fast, node-local)                     → mounted at /data/library/.docintell
+```
+
+The second mount **overlays a subdirectory** of the first, so app code that derives
+its state dir from the data root needs **no code change**. Both mounts go into the
+same container's `volumeMounts` (see `backend-deployment.yaml`).
+
+Key template details (`smb-nas.yaml`):
+- static PV+PVC pair, `storageClassName: ""`, `accessModes: [ReadWriteMany]`,
+  `persistentVolumeReclaimPolicy: Retain`;
+- **PV name and `volumeHandle` prefixed with the release fullname** — must be globally
+  unique across the cluster, a clash silently mounts the wrong volume;
+- `csi.driver: smb.csi.k8s.io`, `volumeAttributes.source: //<nas-ip>/<share>/<subdir>`,
+  `nodeStageSecretRef` → a human-created secret whose keys **MUST** be
+  `username`/`password` (§6.3);
+- `mountOptions`: `dir_mode=0777,file_mode=0777,uid=0,gid=0`.
+
+Consequences: the pod is stateful → single replica + `strategy: Recreate`; add a
+`startupProbe` (slow first start while models/caches warm up) plus the normal
+`readinessProbe` on the health path.
+
+### 5.8 Optional module — SQLite backup sidecar (local PVC → NAS)
+
+DB lives on the fast local-path PVC (speed), backups land on the NAS (durability).
+A **sidecar container in the same pod, same image**, runs a small loop
+(`backend/backup.py`): every `intervalSeconds` (default 300), *only if the DB
+changed*, writes a consistent `sqlite3.backup()` copy to the NAS root and rotates
+the N newest (`<prefix>.1` = newest). Both the sidecar and the app container get the
+same `BACKUP_DIR`/`BACKUP_PREFIX` env so an in-app list/restore UI stays in sync.
+Configured via `backend.backup.{enabled,intervalSeconds,keep,prefix}` in values.
+See `backend-deployment.yaml` (`db-backup` container) + `docs/deployment.md`.
+
 ---
 
 ## 6. Human-only checklist (cannot be done by the agent)
@@ -373,16 +456,27 @@ settings → Change visibility → Public) **or** keep them private and do §6.4
   kubectl label node ubuntu-server role=compute
   kubectl taint nodes ubuntu-server role=compute:NoSchedule
   ```
-- **SMB CSI driver** (only if the app mounts a NAS share):
+- **SMB CSI driver** — **already installed** for my-documents-archive; verify, and only
+  install if missing:
   ```bash
+  kubectl -n kube-system get pods | grep csi-smb        # check first
   helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-  helm install csi-driver-smb csi-driver-smb/csi-driver-smb -n kube-system
+  helm install csi-driver-smb csi-driver-smb/csi-driver-smb -n kube-system --set controller.replicas=1
+  ```
+- **cert-manager + home CA** — **already installed** for my-documents-archive; verify,
+  and only install if missing:
+  ```bash
+  kubectl get clusterissuer home-ca                     # check first (READY=True)
+  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+  kubectl -n cert-manager rollout status deploy/cert-manager
+  kubectl apply -f deploy/k8s/cert-manager/home-ca.yaml # from the my-documents-archive repo
   ```
 - **ArgoCD optional-pod health patch** (only if some Deployments may legitimately have 0
   ready replicas, e.g. a worker on a node that may be powered off): apply an `argocd-cm`
-  `resource.customizations` health override — see
-  `deploy/argocd/argocd-cm-patch.yaml` for a working Lua example, then
+  `resource.customizations` health override (a working Lua example lives in the
+  `camera-cleaner` repo, `deploy/argocd/argocd-cm-patch.yaml`), then
   `kubectl rollout restart deployment argocd-application-controller -n argocd`.
+  Not needed for my-documents-archive (no optional pods).
 
 ### 6.3 Secrets (per app, only what the app needs)
 ```bash
@@ -406,9 +500,26 @@ kubectl apply -f deploy/argocd/application.yaml
 kubectl -n argocd get application <app>       # wait for SYNCED / HEALTHY
 ```
 
-### 6.6 DNS (per app)
-Resolve `ingress.host` to any node IP (Traefik listens cluster-wide). Quick local test:
-add `192.168.1.x  <app>.local` to your machine's hosts file, then open `http://<app>.local`.
+### 6.6 DNS (per app) — usually nothing to do
+With the nip.io convention (`<app>.192.168.1.97.nip.io`) there is **no DNS step**:
+public DNS already resolves it to the node, and Traefik routes by Host header, so any
+number of apps share ports 80/443 on the same IP. Works on phones too (unlike router
+DNS, which mobile DoH bypasses). Requires internet for the DNS lookup; offline
+fallback (PC only): hosts-file entry `192.168.1.97  <app>.192.168.1.97.nip.io`.
+
+### 6.7 HTTPS: install the home CA on each device (once ever per device)
+```bash
+kubectl get secret home-ca-secret -n cert-manager \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > home-ca.crt
+```
+- **iPhone:** send `home-ca.crt` via email/AirDrop → Settings → General → VPN & Device
+  Management → Install → then Settings → General → About → Certificate Trust Settings →
+  enable "Home K3s CA".
+- **Android:** Settings → Security → Install certificate → CA certificate → `home-ca.crt`.
+- **Windows:** double-click → Install → "Trusted Root Certification Authorities".
+
+Already-trusted devices need nothing when a *new* app is added — cert-manager issues
+its cert from the same CA.
 
 ---
 
@@ -431,29 +542,40 @@ helm template <app> deploy/helm/<app> -n <app>   # render locally, no cluster ne
 | ArgoCD `OutOfSync` forever | editing `main` but ArgoCD tracks `deploy`; let CI push, or check `targetRevision` |
 | App shows old code after push | CI build failed, or path filters excluded your change — check the Actions run |
 | Backend can't reach worker | used `localhost` instead of cluster DNS `http://<app>-worker:<port>` |
+| nip.io host not resolving | device has no internet (nip.io needs public DNS) — hosts-file fallback |
+| Certificate `READY=False` | cert-manager not installed or `home-ca` ClusterIssuer missing (§6.2) |
+| Browser shows TLS warning | `home-ca.crt` not installed/trusted on that device (§6.7) |
 
 **Node stability note.** k3s may schedule `kube-system` workloads on any node. If a
 controller (e.g. `csi-smb-controller`, or `traefik`) drifts onto the powerful node and
 that node is powered off, mounts/ingress can break. The `role=compute` taint (6.2) keeps
 *new* pods off it; for components managed by the k3s Helm controller (Traefik), pin them
 with a `HelmChartConfig` rather than a `kubectl patch` (which gets reverted). The
-`camera-cleaner` `docs/deployment.md` "Node stability" section has the exact commands.
+`camera-cleaner` repo's `docs/deployment.md` "Node stability" section has the exact
+commands.
 
 ---
 
-## 8. Cross-references in this repo (concrete working example)
+## 8. Cross-references (concrete working example: my-documents-archive)
 
-This spec was abstracted from a live deployment in **this** repository — read these as the
-canonical, runnable example of every pattern above:
+The live deployment in **this** repository is the canonical, runnable example of every
+pattern above (2 components, no worker):
 
 | Pattern | File |
 |---|---|
 | CI build → GHCR → tag bump → `deploy` push | `.github/workflows/build.yml` |
 | ArgoCD Application (`targetRevision: deploy`) | `deploy/argocd/application.yaml` |
-| ArgoCD optional-pod health patch | `deploy/argocd/argocd-cm-patch.yaml` |
-| Helm chart (3 components + SMB + ingress) | `deploy/helm/camera-cleaner/` |
-| `subPath` state-on-PVC without shadowing code | `deploy/helm/camera-cleaner/templates/backend-deployment.yaml` |
-| Worker pinned to powerful node | `deploy/helm/camera-cleaner/templates/compute-deployment.yaml` |
-| Traefik ingress + StripPrefix `/api` | `deploy/helm/camera-cleaner/templates/ingress.yaml` |
-| SMB CSI PV/PVC + creds secret (optional module) | `deploy/helm/camera-cleaner/templates/smb-camera.yaml` |
-| Project-specific deployment narrative | `docs/deployment.md` |
+| Helm chart (backend + frontend + SMB + TLS ingress) | `deploy/helm/my-documents-archive/` |
+| Stateful backend: `Recreate`, probes, env injection, backup sidecar | `deploy/helm/my-documents-archive/templates/backend-deployment.yaml` |
+| Nested-mount NAS + local state (§5.7) | `deploy/helm/my-documents-archive/templates/smb-nas.yaml` + `state-pvc.yaml` |
+| Traefik ingress: multi-path, optional StripPrefix, cert-manager TLS | `deploy/helm/my-documents-archive/templates/ingress.yaml` |
+| cert-manager home CA (one-time cluster install) | `deploy/k8s/cert-manager/home-ca.yaml` |
+| Backend image: python-slim + native deps, purge build tools | `backend/Dockerfile` |
+| Frontend image: Vite build → nginx SPA fallback | `frontend/Dockerfile` + `frontend/nginx.conf` |
+| Backup sidecar loop (§5.8) | `backend/backup.py` |
+| Project-specific deployment narrative (incl. full human checklist as executed) | `docs/deployment.md` |
+
+Patterns not exercised here but proven in the original `camera-cleaner` deployment
+(separate repo): a worker Deployment pinned to the powerful node
+(`nodeSelector: {role: compute}` + toleration), the ArgoCD optional-pod health patch
+(`argocd-cm` Lua override), and `subPath` mounting when state lives next to code.
