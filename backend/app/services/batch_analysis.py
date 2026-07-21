@@ -196,6 +196,11 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                 },
             }))
 
+        if not jsonl_lines:
+            _log(task_id, "📭 No documents had text to analyze — nothing to submit", "warning")
+            _finish(task_id, "done", {"processed": 0, "failed": 0})
+            return
+
         jsonl_bytes = ("\n".join(jsonl_lines)).encode()
 
         # ── 4. Upload JSONL ───────────────────────────────────────────────────
@@ -246,7 +251,12 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
                     },
                 },
             )
-            batch_resp.raise_for_status()
+            try:
+                batch_resp.raise_for_status()
+            except httpx.HTTPStatusError:
+                _log(task_id, f"❌ Gemini rejected batch job ({batch_resp.status_code}): {batch_resp.text}", "error")
+                _finish(task_id, "error")
+                return
             batch_data = batch_resp.json()
 
         batch_job_name = batch_data["name"]

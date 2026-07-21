@@ -160,6 +160,22 @@ only local polling stops. The job id is logged so it can be inspected manually.
 - **JSONL request line**: `{"key": "<doc.id>", "request": {"contents": [{"parts": [{"inline_data": {"mime_type": "image/jpeg", "data": "<b64>"}}, {"text": GEMINI_OCR_PROMPT}]}], "generation_config": {"max_output_tokens": 8192}}}`
 - **Parsing**: each line is `{"key", "response": {"candidates": [{"content": {"parts": [{"text": ...}]}}], "usageMetadata": {...}}}` or `{"key", "error": {...}}`; text is the concatenated `parts[].text`. Token counts are summed into the result summary; **cost is not computed** for Gemini (consistent with the synchronous Gemini vision path).
 
+## Empty batches and error visibility
+
+If every document selected for a run has no usable text — e.g. `fix_quality`'s
+`no_tags` gap can pull in image-only documents (photos) that were never OCR'd —
+the JSONL request body would be empty, and Gemini rejects an empty
+`batchGenerateContent` call with `400 Bad Request`. Both `batch_ocr_gemini`
+and `batch_analysis.py` check for this **before** uploading: if no request
+lines were built, the task finishes `"done"` with `processed: 0` and no
+network call is made.
+
+A `400`/other HTTP error from the `:batchGenerateContent` create call itself
+(e.g. an invalid/unsupported model id) is caught and logged with Gemini's
+response body (`task log: "❌ Gemini rejected batch job (<status>): <body>"`)
+instead of just the generic `httpx` status-line summary — check the task log
+for the actual rejection reason rather than the backend pod traceback.
+
 ## Resume support
 
 `POST /api/tasks/{task_id}/resume-batch` restarts polling without re-submitting. Supported types include `index_documents`, the three Batch engines, and both classification tasks. `index_documents` also persists `pipeline_stage` so recovery reconnects to the correct provider stage.

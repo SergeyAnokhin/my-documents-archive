@@ -180,6 +180,25 @@ def test_no_matching_documents_finishes_done_with_zero_processed(env):
     db.close()
 
 
+def test_all_matched_documents_have_no_text_skips_upload_and_finishes_done(env):
+    # Doc:  services/batch_analysis.py — run_batch_analysis_gemini step 3
+    # Rule: if every matched document has no usable text (e.g. photos with no
+    #       OCR text), the JSONL batch would be empty — Gemini rejects an
+    #       empty batchGenerateContent with 400. Instead the task must finish
+    #       "done" with processed=0 without ever uploading/creating a batch.
+    doc_id = _add_doc(env.SessionLocal, filename="t", ocr_text=None, vision_description=None, analysis_status="pending")
+
+    captured = _run(env, {"doc_ids": [doc_id], "_captured": {}})
+
+    assert "jsonl_bytes" not in captured
+    assert "batch_create_body" not in captured
+    db = env.SessionLocal()
+    task = db.query(Task).filter(Task.id == env.task_id).first()
+    assert task.status == "done"
+    assert task.result_summary["processed"] == 0
+    db.close()
+
+
 # ── doc_scope selection filters ──────────────────────────────────────────────────
 
 @pytest.mark.parametrize("doc_scope,expected_included,make_docs", [
