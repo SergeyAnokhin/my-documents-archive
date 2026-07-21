@@ -13,9 +13,10 @@ Legacy direct Batch cards remain available for repair/debugging. All are dispatc
 | `index_documents` | `task_runners.py` + `indexing_plan.py` | selected route | lazy: analysis incomplete; existing text is reused |
 | `batch_ocr_mistral` | `batch_ocr.py` | Mistral Batch `/v1/ocr` | `ocr_status="pending"` |
 | `batch_ocr_gemini`  | `batch_ocr.py` | Gemini `:batchGenerateContent` | scope-selected (see below); **per-document hybrid** vision/text routing |
-| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | internal engine for metadata, quality repair, and classification-only work |
+| `batch_analysis_gemini` | `batch_analysis.py` | Gemini `:batchGenerateContent` | internal text-only engine for metadata and classification-only work (requires existing `ocr_text`/`vision_description`) |
 | `reclassify_unclassified` | `batch_analysis.py` | Gemini `:batchGenerateContent` | `ocr_done`, type = unclassified/other, not manually set |
 | `reclassify_all` | `batch_analysis.py` | Gemini `:batchGenerateContent` | all non-manual docs with summary or OCR text |
+| `fix_quality` (analysis gaps) | `batch_ocr_gemini.py` | Gemini `:batchGenerateContent` | explicit `doc_ids` from the quality-gap filter; hybrid vision/text routing (see below) |
 
 > Mistral has a dedicated OCR endpoint for true OCR — it always sends the image,
 > since `/v1/ocr` has no text-only mode. Gemini has **no** OCR endpoint, so the
@@ -27,6 +28,15 @@ Legacy direct Batch cards remain available for repair/debugging. All are dispatc
 > `reclassify_unclassified` and `reclassify_all` call the same Gemini text Batch
 > engine with `classification_only=True`. They send summary when available,
 > change only classification fields, and exclude manual classifications.
+>
+> `task_runners._fix_quality()` routes its analysis gaps (`no_analysis`/
+> `no_summary`/`no_tags`/`single_char_tag`/`no_category`) through
+> `run_batch_ocr_gemini` rather than the text-only `batch_analysis_gemini`
+> engine, precisely because quality-gap documents aren't guaranteed to have
+> any OCR/vision text yet — the hybrid routing sends the image and gets
+> recognition + analysis + tags back in one request for those, and stays
+> text-only (same result as the old routing) for documents that already have
+> text.
 
 ## Hybrid vision/text routing (`batch_ocr_gemini`)
 
@@ -162,19 +172,25 @@ only local polling stops. The job id is logged so it can be inspected manually.
 
 ## Empty batches and error visibility
 
-If every document selected for a run has no usable text — e.g. `fix_quality`'s
-`no_tags` gap can pull in image-only documents (photos) that were never OCR'd —
-the JSONL request body would be empty, and Gemini rejects an empty
-`batchGenerateContent` call with `400 Bad Request`. Both `batch_ocr_gemini`
-and `batch_analysis.py` check for this **before** uploading: if no request
-lines were built, the task finishes `"done"` with `processed: 0` and no
-network call is made.
+`batch_analysis.py` (`run_batch_analysis_gemini`) is text-only — every
+document it's given must already have `ocr_text`/`vision_description`. If
+called with a doc set where **none** of them have any text (only possible
+via `reclassify_*` or a direct `batch_analysis_gemini` task, since
+`fix_quality` no longer routes through this engine — see below), the JSONL
+request body would be empty and Gemini rejects an empty
+`batchGenerateContent` call with `400 Bad Request`. It checks for this
+**before** uploading: if no request lines were built, the task finishes
+`"done"` with `processed: 0` and no network call is made. `batch_ocr_gemini`
+has the same guard, but in practice can only trigger it if request-building
+itself fails for every document (e.g. no page image available at all).
 
 A `400`/other HTTP error from the `:batchGenerateContent` create call itself
 (e.g. an invalid/unsupported model id) is caught and logged with Gemini's
-response body (`task log: "❌ Gemini rejected batch job (<status>): <body>"`)
-instead of just the generic `httpx` status-line summary — check the task log
-for the actual rejection reason rather than the backend pod traceback.
+response body plus the request's model id and request count (`task log:
+"❌ Gemini rejected batch job — model=..., requests=N, endpoint=... →
+(<status>) <body>"`) instead of just the generic `httpx` status-line summary
+— check the task log for the actual rejection reason rather than the backend
+pod traceback.
 
 ## Resume support
 

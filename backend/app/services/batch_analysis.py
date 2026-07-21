@@ -197,7 +197,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             }))
 
         if not jsonl_lines:
-            _log(task_id, "📭 No documents had text to analyze — nothing to submit", "warning")
+            _log(
+                task_id,
+                f"📭 None of the {total} matched document(s) have OCR/vision text yet — "
+                "nothing to send to Gemini. Run Batch OCR (Gemini, vision mode) on them "
+                "first so they get text, then re-run this fix.",
+                "warning",
+            )
             _finish(task_id, "done", {"processed": 0, "failed": 0})
             return
 
@@ -254,7 +260,13 @@ async def run_batch_analysis_gemini(task_id: int, config: dict) -> None:
             try:
                 batch_resp.raise_for_status()
             except httpx.HTTPStatusError:
-                _log(task_id, f"❌ Gemini rejected batch job ({batch_resp.status_code}): {batch_resp.text}", "error")
+                _log(
+                    task_id,
+                    f"❌ Gemini rejected batch job — model={model!r}, requests={len(jsonl_lines)}, "
+                    f"endpoint=models/{model}:batchGenerateContent → "
+                    f"({batch_resp.status_code}) {batch_resp.text}",
+                    "error",
+                )
                 _finish(task_id, "error")
                 return
             batch_data = batch_resp.json()

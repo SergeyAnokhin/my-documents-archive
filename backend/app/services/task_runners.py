@@ -442,9 +442,13 @@ async def _embed_missing(task_id: int, config: dict) -> None:
 async def _fix_quality(task_id: int, config: dict) -> None:
     """Process documents that have a specific quality gap.
 
-    Analysis gaps (no_analysis/no_summary/no_tags/no_category) are sent to
-    Gemini Batch API via run_batch_analysis_gemini with an explicit doc_ids list.
-    OCR and embedding gaps are handled sequentially as before.
+    Analysis gaps (no_analysis/no_summary/no_tags/single_char_tag/no_category)
+    are sent to Gemini Batch via run_batch_ocr_gemini with an explicit doc_ids
+    list — its per-document hybrid routing (_needs_vision) sends the image for
+    documents with no OCR/vision text yet (one request does recognition +
+    analysis + tags together) and stays text-only for documents that already
+    have text, matching the previous run_batch_analysis_gemini behavior for
+    that case. OCR and embedding gaps are handled sequentially as before.
     """
     from .indexer import index_document, embed_document_by_id
     from sqlalchemy import or_, String
@@ -504,8 +508,8 @@ async def _fix_quality(task_id: int, config: dict) -> None:
             _log(task_id, "No documents to process")
             _finish(task_id, "done", {"processed": 0})
             return
-        _log(task_id, f"Delegating {len(doc_ids)} document(s) to Gemini Batch Analysis…")
-        await run_batch_analysis_gemini(task_id, {**config, "doc_ids": doc_ids})
+        _log(task_id, f"Delegating {len(doc_ids)} document(s) to Gemini Batch OCR+Analysis…")
+        await run_batch_ocr_gemini(task_id, {**config, "doc_ids": doc_ids})
         return
 
     processed = errors = 0

@@ -273,7 +273,14 @@ async def run_batch_ocr_gemini(task_id: int, config: dict) -> None:
             try:
                 batch_resp.raise_for_status()
             except httpx.HTTPStatusError:
-                _log(task_id, f"❌ Gemini rejected batch job ({batch_resp.status_code}): {batch_resp.text}", "error")
+                _log(
+                    task_id,
+                    f"❌ Gemini rejected batch job — model={model!r}, requests={len(jsonl_lines)} "
+                    f"({vision_count} vision, {text_count} text-only), "
+                    f"endpoint=models/{model}:batchGenerateContent → "
+                    f"({batch_resp.status_code}) {batch_resp.text}",
+                    "error",
+                )
                 _finish(task_id, "error")
                 return
             batch_data = batch_resp.json()

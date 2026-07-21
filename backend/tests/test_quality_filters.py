@@ -1,10 +1,12 @@
 """Pins quality-filter behavior for quality-gap filters.
 
 Doc: docs/api.md (Search quality filters) and docs/code-map.md
-(services/task_runners.py: fix_quality delegates analysis gaps to Gemini Batch).
+(services/task_runners.py: fix_quality delegates analysis gaps to Gemini Batch
+OCR+Analysis, whose per-document hybrid routing sends the image for
+documents with no OCR/vision text yet and stays text-only otherwise).
 Rule: documents with any one-character tag must be exposed as a dedicated
 quality gap, excluded from the "complete" filter, and re-dispatched through
-Gemini Batch Analysis via explicit doc_ids. Separately, `unclassified` is a
+Gemini Batch OCR+Analysis via explicit doc_ids. Separately, `unclassified` is a
 terminal auto-classification result, not a "missing category" gap.
 """
 import asyncio
@@ -86,14 +88,14 @@ def test_single_char_tag_quality_filter_counts_and_excludes_from_complete(db_ses
 
 def test_fix_quality_single_char_tag_delegates_matching_doc_ids_to_batch_analysis(db_session, monkeypatch):
     # Doc: docs/code-map.md — fix_quality routes analysis-related gaps through
-    #       Gemini Batch Analysis using explicit doc_ids.
+    #       Gemini Batch OCR+Analysis using explicit doc_ids.
     # Rule: single-character-tag documents are treated as an analysis gap and
     #       delegated exactly like the existing no_tags / no_summary cases.
     flagged_id = _add_doc(db_session, filename="flagged.pdf", tags=["x", "passport"])
     _add_doc(db_session, filename="clean.pdf", tags=["passport"])
 
     run_batch = AsyncMock()
-    monkeypatch.setattr(tasks_module, "run_batch_analysis_gemini", run_batch)
+    monkeypatch.setattr(tasks_module, "run_batch_ocr_gemini", run_batch)
     monkeypatch.setattr(tasks_module, "_log", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "_set_progress", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "_finish", lambda *a, **k: None)
@@ -135,7 +137,7 @@ def test_no_category_quality_filter_excludes_terminal_unclassified(db_session):
 
 def test_fix_quality_no_category_skips_terminal_unclassified(db_session, monkeypatch):
     # Doc: docs/code-map.md — fix_quality routes analysis-related gaps through
-    #       Gemini Batch Analysis using explicit doc_ids.
+    #       Gemini Batch OCR+Analysis using explicit doc_ids.
     # Rule: only truly missing categories are delegated; already-terminal
     #       `unclassified` documents are excluded to avoid repeated paid retries.
     missing_id = _add_doc(db_session, filename="missing.pdf", document_type=None)
@@ -143,7 +145,7 @@ def test_fix_quality_no_category_skips_terminal_unclassified(db_session, monkeyp
     _add_doc(db_session, filename="terminal.pdf", document_type="unclassified")
 
     run_batch = AsyncMock()
-    monkeypatch.setattr(tasks_module, "run_batch_analysis_gemini", run_batch)
+    monkeypatch.setattr(tasks_module, "run_batch_ocr_gemini", run_batch)
     monkeypatch.setattr(tasks_module, "_log", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "_set_progress", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "_finish", lambda *a, **k: None)
